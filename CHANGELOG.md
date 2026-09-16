@@ -4,7 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
-| 1.12.5 | 2026-09-16 | slim pass: cut task-loop, query budget, shell rewrite, AB and flood runners; stats without resendsRemoved; audit gains session and rule |
+| 1.12.6 | 2026-09-16 | slim pass: cut task-loop, query budget, shell rewrite, AB and flood runners, lifetime ledger, frozen results; receipt reports only what the guard kept out and stays silent otherwise; audit gains session and rule; keywords drop the solo-founder framing |
 | 1.12.4 | 2026-09-15 | Blocked-only audit log, Wilson eval intervals, full-only guard |
 | 1.12.3 | 2026-09-15 | final-state flow, card memory trim, bridge to opencode, nonprofit hero |
 | 1.12.2 | 2026-09-14 | demo blocks render red again (deny read from stdout), svg loop resets clean; readme carries the serio logo and ADHD quality-of-life framing |

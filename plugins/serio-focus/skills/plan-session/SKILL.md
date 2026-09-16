@@ -2,14 +2,13 @@
 name: plan-session
 description: "Use when writing or updating a repo plan or spec — the row contract both must follow."
 license: Apache-2.0
-compatibility: No external dependencies. Repo plans and repo specs only — not org ops, not tracker work.
+compatibility: No external dependencies. Repo plans and repo specs only.
 ---
 
 ## 1. A repo-local contract always wins — check first
 
 | Target | Use |
 |---|---|
-| Org ops — tasks, filings, deadlines, anything in the tracker | that tracker's own flow, never this skill |
 | Any repo with its own `AGENTS.md`/`CLAUDE.md` planning section | that file — a repo-local contract always wins |
 | Repo plan or repo spec with no local contract | this skill |
 

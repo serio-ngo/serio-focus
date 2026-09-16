@@ -1,12 +1,12 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.12.5 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.12.6 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Skills
 
 | Skill | Description chars, always in context | Body lines, on use |
 |---|---|---|
-| `plan-session` | 85 | 60 |
+| `plan-session` | 85 | 59 |
 | `research-budget` | 84 | 70 |
 
 ## Agents

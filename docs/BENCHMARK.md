@@ -14,7 +14,7 @@
 
 | Figure | Source |
 |---|---|
-| `docs/flood.svg` | Measured 2026-09-10, `claude-sonnet-5`, plugin 1.9.1 `8e9d9c4`. Without the guard 20 of 20 subagents start; with it 3 start, 40 held across the wave. Runner removed at 1.12.5 — the figure is static, not regenerated. |
+| `docs/flood.svg` | Measured 2026-09-10, `claude-sonnet-5`, plugin 1.9.1 `8e9d9c4`. Without the guard 20 of 20 subagents start; with it 3 start, 40 held across the wave. Runner removed at 1.12.6 — the figure is static, not regenerated. |
 
 ## Cost and limits
 
@@ -98,14 +98,14 @@ Every `Read`, `Grep`, `Glob` and `Bash` call from this machine's Claude Code tra
 ## Live ledger — what the guard did on this machine
 
 <!-- handoff-stats -->
-| Measured over 28 ledger lines | Tokens | Share |
+| Measured over 32 ledger lines | Tokens | Share |
 |---|---|---|
-| Read volume the session asked for | ~376.8k | 100% |
-| **Kept out** | **~67.8k** | **18%** |
+| Read volume the session asked for | ~397.8k | 100% |
+| **Kept out** | **~67.8k** | **17%** |
 | — re-read dedup | ~4,744 | 1% |
 | — whole-file cap | ~0 | 0% |
 | — moved to a subagent | ~0 | 0% |
-| Admitted to the main thread | ~308.9k | 82% |
+| Admitted to the main thread | ~330.0k | 83% |
 
 | Context tax — the plugin's own footprint | Tokens |
 |---|---|
@@ -118,11 +118,11 @@ Every `Read`, `Grep`, `Glob` and `Bash` call from this machine's Claude Code tra
 
 | Measured billing | Tokens |
 |---|---|
-| Fresh — input + output + cache write | 7,014,062 |
-| Cache-read | 386,273,015 |
-| **Context re-send ratio** | **55.1×** — cache mechanism, not the guard |
+| Fresh — input + output + cache write | 8,654,431 |
+| Cache-read | 424,298,015 |
+| **Context re-send ratio** | **49.0×** — cache mechanism, not the guard |
 
-Guard actions: 21. Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
+Guard actions: 23. Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
 <!-- /handoff-stats -->
 
 ## Track A
