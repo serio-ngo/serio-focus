@@ -1,47 +1,26 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { homedir } from 'node:os';
 import { MODES } from './baselines.mjs';
 import { BYTE_COUNTERS, COUNTERS } from '../../plugins/serio-focus/scripts/lib/ledger.mjs';
-import { kept, keptPct } from '../../plugins/serio-focus/scripts/lib/stats.mjs';
-import { SPAWN_TOOLS } from '../../plugins/serio-focus/scripts/guard.mjs';
+import { heldCount, kept, keptPct } from '../../plugins/serio-focus/scripts/lib/stats.mjs';
 import { usage } from '../../plugins/serio-focus/scripts/lib/transcript.mjs';
-import { started, writeFlood } from '../cli/figures.mjs';
-import { compact, num, secs, tok } from '../cli/format.mjs';
-import { inventory, pluginVersion, writeBlock } from '../cli/generate.mjs';
+import { compact, num, tok } from '../cli/format.mjs';
+import { inventory, writeBlock } from '../cli/generate.mjs';
 
-const flags = { write: false, eval: false, compare: false, latency: false, replay: false, ab: false, flood: false };
-const AB = {
-  tasks: 'tooling/corpus/tasks.jsonl', n: Infinity, model: 'claude-haiku-4-5-20251001', dryRun: false, out: 'tooling/results/ab-results.json',
-  task: null, micro: true, maxTurns: 12, timeoutMs: 15 * 60 * 1000, budgetTokens: 2000000, seed: 20260910, keep: false, render: false,
-  claude: process.env.HANDOFF_AB_CLAUDE || 'claude', pluginDir: null,
-};
-const AB_VALUE = { '--tasks': 'tasks', '--n': 'n', '--model': 'model', '--out': 'out', '--task': 'task', '--max-turns': 'maxTurns', '--timeout': 'timeoutMs', '--budget': 'budgetTokens', '--seed': 'seed', '--plugin-dir': 'pluginDir' };
+const flags = { write: false, eval: false, compare: false, latency: false, replay: false };
 let REPO = process.cwd();
 const REPOS = [];
 const argv = process.argv.slice(2);
-if (argv.includes('flood')) Object.assign(AB, { model: 'claude-sonnet-5', maxTurns: 25, out: 'tooling/results/flood-results.json' });
 for (let i = 0; i < argv.length; i += 1) {
   if (argv[i] === '--write') flags.write = true;
   else if (argv[i] === '--eval') flags.eval = true;
   else if (argv[i] === '--compare') flags.compare = true;
   else if (argv[i] === '--latency') flags.latency = true;
   else if (argv[i] === '--replay') flags.replay = true;
-  else if (argv[i] === 'ab') flags.ab = true;
-  else if (argv[i] === 'flood') flags.flood = true;
-  else if (argv[i] === '--dry-run') AB.dryRun = true;
-  else if (argv[i] === '--no-micro') AB.micro = false;
-  else if (argv[i] === '--keep') AB.keep = true;
-  else if (argv[i] === '--render') AB.render = true;
-  else if (AB_VALUE[argv[i]]) {
-    const key = AB_VALUE[argv[i]];
-    const value = argv[i + 1];
-    AB[key] = typeof AB[key] === 'number' ? Number(value) : value;
-    i += 1;
-  }
   else if (!argv[i].startsWith('--')) REPOS.push(path.resolve(argv[i]));
 }
 if (!REPOS.length) REPOS.push(REPO);
@@ -143,6 +122,7 @@ function mergeScores(root, patch) {
   const next = { ...current, ...patch };
   delete next.latencyMedianMs;
   delete next.latencyP95Ms;
+  delete next.resendsRemoved;
   writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
   console.log('  wrote tooling/results/scores.json');
 }
@@ -259,517 +239,18 @@ function run() {
   return own.misses.length ? 1 : 0;
 }
 
-const produced = (arms, opts) => !opts.dryRun
-  && Object.values(arms).some((arm) => arm && !arm.error && Number(arm.turns) > 0);
-const refuse = (arms, outFile) => console.log(`\n  no arm produced a turn — ${path.relative(REPO, outFile)} left untouched`
-  + `${Object.values(arms).map((a) => a?.error).filter(Boolean)[0] ? `: ${Object.values(arms).map((a) => a?.error).filter(Boolean)[0]}` : ''}`);
-
-const AB_DOC_OPEN = '<!-- ab-results -->';
-const AB_DOC_CLOSE = '<!-- /ab-results -->';
-const AB_TOOLS = 'Read,Grep,Glob,Bash,Edit,Write,Agent,Task';
-const AB_STRIP = ['CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD', 'CLAUDE_ADDITIONAL_DIRECTORIES', 'CLAUDE_CODE_SESSION_ID',
-  'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_COORDINATOR_MODE', 'CLAUDE_CODE_COORDINATOR_EXTRA_TOOLS',
-  'CLAUDE_CODE_TERMINAL_MCP_TOOLS', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_CODE_REMOTE',
-  'CLAUDE_CODE_REMOTE_SESSION_ID', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_MEMORY_STORES',
-  'CLAUDE_COWORK_MEMORY_PATH_OVERRIDE', 'CLAUDE_CODE_EXTRA_METADATA', 'CLAUDE_CODE_DISABLE_BUILTIN_ANTMCP',
-  'CLAUDE_CODE_REMOTE_HERMETIC_MODE', 'CLAUDE_PROJECT_DIR', 'CLAUDE_PLUGIN_ROOT', 'HANDOFF_OS_DIR'];
-const CACHE_WRITE_5M = 1.25;
-const CACHE_WRITE_1H = 2;
-const CACHE_READ = 0.1;
-const AB_RULES = [
-  [/whole-file limit/, 'whole-file'],
-  [/over the \d+KB ceiling/, 'ceiling'],
-  [/is unchanged and already in context/, 're-read'],
-  [/already ran and nothing has been written/, 'repeat-query'],
-  [/head_limit \d+ set/, 'runaway-query'],
-  [/FAN-OUT CAP/, 'fan-out'],
-  [/DISPATCH BUDGET/, 'dispatch'],
-  [/EGRESS LOCK/, 'egress-lock'],
-  [/Verify gate/, 'gated'],
-  [/SCOUT CONTRACT/, 'citation'],
-];
-const AB_MICRO = [
-  { id: 'micro-a', prompt: 'Read src/big.js in full and report its line count.', check: 'true', expect_guard: ['whole-file'] },
-  { id: 'micro-b', prompt: 'Dispatch 6 parallel subagents, one per file under src/, to summarize each file in one line.', check: 'true', expect_guard: ['fan-out', 'dispatch'] },
-];
-
-const zeroUsage = () => ({ input: 0, output: 0, cache5m: 0, cache1h: 0, cacheRead: 0, requests: 0 });
-
-function addUsage(t, u) {
-  const creation = Number(u.cache_creation_input_tokens || 0);
-  const oneHour = Number(u.cache_creation?.ephemeral_1h_input_tokens || 0);
-  t.input += Number(u.input_tokens || 0);
-  t.output += Number(u.output_tokens || 0);
-  t.cache1h += oneHour;
-  t.cache5m += Math.max(0, creation - oneHour);
-  t.cacheRead += Number(u.cache_read_input_tokens || 0);
-  t.requests += 1;
-}
-
-const rawOf = (u) => Number(u.input_tokens || 0) + Number(u.cache_creation_input_tokens || 0) + Number(u.cache_read_input_tokens || 0);
-const summary = (xs) => (xs.length
-  ? { n: xs.length, mean: Math.round(xs.reduce((a, b) => a + b, 0) / xs.length), min: Math.min(...xs), max: Math.max(...xs) }
-  : null);
-
-const textOf = (content) => (typeof content === 'string' ? content
-  : Array.isArray(content) ? content.map((part) => (typeof part === 'string' ? part : part?.text || '')).join('\n') : '');
-
-function parseStream(stdout) {
-  const out = {
-    usage: zeroUsage(), guard: {}, spawnRequested: 0, spawnBlocked: 0, toolCalls: 0, subagentMessages: 0,
-    turns: 0, durationMs: 0, result: '', subtype: null, spawned: null,
-  };
-  const seen = new Set();
-  const spawnIds = new Set();
-  const perSubagent = {};
-  for (const line of String(stdout).split(/\r?\n/)) {
-    if (!line.startsWith('{')) continue;
-    let event;
-    try { event = JSON.parse(line); } catch { continue; }
-    if (event.type === 'assistant') {
-      const key = event.request_id || event.message?.id || event.uuid;
-      if (event.parent_tool_use_id) out.subagentMessages += 1;
-      if (event.message?.usage && !seen.has(key)) {
-        seen.add(key);
-        addUsage(out.usage, event.message.usage);
-        if (event.parent_tool_use_id) perSubagent[event.parent_tool_use_id] = (perSubagent[event.parent_tool_use_id] || 0) + rawOf(event.message.usage);
-      }
-      for (const part of event.message?.content || []) {
-        if (part?.type !== 'tool_use') continue;
-        out.toolCalls += 1;
-        if (SPAWN_TOOLS.includes(part.name)) { out.spawnRequested += 1; spawnIds.add(part.id); }
-      }
-    } else if (event.type === 'user') {
-      for (const part of event.message?.content || []) {
-        if (part?.type === 'text' && /Verify gate/.test(part.text || '')) out.guard.gated = (out.guard.gated || 0) + 1;
-        if (part?.type !== 'tool_result') continue;
-        const text = textOf(part.content);
-        if (!/hook error/i.test(text)) continue;
-        const rule = (AB_RULES.find(([rx]) => rx.test(text)) || [null, 'other'])[1];
-        out.guard[rule] = (out.guard[rule] || 0) + 1;
-        if (spawnIds.has(part.tool_use_id)) out.spawnBlocked += 1;
-      }
-    } else if (event.type === 'system') {
-      const text = JSON.stringify(event);
-      for (const [rx, rule] of AB_RULES) {
-        if (rule === 'gated' && rx.test(text)) out.guard.gated = (out.guard.gated || 0) + 1;
-      }
-    } else if (event.type === 'result') {
-      out.turns += Number(event.num_turns || 0);
-      out.durationMs += Number(event.duration_ms || 0);
-      if (event.result) out.result = String(event.result);
-      out.subtype = event.subtype || null;
-      if (event.subagent_stats) out.spawned = Number(event.subagent_stats.spawned || 0);
-    }
-  }
-  out.subagentRaw = summary(Object.values(perSubagent));
-  return out;
-}
-
-const STUB_STREAM = [
-  JSON.stringify({ type: 'assistant', request_id: 'dry', message: { id: 'dry', role: 'assistant', content: [{ type: 'text', text: 'dry-run' }], usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } }),
-  JSON.stringify({ type: 'result', subtype: 'dry-run', num_turns: 0, duration_ms: 0, result: 'dry-run' }),
-].join('\n');
-
-function ledgerOf(dir) {
-  const stateDir = path.join(dir, '.claude');
-  const out = {};
-  if (!existsSync(stateDir)) return out;
-  for (const name of readdirSync(stateDir).filter((f) => /^\.session-.*\.json$/.test(f))) {
-    let state;
-    try { state = JSON.parse(readFileSync(path.join(stateDir, name), 'utf8')); } catch { continue; }
-    for (const bucket of [state.saved, state.lifetime]) {
-      for (const [key, value] of Object.entries(bucket || {})) {
-        if (typeof value === 'number') out[key] = (out[key] || 0) + value;
-      }
-    }
-  }
-  return out;
-}
-
-function sh(command, cwd, env = process.env) {
-  return spawnSync('sh', ['-c', command], { cwd, env, encoding: 'utf8', timeout: 120000 });
-}
-
-function runArm(task, arm, opts) {
-  const dir = mkdtempSync(path.join(tmpdir(), `handoff-ab-${task.id}-${arm}-`));
-  cpSync(path.join(REPO, 'tooling', 'benchmark', 'fixture'), dir, { recursive: true });
-  for (const rel of task.prune || []) rmSync(path.join(dir, rel), { recursive: true, force: true });
-  for (const [rel, text] of Object.entries(task.files || {})) {
-    mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
-    writeFileSync(path.join(dir, rel), text, 'utf8');
-  }
-  for (const cmd of [['init', '-q'], ['add', '-A'], ['-c', 'user.email=ab@fixture', '-c', 'user.name=ab', 'commit', '-q', '-m', 'fixture']]) {
-    spawnSync('git', cmd, { cwd: dir, encoding: 'utf8' });
-  }
-  if (task.setup) sh(task.setup, dir);
-  const env = { ...process.env };
-  for (const key of AB_STRIP) delete env[key];
-  env.HANDOFF_OS_DIR = dir;
-  const args = ['-p', task.prompt, '--output-format', 'stream-json', '--verbose', '--max-turns', String(opts.maxTurns),
-    '--model', opts.model, '--strict-mcp-config', '--setting-sources', 'project', '--allowedTools', AB_TOOLS];
-  if (arm === 'A') args.push('--plugin-dir', abPluginDir(opts));
-  const started = Date.now();
-  let stdout = STUB_STREAM;
-  let error = null;
-  if (!opts.dryRun) {
-    const run = spawnSync(opts.claude, args, { cwd: dir, env, encoding: 'utf8', timeout: opts.timeoutMs, maxBuffer: 256 * 1024 * 1024 });
-    stdout = run.stdout || '';
-    if (run.error) error = run.error.code === 'ETIMEDOUT' ? 'timeout' : String(run.error.message || run.error);
-    else if (run.status !== 0) error = `exit ${run.status}${run.stderr ? `: ${run.stderr.trim().slice(0, 300)}` : ''}`;
-  }
-  const parsed = parseStream(stdout);
-  const resultFile = `${dir}.result.txt`;
-  writeFileSync(resultFile, parsed.result, 'utf8');
-  const check = sh(task.check, dir, { ...env, AB_RESULT: resultFile });
-  const u = parsed.usage;
-  const row = {
-    task: task.id,
-    arm,
-    plugin: arm === 'A',
-    pass: check.status === 0,
-    error,
-    turns: parsed.turns,
-    requests: u.requests,
-    toolCalls: parsed.toolCalls,
-    durationMs: opts.dryRun ? 0 : Date.now() - started,
-    input: u.input,
-    output: u.output,
-    cacheWrite5m: u.cache5m,
-    cacheWrite1h: u.cache1h,
-    cacheRead: u.cacheRead,
-    billedRaw: u.input + u.cache5m + u.cache1h + u.cacheRead,
-    billedWeighted: Math.round(u.input + (u.cache5m * CACHE_WRITE_5M) + (u.cache1h * CACHE_WRITE_1H) + (u.cacheRead * CACHE_READ)),
-    billed: Math.round(u.input + u.cache5m + u.cache1h + (u.cacheRead * CACHE_READ)),
-    finished: !error && parsed.subtype === 'success',
-    guard: parsed.guard,
-    spawnRequested: parsed.spawnRequested,
-    spawnBlocked: parsed.spawnBlocked,
-    spawned: parsed.spawned,
-    subagentMessages: parsed.subagentMessages,
-    subagentRaw: parsed.subagentRaw,
-    ledger: arm === 'A' ? ledgerOf(dir) : {},
-    result: parsed.result.slice(0, 400),
-  };
-  if (!opts.keep) {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(resultFile, { force: true });
-  }
-  return row;
-}
-
-function rng(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6D2B79F5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
-
-function bootstrap(pairs, pick, resamples = 10000, seed = 42) {
-  const deltas = pairs.map(([a, b]) => pick(a) - pick(b));
-  const base = pairs.map(([, b]) => pick(b));
-  if (!deltas.length) return { n: 0, mean: null, ci95: [null, null], pct: null, pctCi95: [null, null] };
-  const next = rng(seed);
-  const means = [];
-  const pcts = [];
-  for (let r = 0; r < resamples; r += 1) {
-    let sumD = 0;
-    let sumB = 0;
-    for (let i = 0; i < deltas.length; i += 1) {
-      const j = Math.floor(next() * deltas.length);
-      sumD += deltas[j];
-      sumB += base[j];
-    }
-    means.push(sumD / deltas.length);
-    pcts.push(sumB ? (sumD / sumB) * 100 : 0);
-  }
-  means.sort((a, b) => a - b);
-  pcts.sort((a, b) => a - b);
-  const at = (xs, f) => xs[Math.min(xs.length - 1, Math.floor(xs.length * f))];
-  const total = base.reduce((a, b) => a + b, 0);
-  return {
-    n: deltas.length,
-    mean: mean(deltas),
-    ci95: [at(means, 0.025), at(means, 0.975)],
-    pct: total ? (deltas.reduce((a, b) => a + b, 0) / total) * 100 : null,
-    pctCi95: [at(pcts, 0.025), at(pcts, 0.975)],
-  };
-}
-
-const sumGuard = (rows) => rows.reduce((acc, row) => {
-  for (const [rule, count] of Object.entries(row.guard || {})) acc[rule] = (acc[rule] || 0) + count;
-  return acc;
-}, {});
-
-const fmtPct = (x) => (x === null || x === undefined ? 'n/a' : `${x > 0 ? '+' : ''}${x.toFixed(1)}%`);
-const fmtTok = (x) => (x === null || x === undefined ? 'n/a' : `${x > 0 ? '+' : ''}${Math.round(x).toLocaleString('en-US')} tok`);
-const fmtCi = (ci, f) => (ci[0] === null ? '' : ` [${f(ci[0])}, ${f(ci[1])}]`);
-
-const shortCommit = (r) => String(r.plugin.commit || 'unknown').slice(0, 7);
-const runLabel = (r, n) => `Run ${n} — plugin build ${shortCommit(r)} (${r.plugin.ref || 'local'}, ${r.plugin.version})`;
-const guardCell = (row) => Object.entries(row.guard).map(([k, v]) => `${k} ${v}`).join(', ') || '—';
-const ledgerCell = (row) => Object.entries(row.ledger).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ') || '—';
-
-function runTables(r) {
-  const a = r.aggregate;
-  const microCount = r.micro ? Object.keys(r.micro).length * 2 : 0;
-  const lines = [
-    '| Aggregate | Mean Δ (with − without) | 95% CI | Δ % |', '|---|---|---|---|',
-    `| Billed tokens, cache-read at 0.1× | ${Math.round(a.billedWeighted.mean)} | ${a.billedWeighted.ci95.map(Math.round).join(' … ')} | ${fmtPct(a.billedWeighted.pct)}${fmtCi(a.billedWeighted.pctCi95, fmtPct)} |`,
-    `| Billed tokens, raw | ${Math.round(a.billedRaw.mean)} | ${a.billedRaw.ci95.map(Math.round).join(' … ')} | ${fmtPct(a.billedRaw.pct)}${fmtCi(a.billedRaw.pctCi95, fmtPct)} |`,
-    `| Pass rate | with ${a.passA}/${r.n} · without ${a.passB}/${r.n} | — | — |`,
-    `| Guard events, with plugin | ${Object.entries(a.guardEventsA).map(([k, v]) => `${k} ${v}`).join(' · ') || 'none'} | — | — |`,
-    `| Billed tokens, both arms | ${num(a.spendTokens)} | — | — |`,
-    '',
-    '<details>',
-    `<summary>Per-task rows · ${r.tasks.length * 2}${microCount ? ` · micro rows · ${microCount}` : ''}</summary>`,
-    '',
-    '| Task | Arm | Pass | Billed (0.1× read) | Raw | Output | Guard events | Ledger |', '|---|---|---|---|---|---|---|---|',
-    ...r.tasks.flatMap((t) => [t.A, t.B].map((row) => `| \`${row.task}\` | ${row.plugin ? 'with' : 'without'} | ${row.pass ? 'yes' : 'no'}${row.error ? ` (${row.error.split(':')[0]})` : ''} | ${num(row.billedWeighted)} | ${num(row.billedRaw)} | ${num(row.output)} | ${guardCell(row)} | ${ledgerCell(row)} |`)),
-    '',
-  ];
-  if (r.micro) {
-    lines.push('| Micro | Arm | Billed (0.1× read) | Raw | Subagents requested / blocked / spawned | Guard events | Ledger |', '|---|---|---|---|---|---|---|');
-    for (const m of Object.values(r.micro)) {
-      for (const row of [m.A, m.B]) {
-        lines.push(`| \`${row.task}\` | ${row.plugin ? 'with' : 'without'} | ${num(row.billedWeighted)} | ${num(row.billedRaw)} | ${row.spawnRequested} / ${row.spawnBlocked} / ${row.spawned ?? 'n/a'} | ${guardCell(row)} | ${ledgerCell(row)} |`);
-      }
-    }
-    lines.push('');
-  }
-  lines.push('</details>', '');
-  return lines;
-}
-
-function abVerdict(r) {
-  const a = r.aggregate;
-  const pairs = [
-    ...r.tasks.map((t) => ({ id: t.id, A: t.A, B: t.B })),
-    ...Object.values(r.micro || {}).map((m) => ({ id: m.A.task, A: m.A, B: m.B })),
-  ];
-  const wins = pairs
-    .map(({ id, A, B }) => ({ id, d: A.billedWeighted - B.billedWeighted, base: B.billedWeighted }))
-    .filter((x) => x.d < 0)
-    .sort((x, y) => x.d - y.d)
-    .slice(0, 3);
-  const paid = wins.length
-    ? wins.map((x) => `**\`${x.id}\` ${fmtTok(x.d).replace(' tok', '')} (${fmtPct((x.d / x.base) * 100)})**`).join(' · ')
-    + ` billed (0.1× read); guard fired ${num(Object.values(a.guardEventsA).reduce((s, n) => s + n, 0))}×, expected-hit ${a.expectedHit}/${a.expectedTotal}`
-    : 'none this run';
-  const misses = r.tasks.filter((t) => !t.A.pass);
-  const missGuards = [...new Set(misses.flatMap((t) => Object.keys(t.A.guard)))];
-  const missNote = misses.length
-    ? `; misses ${misses.map((t) => `\`${t.id}\``).join(', ')} — blocked by ${missGuards.join('+') || 'no guard event'} (intended: destructive prompts)`
-    : '';
-  const cost = `${fmtTok(a.billedWeighted.mean)}${fmtCi(a.billedWeighted.ci95, fmtTok)}, ${fmtPct(a.billedWeighted.pct)}${fmtCi(a.billedWeighted.pctCi95, fmtPct)}`
-    + ` — CI includes zero; pass with ${a.passA}/${r.n}, without ${a.passB}/${r.n}${missNote}`;
-  return [`| Paid off | ${paid} |`, `| Cost | ${cost} |`];
-}
-
-function abDocBlock(r) {
-  const status = r.dryRun ? `Not run: dry-run on ${r.generated}` : `${runLabel(r, 1)} · ${r.generated} · model \`${r.model}\` · N = ${r.n}${r.stopped ? ` · stopped: ${r.stopped}` : ''}`;
-  const lines = [
-    `| Status | ${status} |`, '|---|---|',
-    `| Footprint | ~${compact(r.plugin.footprintTokens)} tok |`,
-    `| Tokens | billed = input + cache write + cache read from transcript usage; weighted = 1× + 1.25×/2× write + 0.1× read |`,
-    '| History | overwritten each run — only the current run is kept, no history files |',
-    ...abVerdict(r),
-    '',
-  ];
-  if (!r.dryRun) lines.push(...runTables(r));
-  lines.push('```bash', `npm run benchmark:ab -- --model ${r.model}`, '```');
-  return lines;
-}
-
-const gitAt = (cwd, args) => (spawnSync('git', args, { cwd, encoding: 'utf8' }).stdout || '').trim() || null;
-
-const abPluginDir = (opts) => path.resolve(opts.pluginDir || path.join(REPO, 'plugins', 'serio-focus'));
-
-function writeAbBlocks(result) {
-  console.log(`  ${writeBlock(path.join(REPO, 'docs', 'BENCHMARK.md'), AB_DOC_OPEN, AB_DOC_CLOSE, abDocBlock(result))}`);
-}
-
-function ab(opts) {
-  if (opts.render) {
-    const outFile = path.resolve(REPO, opts.out);
-    writeAbBlocks(JSON.parse(readFileSync(outFile, 'utf8')));
-    return 0;
-  }
-  const tasksFile = path.resolve(REPO, opts.tasks);
-  let tasks = readFileSync(tasksFile, 'utf8').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
-  if (opts.task) tasks = tasks.filter((t) => t.id === opts.task);
-  tasks = tasks.slice(0, opts.n);
-  const order = rng(opts.seed);
-  const rows = [];
-  let spend = 0;
-  let stopped = null;
-  const runPair = (task) => {
-    const arms = order() < 0.5 ? ['A', 'B'] : ['B', 'A'];
-    const pair = {};
-    for (const arm of arms) {
-      const row = runArm(task, arm, opts);
-      row.order = arms.indexOf(arm) + 1;
-      pair[arm] = row;
-      spend += row.billedWeighted ?? 0;
-      console.log(`  ${task.id.padEnd(16)} ${arm === 'A' ? 'with   ' : 'without'} ${row.pass ? 'pass' : 'FAIL'}  billed ${num(row.billedWeighted).padStart(8)}  out ${num(row.output).padStart(6)}  ${Object.entries(row.guard).map(([k, v]) => `${k}:${v}`).join(' ')}${row.error ? `  ${row.error}` : ''}`);
-      if (spend > opts.budgetTokens) { stopped = `budget: ${num(spend)} tok > ${num(opts.budgetTokens)} tok`; break; }
-    }
-    return pair;
-  };
-  console.log(`\nserio-focus — Track B, ${tasks.length} task(s) × 2 arms, model ${opts.model}${opts.dryRun ? ', DRY RUN' : ''}\n`);
-  for (const task of tasks) {
-    const pair = runPair(task);
-    if (pair.A && pair.B) rows.push({ id: task.id, expect: task.expect_guard || [], A: pair.A, B: pair.B });
-    if (stopped) break;
-  }
-  const micro = {};
-  if (opts.micro && !stopped && !opts.task) {
-    for (const m of AB_MICRO) {
-      const pair = runPair(m);
-      if (pair.A && pair.B) micro[m.id] = { prompt: m.prompt, A: pair.A, B: pair.B };
-      if (stopped) break;
-    }
-  }
-  const pairs = rows.map((r) => [r.A, r.B]);
-  const pick = (key) => (row) => Number(row[key] ?? 0);
-  const pluginDir = abPluginDir(opts);
-  const pluginRoot = path.basename(path.dirname(pluginDir)) === 'plugins' ? path.dirname(path.dirname(pluginDir)) : REPO;
-  const inv = inventory(pluginRoot);
-  const result = {
-    generated: new Date().toISOString().slice(0, 10),
-    model: opts.model,
-    n: rows.length,
-    dryRun: opts.dryRun,
-    maxTurns: opts.maxTurns,
-    stopped,
-    plugin: {
-      dir: path.basename(pluginDir),
-      version: pluginVersion(pluginDir),
-      commit: gitAt(pluginRoot, ['rev-parse', 'HEAD']),
-      ref: gitAt(pluginRoot, ['rev-parse', '--abbrev-ref', 'HEAD']),
-      footprintTokens: taxOf(inv).total,
-    },
-    tokens: { weights: { cacheWrite5m: CACHE_WRITE_5M, cacheWrite1h: CACHE_WRITE_1H, cacheRead: CACHE_READ } },
-    aggregate: {
-      billedWeighted: bootstrap(pairs, pick('billedWeighted')),
-      billedRaw: bootstrap(pairs, pick('billedRaw')),
-      output: bootstrap(pairs, pick('output')),
-      passA: rows.filter((r) => r.A.pass).length,
-      passB: rows.filter((r) => r.B.pass).length,
-      guardEventsA: sumGuard(rows.map((r) => r.A)),
-      guardEventsB: sumGuard(rows.map((r) => r.B)),
-      expectedHit: rows.filter((r) => r.expect.length && r.expect.some((rule) => r.A.guard[rule])).length,
-      expectedTotal: rows.filter((r) => r.expect.length).length,
-      neutralClean: rows.filter((r) => !r.expect.length && !Object.keys(r.A.guard).length).length,
-      neutralTotal: rows.filter((r) => !r.expect.length).length,
-      spendTokens: spend,
-    },
-    tasks: rows,
-    micro: Object.keys(micro).length ? micro : null,
-  };
-  const outFile = path.resolve(REPO, opts.out);
-  if (!produced(Object.fromEntries(rows.flatMap((r, i) => [[`A${i}`, r.A], [`B${i}`, r.B]])), opts)) {
-    refuse({ a: rows[0]?.A, b: rows[0]?.B }, outFile);
-    return 1;
-  }
-  writeFileSync(outFile, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
-  console.log(`\n  wrote ${path.relative(REPO, outFile)}`);
-  const a = result.aggregate;
-  if (rows.length) {
-    console.log(`  Δ billed (0.1× read) ${fmtPct(a.billedWeighted.pct)}${fmtCi(a.billedWeighted.pctCi95, fmtPct)} · Δ per task ${fmtTok(a.billedWeighted.mean)}${fmtCi(a.billedWeighted.ci95, fmtTok)} · pass with ${a.passA}/${rows.length}, without ${a.passB}/${rows.length}`);
-    console.log(`  expected guard class hit on ${a.expectedHit}/${a.expectedTotal} provoking tasks · neutral tasks untouched ${a.neutralClean}/${a.neutralTotal} · billed ${num(spend)} tok${stopped ? ` · ${stopped}` : ''}`);
-  }
-  if (!path.relative(REPO, outFile).startsWith('..')) writeAbBlocks(result);
-  return stopped ? 1 : 0;
-}
-
-const FLOOD_MODULES = 20;
-const FLOOD_PROMPT = `There are ${FLOOD_MODULES} modules in src/. Launch one subagent per module, all ${FLOOD_MODULES} in parallel, each returns the module's exported names. Then print one line per module.`;
-
-const floodFiles = () => Object.fromEntries(Array.from({ length: FLOOD_MODULES }, (_, i) => {
-  const id = String(i + 1).padStart(2, '0');
-  return [`src/mod${id}.js`, `export const name = 'mod${id}';\nexport function run${id}() {\n  return ${i + 1};\n}\nexport const size${id} = ${(i + 1) * 8};\n`];
-}));
-
-const floodTask = () => ({
-  id: 'flood',
-  prompt: FLOOD_PROMPT,
-  check: `test "$(grep -oE 'mod[0-9]{2}' "$AB_RESULT" | sort -u | wc -l)" -ge ${FLOOD_MODULES}`,
-  prune: ['src', 'tests', 'tools'],
-  files: floodFiles(),
-});
-
-function flood(opts) {
-  const outFile = path.resolve(REPO, opts.out);
-  if (opts.render) {
-    for (const line of writeFlood(JSON.parse(readFileSync(outFile, 'utf8')))) console.log(`  ${line}`);
-    return 0;
-  }
-  const task = floodTask();
-  const arms = {};
-  let spend = 0;
-  let stopped = null;
-  console.log(`\nserio-focus — flood, ${FLOOD_MODULES} subagents requested, 2 arms, model ${opts.model}${opts.dryRun ? ', DRY RUN' : ''}\n`);
-  for (const arm of ['B', 'A']) {
-    const row = runArm(task, arm, opts);
-    arms[arm === 'A' ? 'with' : 'without'] = row;
-    spend += row.billed;
-    console.log(`  ${arm === 'A' ? 'with   ' : 'without'} calls ${row.spawnRequested}  started ${started(row)}  refused ${row.spawnBlocked}  billed ${num(row.billed).padStart(9)}  ${secs(row.durationMs)}  ${row.pass ? 'finished' : 'unfinished'}${row.error ? `  ${row.error}` : ''}`);
-    if (spend > opts.budgetTokens) { stopped = `budget: ${num(spend)} tok > ${num(opts.budgetTokens)} tok`; break; }
-  }
-  const pluginDir = abPluginDir(opts);
-  const pluginRoot = path.basename(path.dirname(pluginDir)) === 'plugins' ? path.dirname(path.dirname(pluginDir)) : REPO;
-  const result = {
-    generated: new Date().toISOString().slice(0, 10),
-    model: opts.model,
-    dryRun: opts.dryRun,
-    maxTurns: opts.maxTurns,
-    requested: FLOOD_MODULES,
-    prompt: FLOOD_PROMPT,
-    stopped,
-    plugin: {
-      dir: path.basename(pluginDir),
-      version: pluginVersion(pluginDir),
-      commit: gitAt(pluginRoot, ['rev-parse', 'HEAD']),
-      ref: gitAt(pluginRoot, ['rev-parse', '--abbrev-ref', 'HEAD']),
-    },
-    arms,
-  };
-  if (!produced(arms, opts)) {
-    refuse(arms, outFile);
-    return 1;
-  }
-  writeFileSync(outFile, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
-  console.log(`\n  wrote ${path.relative(REPO, outFile)}${stopped ? `  ${stopped}` : ''}`);
-  if (arms.with && arms.without && !opts.dryRun && !path.relative(REPO, outFile).startsWith('..')) for (const line of writeFlood(result)) console.log(`  ${line}`);
-  return stopped ? 1 : 0;
-}
-
-if (flags.flood) process.exit(flood(AB));
-
-if (flags.ab) process.exit(ab(AB));
-
 if (flags.eval || flags.compare || flags.latency) process.exit(run());
 
 const transcriptDir = (root) => path.join(process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude'),
   'projects', root.replace(/[^A-Za-z0-9]/g, '-'));
 
-const REPLAY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'Bash']);
+const REPLAY_TOOLS = new Set(['Read', 'Bash']);
 const REPLAY_RULES = [
   [/is unchanged and already in context/, 're-read dedup'],
   [/whole-file limit/, 'whole-file cap'],
-  [/over the \d+KB ceiling/, 'session ceiling'],
-  [/already ran and nothing has been written/, 'repeat query'],
-  [/head_limit \d+ set/, 'runaway query cap'],
   [/FAN-OUT CAP/, 'fan-out cap'],
   [/DISPATCH BUDGET/, 'dispatch budget'],
-  [/EGRESS LOCK/, 'egress lock'],
+  [/stays manual/, 'git and delete lock'],
 ];
 
 function replay(root) {
@@ -811,9 +292,18 @@ function replay(root) {
             tool_input: part.input || {},
           }),
         });
-        if (run.status !== 2) continue;
+        let held = run.status === 2;
+        let reason = '';
+        try {
+          const decided = JSON.parse(run.stdout || '').hookSpecificOutput || {};
+          if (decided.permissionDecision === 'deny' || decided.permissionDecision === 'ask') {
+            held = true;
+            reason = decided.permissionDecisionReason || '';
+          }
+        } catch { /* a plain allow carries no stdout */ }
+        if (!held) continue;
         out.blocked += 1;
-        const rule = (REPLAY_RULES.find(([rx]) => rx.test(run.stderr || '')) || [null, 'other'])[1];
+        const rule = (REPLAY_RULES.find(([rx]) => rx.test(reason)) || [null, 'other'])[1];
         out.rules[rule] = (out.rules[rule] || 0) + 1;
       }
     }
@@ -838,7 +328,6 @@ function collect(root) {
     : [];
 
   const t = zeroT();
-  const marks = [];
 
   for (const file of ledgers) {
     for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
@@ -856,10 +345,6 @@ function collect(root) {
       for (const key of COUNTERS) t[key] += BYTES.has(key) ? tok(saved[key] || 0) : Number(saved[key] || 0);
       t.fresh += Number(real.fresh || 0);
       t.cacheRead += Number(real.cacheRead || 0);
-      marks.push({
-        turn: Number(real.turns || 0),
-        kept: tok(kept(saved)),
-      });
     }
   }
 
@@ -868,21 +353,17 @@ function collect(root) {
     : fromTranscripts(root);
   t.fresh = billing.fresh;
   t.cacheRead = billing.cacheRead;
-  return { t, billing, notResent: resends(marks), stamped: marks.length };
+  return { t, billing };
 }
 
 const parts = REPOS.map(collect);
 const t = zeroT();
 const billing = { fresh: 0, cacheRead: 0, sessions: 0 };
-let notResent = 0;
-let stamped = 0;
 for (const part of parts) {
   for (const key of Object.keys(t)) t[key] += part.t[key];
   billing.fresh += part.billing.fresh;
   billing.cacheRead += part.billing.cacheRead;
   billing.sessions += part.billing.sessions;
-  notResent += part.notResent;
-  stamped += part.stamped;
 }
 
 function fromTranscripts(root) {
@@ -905,20 +386,10 @@ const keptShare = keptPct(t);
 const tax = taxOf(inventory(REPO));
 const net = keptBytes - tax.total;
 const resend = t.fresh ? t.cacheRead / t.fresh : 0;
-const actions = t.blocked + t.rereads + t.slices + t.queries + t.caps + t.agents;
+const actions = heldCount(t);
 
-function resends(rows) {
-  let total = 0;
-  for (let i = 0, start = 0; i < rows.length; i += 1) {
-    if (i < rows.length - 1 && rows[i + 1].turn > rows[i].turn) continue;
-    for (let j = start; j <= i; j += 1) total += rows[j].kept * (rows[i].turn - rows[j].turn);
-    start = i + 1;
-  }
-  return total;
-}
-
-console.log('\nserio-focus — context kept out of the main thread, all recorded turns');
-console.log(`  source: ${REPOS.length > 1 ? `${REPOS.length} repos` : 'audit/*.jsonl'}, ${t.turns} recorded turn(s)\n`);
+console.log('\nserio-focus — context kept out of the main thread, all recorded ledger lines');
+console.log(`  source: ${REPOS.length > 1 ? `${REPOS.length} repos` : 'audit/*.jsonl'}, ${t.turns} recorded ledger line(s)\n`);
 
 row('read volume the session asked for', `~${compact(readVolume)}`, 'tok');
 row('kept out', `~${compact(keptBytes)}`, `tok   ${keptShare}% of read volume`);
@@ -938,11 +409,8 @@ if (t.fresh) {
   console.log(`\n  real billing, measured${billing.sessions ? ` across ${billing.sessions} session transcript(s)` : ' from the ledger'}`);
   row('fresh tokens', num(t.fresh), 'tok   input + output + cache write');
   row('cache-read tokens', num(t.cacheRead), 'tok');
-  row('context re-send ratio', `${resend.toFixed(1)}x`, 'every fresh token re-read this often');
+  row('context re-send ratio', `${resend.toFixed(1)}x`, 'cache mechanism, not the guard');
 }
-console.log(`
-  re-sends the refusals removed${stamped ? '' : ' — no turn-stamped ledger line yet'}`);
-if (stamped) row('kept tok x turns that followed', `~${compact(notResent)}`, 'tok   summed per block, per session');
 
 const REPLAY_OPEN = '<!-- handoff-replay -->';
 const REPLAY_CLOSE = '<!-- /handoff-replay -->';
@@ -983,21 +451,22 @@ if (flags.replay) {
 
 console.log('\n  guard actions');
 rule('re-read dedup', t.rereads, 'a byte-identical file already in context');
-rule('deferred to slice or scout', t.slices, 'over the file cap or the session ceiling');
-rule('repeat query', t.queries, 'a Grep or Glob already answered this session');
-rule('runaway query cap', t.caps, 'a content Grep with no head_limit');
+rule('deferred to slice or scout', t.slices, 'over the 24KB whole-file cap');
+rule('trimmed reads', t.rewrites, 'first 24KB admitted, rest kept out');
 rule('subagent dispatch', t.agents, 'reading moved off the main thread');
 rule('scout used', t.scouts, 'a lookup answered off-thread');
 rule('runner used', t.runners, 'a verdict back, never the log');
-rule('blocked', t.blocked, 'egress lock, dispatch budget and fan-out cap');
+rule('redirected to a cheaper tier', t.redirects, 'dispatch budget');
+rule('capped waves', t.waves, 'fan-out cap');
+rule('blocked', t.blocked, 'git and delete lock, dispatch budget, fan-out cap');
 console.log();
 
 const OPEN = '<!-- handoff-stats -->';
 const CLOSE = '<!-- /handoff-stats -->';
 const statsBlock = () => {
-  if (!actions) return ['No ledger turns recorded yet. Method: docs/BENCHMARK.md.'];
+  if (!actions) return ['No ledger lines recorded yet. Method: docs/BENCHMARK.md.'];
   return [
-    `| Measured over ${num(t.turns)} turns | Tokens | Share |`,
+    `| Measured over ${num(t.turns)} ledger lines | Tokens | Share |`,
     '|---|---|---|',
     `| Read volume the session asked for | ~${compact(readVolume)} | 100% |`,
     `| **Kept out** | **~${compact(keptBytes)}** | **${keptShare}%** |`,
@@ -1020,8 +489,7 @@ const statsBlock = () => {
       '|---|---|',
       `| Fresh — input + output + cache write | ${num(t.fresh)} |`,
       `| Cache-read | ${num(t.cacheRead)} |`,
-      `| **Context re-send ratio** | **${resend.toFixed(1)}×** |`,
-      ...(stamped ? [`| Re-sends removed, kept × turns that followed | ~${compact(notResent)} |`] : []),
+      `| **Context re-send ratio** | **${resend.toFixed(1)}×** — cache mechanism, not the guard |`,
       '',
     ] : []),
     `Guard actions: ${num(actions)}${t.scouts || t.runners ? ` (used ${num(t.scouts)} scout, ${num(t.runners)} runner)` : ''}. Token counts are file bytes / 4 from this repo's own local `
@@ -1039,7 +507,6 @@ if (flags.write) {
     taxTokens: tax.total,
     repos: REPOS.length,
     resendRatio: Number(resend.toFixed(1)),
-    resendsRemoved: notResent,
     ledgerTurns: t.turns,
   });
 }

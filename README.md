@@ -56,7 +56,7 @@ Without a checkout: `/plugin marketplace add serio-ngo/serio-focus`, then `/plug
 | Guard | Notes |
 |---|---|
 | Fan-out cap | `HANDOFF_MAX_PER_WAVE=3`, `HANDOFF_WAVE_MS=60000` — excess waits for the next wave. |
-| Read budget | Files over 24 KB arrive trimmed; an unchanged file is never re-sent; a repeated Grep or Glob is held. |
+| Read budget | Files over 24 KB arrive trimmed; an unchanged file is never re-sent. |
 | Dispatch budget | Every subagent names a tier; `HANDOFF_DENY_SUBAGENT_MODELS=opus,fable` never reviews. |
 | Git lock | `git commit` and `git push` are held to the final state; the card lists the exact command. Recursive deletes and `clean -fdx` / `reset --hard` too. Reads, branches, stashes and merges run. `HANDOFF_GIT_WRITE=1` reopens commit and push. |
 | Focus style | `output-styles/focus.md` ships forced for the plugin: action first, Done ≤5, one next step. |

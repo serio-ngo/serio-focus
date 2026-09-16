@@ -200,7 +200,7 @@ function probe() {
     ['Bash · `git commit -m "wip"`', 'Bash', { command: 'git commit -m "wip"' }],
   ].map(([label, tool, input]) => ({ label, ...fire(tool, input) }));
   const answer = [
-    'Ran docs audit — fixed 3 links',
+    'Audit docs — fix 3 links',
     '- fixed 3 anchors · docs/BENCHMARK.md:12',
     '- held git commit to final state · listed exact command',
     'Next: run npm run upkeep',

@@ -19,9 +19,9 @@ function volumeParts(t) {
 }
 
 // One count for every guard action; blocked already covers the refusals the others do not.
-const HELD = ['rewrites', 'rereads', 'queries', 'slices', 'caps', 'agentsCapped', 'redirects'];
-const heldCount = (s) => HELD.reduce((sum, key) => sum + Number(s[key] || 0), 0)
-  + Math.max(0, s.blocked - s.redirects - s.waves);
+const HELD = ['rewrites', 'rereads', 'slices', 'agentsCapped', 'redirects'];
+export const heldCount = (s) => HELD.reduce((sum, key) => sum + Number(s[key] || 0), 0)
+  + Math.max(0, Number(s.blocked || 0) - Number(s.redirects || 0) - Number(s.waves || 0));
 
 export function sessionLine(state) {
   const s = fold(state.session, state.saved);

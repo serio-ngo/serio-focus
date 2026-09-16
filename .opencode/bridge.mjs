@@ -39,10 +39,12 @@ export function verdictFor(tool, args, sessionID, cwd) {
     if (!(error instanceof Blocked)) throw error;
     const reason = error.message.trim();
     append(rootOf(payload), {
+      session: String(sessionID || 'unknown'),
       actor: 'main',
       tier: 'YELLOW',
       action: payload.tool_name,
       target: String(payload.tool_input.command ?? payload.tool_input.file_path ?? payload.tool_input.pattern ?? '').slice(0, 120),
+      rule: error.rule || reason.split('\n')[0].split(':')[0].trim(),
       result: `blocked: ${reason}`,
     });
     return reason;

@@ -60,7 +60,6 @@ export function shellWords(segment) {
   return out;
 }
 
-export const shellQuote = (file) => (/[\s'"]/.test(file) ? `"${file.replace(/(["\\$`])/g, '\\$1')}"` : file);
 export const strip = (token) => token.replace(/^['"]|['"]$/g, '');
 
 // Operands only: a segment that redirects its output to a file reads nothing into the thread.

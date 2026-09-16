@@ -26,7 +26,7 @@ text{font-size:13.5px;white-space:pre}
 <text x="22" y="228" fill="#cf222e" font-size="12" class="row d7">⨯  GIT WRITE: &quot;git commit -m &quot;wip&quot;&quot; commit and push stays manual — draft the exact command and list</text>
 <text x="22" y="252" fill="#cf222e" font-size="12" class="row d8">   it in the final state, do not run it</text>
 <text x="22" y="276" fill="#24292f" font-size="12" font-weight="600" class="row d9">⏺  Answer · focus style</text>
-<text x="22" y="300" fill="#24292f" font-size="12" font-weight="600" class="row d10">Ran docs audit — fixed 3 links</text>
+<text x="22" y="300" fill="#24292f" font-size="12" font-weight="600" class="row d10">Audit docs — fix 3 links</text>
 <text x="22" y="324" fill="#24292f" font-size="12" class="row d11">   - fixed 3 anchors · docs/BENCHMARK.md:12</text>
 <text x="22" y="348" fill="#24292f" font-size="12" class="row d12">   - held git commit to final state · listed exact command</text>
 <text x="22" y="372" fill="#0969da" font-size="12" font-weight="600" class="row d13">Next: run npm run upkeep</text>
