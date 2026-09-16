@@ -33,15 +33,6 @@ const SHELLS = /^(?:sudo\s+)?(?:bash|sh|zsh|dash|ksh|pwsh|powershell|cmd)\b/i;
 const SHELL_INNER = /(?:^|\s)(?:-{1,2}(?:command|[a-z]*c)|\/(?:command|c))\s+(['"])([\s\S]*)\1\s*$/i;
 const SHELL_INNER_BARE = /(?:^|\s)(?:-{1,2}(?:command|[a-z]*c)|\/(?:command|c))\s+()(?!['"])([\s\S]+)$/i;
 
-// A discard sink or an fd dup stores nothing: neither is a write.
-const DISCARD_TARGET = /^(?:&\d+|\$null|\/dev\/(?:null|stdout|stderr|tty)|nul:?)$/i;
-
-export const SHELL_WRITE_TARGET = [
-  /(?:^|\s)(?:\d?>>?|&>)\s*['"]?([^'"\s]+)/,
-  /\btee\s+(?:-a\s+)?['"]?([^'"\s]+)/,
-  /\bsed\b[^\n]*\s-i\S*\s+(?:-\S+\s+)*(?:'[^']*'\s+|"[^"]*"\s+)?['"]?([^'"\s]+)/,
-];
-
 function innerCommand(segment) {
   return (SHELL_INNER.exec(segment) || SHELL_INNER_BARE.exec(segment) || [])[2];
 }
@@ -66,15 +57,4 @@ export function judgeShell(command, depth = 0) {
     }
   }
   return null;
-}
-
-export function shellWriteTargets(command) {
-  const out = [];
-  for (const segment of segments(command)) {
-    for (const rx of SHELL_WRITE_TARGET) {
-      const hit = rx.exec(segment);
-      if (hit && hit[1] && !DISCARD_TARGET.test(hit[1])) out.push(hit[1]);
-    }
-  }
-  return out;
 }

@@ -6,19 +6,19 @@ import { append, entry } from './audit.mjs';
 import { bump } from './lib/ledger.mjs';
 import { agentsRequested, bookRedirect, costBudget, dispatchBudget } from './lib/dispatch.mjs';
 import { fanOutCap } from './lib/fan-out.mjs';
-import { judgeShell, shellWriteTargets } from './lib/shell-danger.mjs';
-import { kb, noteWrite, readBudget, shellReadBudget } from './lib/read-budget.mjs';
-import { queryBudget } from './lib/query-budget.mjs';
+import { judgeShell } from './lib/shell-danger.mjs';
+import { kb, readBudget, shellReadBudget } from './lib/read-budget.mjs';
 
 export const SPAWN_TOOLS = ['Agent', 'Task', 'TaskCreate', 'Workflow'];
-const WRITE_TOOLS = ['Edit', 'Write', 'NotebookEdit', 'MultiEdit'];
 export { Blocked };
 
 let current = {};
 
 const deny = (reason, label = 'BLOCKED') => {
   bump(current, 'blocked');
-  throw new Blocked(`${label}: ${reason}\n`);
+  const error = new Blocked(`${label}: ${reason}\n`);
+  error.rule = label;
+  throw error;
 };
 
 function judgeRead(payload, input) {
@@ -45,7 +45,7 @@ function judgeSpawn(payload, input, tool) {
   return null;
 }
 
-function judgeShellCall(payload, input, tool) {
+function judgeShellCall(payload, input) {
   if ('command' in input && typeof input.command !== 'string') {
     deny('blocked a shell call whose command was not a string', 'GIT WRITE');
   }
@@ -53,12 +53,7 @@ function judgeShellCall(payload, input, tool) {
   const verdict = judgeShell(command);
   if (verdict) deny(verdict, /recursive delete|git wipe/.test(verdict) ? 'DELETE LOCK' : 'GIT WRITE');
 
-  if (shellWriteTargets(command).length) noteWrite(payload);
-  return shellReadBudget(payload, input, tool);
-}
-
-function judgeFileWrite(payload) {
-  noteWrite(payload);
+  return shellReadBudget(payload, input);
 }
 
 export function judge(raw = {}) {
@@ -68,10 +63,8 @@ export function judge(raw = {}) {
   current = payload;
 
   if (tool === 'Read') return judgeRead(payload, input);
-  if (tool === 'Grep' || tool === 'Glob') return queryBudget(payload, input, tool);
   if (SPAWN_TOOLS.includes(tool)) return judgeSpawn(payload, input, tool);
-  if (tool === 'Bash' || tool === 'PowerShell') return judgeShellCall(payload, input, tool);
-  if (WRITE_TOOLS.includes(tool)) judgeFileWrite(payload);
+  if (tool === 'Bash' || tool === 'PowerShell') return judgeShellCall(payload, input);
   return null;
 }
 
@@ -84,6 +77,7 @@ const refuse = (error) => {
     const values = entry(current, project);
     if (values) {
       values.result = `blocked: ${reason}`;
+      values.rule = error.rule || reason.split('\n')[0].split(':')[0].trim();
       append(root, values);
     }
   } catch { }

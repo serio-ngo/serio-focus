@@ -1,7 +1,6 @@
 import { PIPE, pipelines, strip, tokens, unwrap } from './shell-parse.mjs';
 
 const WHOLE_FILE_CMD = /^(?:cat|bat|more|less|type|gc|get-content)$/i;
-const REWRITABLE_READ = /^(?:cat|bat|more|less)$/i;
 const SLICE_CMD = /^(?:head|tail)$/i;
 const SED_QUIET = /^(?:-[a-z]*n[a-z]*|--quiet|--silent)$/i;
 const SED_RANGE = /^(\d+)(?:,(\d+|\$))?p$/;
@@ -58,11 +57,8 @@ function readsInSegment(segment) {
   const words = tokens(segment);
   const cmd = (words[0] || '').toLowerCase();
   if (WHOLE_FILE_CMD.test(cmd)) {
-    const rest = words.slice(1);
-    const files = rest.filter((word) => !word.startsWith('-'));
-    const only = files.length === 1 && files.length === rest.length
-      && !/[<>]/.test(segment) && REWRITABLE_READ.test(cmd);
-    return files.map((raw) => ({ file: strip(raw), whole: true, only }));
+    const files = words.slice(1).filter((word) => !word.startsWith('-'));
+    return files.map((raw) => ({ file: strip(raw), whole: true }));
   }
   if (SLICE_CMD.test(cmd)) return headTail(words);
   if (cmd === 'sed') return sedSlice(words);
@@ -71,18 +67,11 @@ function readsInSegment(segment) {
 
 export function shellReads(command) {
   const out = [];
-  let cursor = 0;
   for (const chunk of pipelines(command)) {
-    const at = command.indexOf(chunk, cursor);
-    if (at >= 0) cursor = at + chunk.length;
     if (chunk.includes('`') || chunk.includes('$(')) continue;
     const piped = PIPE.test(chunk);
-    const first = chunk.split('|')[0].trim();
-    const segment = unwrap(first);
-    const bare = !piped && segment === first && at >= 0;
-    for (const read of readsInSegment(segment)) {
-      out.push({ ...read, piped, at, span: first.length, rewritable: bare && Boolean(read.only) });
-    }
+    const segment = unwrap(chunk.split('|')[0].trim());
+    for (const read of readsInSegment(segment)) out.push({ ...read, piped });
   }
   return out;
 }

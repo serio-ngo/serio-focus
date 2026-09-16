@@ -33,7 +33,6 @@ const fire = (file, payload, env = { ...process.env, HANDOFF_OS_DIR: box }) => s
 const guard = (payload, env) => fire(script('guard.mjs'), payload, env);
 const at = (session, payload) => guard({ cwd: box, session_id: session, ...payload },
   { ...process.env, HANDOFF_OS_DIR: box });
-const sh = (session, command) => at(session, { tool_name: 'Bash', tool_input: { command } });
 const bash = (command) => ({ tool_name: 'Bash', tool_input: { command } });
 const ask = (payload, env) => {
   const run = spawnSync(process.execPath, [script('guard.mjs')], {
@@ -175,30 +174,19 @@ describe('read and query budgets', () => {
     assert.equal(off.permissionDecision, ASK);
     assert.doesNotMatch(off.permissionDecisionReason, /scout subagent/);
   });
-  it('caps a content-mode Grep that names no head_limit', () => {
-    const result = run('gc', { tool_name: 'Grep', tool_input: { pattern: 'todo', output_mode: 'content' } });
-    assert.equal(result.status, ALLOWED);
-    assert.equal(rewritten(result).updatedInput.head_limit, 50);
-    assert.equal(state('gc').saved.caps, 1);
-  });
-  it('rewrites the read it judged, not an earlier copy of the same text, and keeps a spaced path whole', () => {
+  it('holds a shell whole-file read over the 24KB limit, spaced path included', () => {
     const big = `${'x'.repeat(70)}\n`.repeat(500);
     const plain = path.join(box, 'echoed.txt');
     writeFileSync(plain, big);
-    const echoed = run('ec', { tool_name: 'Bash', tool_input: { command: `echo "cat ${plain}" ; cat ${plain}` } });
-    const cmd = rewritten(echoed).updatedInput.command;
-    assert.match(cmd, /^echo "cat /, cmd);
-    assert.equal(cmd.match(/head -c/g).length, 1, cmd);
-    const guarded = run('or', { tool_name: 'Bash', tool_input: { command: `cat ${plain} || echo fallback` } });
-    assert.match(rewritten(guarded).updatedInput.command, /^head -c \d+ \S+ \|\| echo fallback$/);
-
+    const hold = (session, command) => ask({ cwd: box, session_id: session, tool_name: 'Bash', tool_input: { command } });
+    assert.equal(hold('ec', `cat ${plain}`), ASK);
+    assert.equal(hold('or', `cat ${plain} || echo fallback`), ASK);
     const dir = path.join(box, 'with space');
     mkdirSync(dir, { recursive: true });
     const spaced = path.join(dir, 'big file.txt');
     writeFileSync(spaced, big);
-    const quoted = run('sp', { tool_name: 'Bash', tool_input: { command: `cat "${spaced}"` } });
-    assert.match(rewritten(quoted).updatedInput.command, /^head -c \d+ "/);
-    assert.equal(state('sp').saved.rewrites, 1);
+    assert.equal(hold('sp', `cat "${spaced}"`), ASK);
+    assert.equal(state('sp').saved.slices, 1);
   });
   it('refuses an oversize read whose flag or redirect head -c cannot reproduce', () => {
     const flagged = path.join(box, 'flagged.txt');
@@ -217,21 +205,6 @@ describe('read and query budgets', () => {
     writeFileSync(probe, 'small');
     at('bq', { tool_name: 'Read', tool_input: { file_path: probe } });
     assert.equal(ask({ cwd: box, session_id: 'bq', tool_name: 'Read', tool_input: { file_path: probe } }), ASK);
-  });
-  it('blocks the identical Grep a second time', () => {
-    at('bq', { tool_name: 'Grep', tool_input: { pattern: 'todo' } });
-    assert.equal(ask({ cwd: box, session_id: 'bq', tool_name: 'Grep', tool_input: { pattern: 'todo' } }), ASK);
-  });
-  it('forgets answered queries after a shell write, never after a discard redirect', () => {
-    at('wq', { tool_name: 'Grep', tool_input: { pattern: 'todo' } });
-    sh('wq', 'ls -d missing 2>/dev/null');
-    assert.equal(ask({ cwd: box, session_id: 'wq', tool_name: 'Grep', tool_input: { pattern: 'todo' } }), ASK);
-    sh('wq', 'echo hi > $null');
-    assert.equal(ask({ cwd: box, session_id: 'wq', tool_name: 'Grep', tool_input: { pattern: 'todo' } }), ASK);
-    sh('wq', 'echo hi > NUL');
-    assert.equal(ask({ cwd: box, session_id: 'wq', tool_name: 'Grep', tool_input: { pattern: 'todo' } }), ASK);
-    sh('wq', 'echo hi >> probe2.txt');
-    assert.equal(at('wq', { tool_name: 'Grep', tool_input: { pattern: 'todo' } }), ALLOWED);
   });
   it('credits a refused read once however often it is retried', () => {
     const file = path.join(box, 'retry.txt');
@@ -259,10 +232,14 @@ describe('session receipt', () => {
     const file = path.join(box, 'receipt.txt');
     writeFileSync(file, 'hello');
     at('rc-a', { tool_name: 'Read', tool_input: { file_path: file } });
+    const quiet = run('rc-a', {});
+    assert.equal(quiet.stdout, '', 'an allowed read is not a saving');
+    ask({ cwd: box, session_id: 'rc-a', tool_name: 'Read', tool_input: { file_path: file } });
     const first = run('rc-a', {});
     assert.equal(first.status, ALLOWED);
-    assert.match(first.stdout, /SERIO FOCUS/);
+    assert.match(first.stdout, /SERIO FOCUS · ~\d+ tok kept out \(\d+%\) · 1 guard action"/);
     at('rc-b', { tool_name: 'Read', tool_input: { file_path: file } });
+    ask({ cwd: box, session_id: 'rc-b', tool_name: 'Read', tool_input: { file_path: file } });
     const claim = run('rc-b', { last_assistant_message: 'All done, it works now.' });
     assert.equal(claim.status, ALLOWED);
     assert.match(claim.stdout, /SERIO FOCUS/);

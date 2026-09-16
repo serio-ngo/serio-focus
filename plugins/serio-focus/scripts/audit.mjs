@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const FIELDS = ['ts', 'actor', 'tier', 'action', 'target', 'result'];
+const FIELDS = ['ts', 'session', 'actor', 'tier', 'action', 'target', 'rule', 'result'];
 
 export function entry(payload, root) {
   const tool = String(payload.tool_name || '');
@@ -20,10 +20,12 @@ export function entry(payload, root) {
   }
 
   return {
+    session: String(payload.session_id || 'unknown').replace(/[^A-Za-z0-9_-]/g, ''),
     actor: payload.agent_type || 'main',
     tier: external || !inside ? 'YELLOW' : 'GREEN',
     action: tool,
     target,
+    rule: '',
     result: 'ok',
   };
 }

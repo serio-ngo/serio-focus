@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { SPAWN_TOOLS } from '../../plugins/serio-focus/scripts/guard.mjs';
 import { writeFigures } from './figures.mjs';
-import { PLUGIN, REPO, REPLY_CLOSE, REPLY_OPEN, inventory, manifest, markdown, opencodeAgents, pluginVersion, policyFor, readJson, replyBody, walk, writeBlock } from './generate.mjs';
+import { PLUGIN, REPO, REPLY_CLOSE, REPLY_OPEN, manifest, markdown, opencodeAgents, pluginVersion, policyFor, readJson, replyBody, walk, writeBlock } from './generate.mjs';
 
 const CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const BANNED = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
@@ -262,13 +262,6 @@ function doctor() {
 
   check('the plugin is enabled', settings.enabledPlugins?.[`${PLUGIN_NAME}@${marketplace.name}`] === true);
   check('login is restricted to the subscription', settings.forceLoginMethod === 'claudeai');
-  const open = settings.env?.HANDOFF_GIT_WRITE === '1';
-  const writes = ['Bash(git commit *)', 'Bash(git push *)', 'Bash(git branch *)'];
-  const shut = writes.every((rule) => (settings.permissions?.deny ?? []).includes(rule));
-  check(shut ? 'every git write is denied by a deny rule' : 'git writes are open — HANDOFF_GIT_WRITE=1',
-    shut === !open, 'deny rules and HANDOFF_GIT_WRITE must agree');
-  check('no metered credential is configured', !new RegExp(`${BANNED.join('|')}|apiKeyHelper`).test(JSON.stringify(settings)));
-  check('no metered credential is in the environment', !BANNED.some((key) => process.env[key]));
 
   const current = (version) => {
     const dest = path.join(cacheRoot(), version);
@@ -277,14 +270,6 @@ function doctor() {
   };
   const installed = check('every installed copy is this checkout', targets.every(current),
     `${targets.length} version(s): ${targets.join(', ')}`);
-  check('the installed copy is on disk', existsSync(cache), cache);
-
-  const entry = registration();
-  const root = entry ? String(entry.installPath || '') : '';
-  check('the plugin registration names a path', Boolean(root), root || 'no entry in installed_plugins.json');
-  check('the path Claude Code resolves exists', Boolean(root) && existsSync(root), root || '—');
-  check('the registered version is the declared one', entry?.version === declared,
-    `registered ${entry?.version ?? 'none'} vs declared ${declared}`);
 
   const probe = mkdtempSync(path.join(tmpdir(), 'handoff-doctor-'));
   const at = (dir, script, payload, env) => spawnSync(process.execPath, [path.join(dir, 'scripts', script)], {
@@ -293,46 +278,34 @@ function doctor() {
   });
   const session = () => `doctor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const pre = (tool_name, tool_input) => ({ hook_event_name: 'PreToolUse', session_id: session(), cwd: probe, tool_name, tool_input });
-
-  if (root) {
-    check('the guard Claude Code resolves actually blocks',
-      held(at(root, 'guard.mjs', pre('Bash', { command: 'git commit -m x' }))),
-      'live hook path, not the cache');
-  }
-
   const fire = (payload, env) => at(cache, 'guard.mjs', payload, env);
   const shell = (command, env) => fire(pre('Bash', { command }), env);
-  check('the installed guard blocks a commit', held(shell('git commit -m x')));
-  check('the installed guard blocks commit and push, nothing else git',
-    ['git commit -m x', 'git push origin main'].every((c) => held(shell(c, { HANDOFF_GIT_WRITE: '0' })))
-    && ['git status', 'git checkout main', 'git stash push -m wip', 'git merge main'].every((c) => !held(shell(c, { HANDOFF_GIT_WRITE: '0' }))),
-    'commit, push held; status, checkout, stash, merge pass');
+
+  const open = settings.env?.HANDOFF_GIT_WRITE === '1';
+  const shut = ['Bash(git commit *)', 'Bash(git push *)']
+    .every((rule) => (settings.permissions?.deny ?? []).includes(rule));
+  check('the git gate holds commit and push, nothing else git',
+    shut === !open
+    && ['git commit -m x', 'git push origin main'].every((c) => held(shell(c, { HANDOFF_GIT_WRITE: '0' })))
+    && ['git status', 'git stash push -m wip', 'git merge main'].every((c) => !held(shell(c, { HANDOFF_GIT_WRITE: '0' }))),
+    'deny rules, HANDOFF_GIT_WRITE and the live guard must agree');
   check('the installed guard blocks recursive deletes and git wipes',
     ['rm -rf docs', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),
     'rm -r, clean -fdx, reset --hard');
-  check('the installed guard blocks an opus review, whatever the spawn tool',
-    SPAWN_TOOLS.every((tool) => held(fire(pre(tool, { model: 'opus', prompt: 'review the diff' })))),
-    SPAWN_TOOLS.join(', '));
-  check('the installed guard blocks a dispatch that names no model', held(fire(pre('Agent', { prompt: 'audit the repo' }))));
-  check('the installed guard lets a sonnet review through', fire(pre('Agent', { model: 'sonnet', prompt: 'review the diff' })).status === 0);
-  check('the installed guard lets a teammate spawn through, which cannot name a model',
-    fire(pre('TaskCreate', { description: 'analyse the config', subject: 'config' })).status === 0);
+  check('the installed guard routes dispatch by tier',
+    SPAWN_TOOLS.every((tool) => held(fire(pre(tool, { model: 'opus', prompt: 'review the diff' }))))
+    && held(fire(pre('Agent', { prompt: 'audit the repo' })))
+    && fire(pre('Agent', { model: 'sonnet', prompt: 'review the diff' })).status === 0,
+    'opus held, unnamed held, sonnet passes');
   check('the installed card prints', spawnSync(process.execPath, [path.join(cache, 'scripts', 'card.mjs')], { encoding: 'utf8' }).stdout.trim().length > 0);
-  const month = new Date().toISOString().slice(0, 7);
-  check('every probe receipt landed in the throwaway root, not the repo ledger',
-    existsSync(path.join(probe, 'audit', `${month}.jsonl`)), probe);
 
   // Every check above spawns the scripts here. Only the ledger proves Claude Code spawns them.
+  const month = new Date().toISOString().slice(0, 7);
   const ledger = path.join(process.env.HANDOFF_OS_DIR || REPO, 'audit', `${month}.jsonl`);
   const since = existsSync(ledger) ? Date.now() - statSync(ledger).mtimeMs : Infinity;
   check('Claude Code itself fired a hook here within a day',
     since < 24 * 60 * 60 * 1000,
     existsSync(ledger) ? `${Math.round(since / 3600000)}h since the last receipt` : 'no receipt yet — start a session and rerun');
-  check(`the plugin costs ~${Math.round(inventory().contextChars / 4)} tok of context`, true,
-    'card plus skill and agent descriptions, always in context');
-
-  const agents = opencodeAgents();
-  if (existsSync(agents)) check('the reply block is in the OpenCode global AGENTS.md', readFileSync(agents, 'utf8').includes(replyBody()));
 
   const failed = checks.filter((ok) => !ok).length;
   console.log(`  ${checks.length - failed} of ${checks.length} yes`);

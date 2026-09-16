@@ -3,14 +3,13 @@ import path from 'node:path';
 import { BASH_OUTPUT_CAP, BIG_FILE_BYTES, delegateOn } from './limits.mjs';
 import { load, rootOf, save, sessionOf } from './ledger.mjs';
 import { Blocked } from './blocked.mjs';
-import { shellQuote } from './shell-parse.mjs';
 import { shellReads } from './shell-reads.mjs';
 
 const SAMPLE_BYTES = 64 * 1024;
 const SAMPLE_LINES = 200;
 
 export const kb = (bytes) => `${Math.round(bytes / 1024)}KB`;
-export const actorOf = (payload = {}) => String(payload.agent_type || 'main').replace(/[:|]/g, '');
+const actorOf = (payload = {}) => String(payload.agent_type || 'main').replace(/[:|]/g, '');
 
 function averageLineLength(file, size) {
   if (!size) return 0;
@@ -109,7 +108,7 @@ export function readBudget(payload, input, rewritable = false) {
     }
     const avg = averageLineLength(resolved, stats.size);
     const lines = Math.max(1, Math.floor(BIG_FILE_BYTES / (avg || stats.size)));
-    const admitted = rewritable === 'shell' ? BIG_FILE_BYTES : Math.min(stats.size, Math.round(lines * avg));
+    const admitted = Math.min(stats.size, Math.round(lines * avg));
     if (admitted < stats.size) {
       trim = { lines, admitted, size: stats.size, name };
       bytes = admitted;
@@ -132,47 +131,26 @@ function unbook(payload, before) {
   for (const key of Object.keys(state.reads)) {
     if (!(key in before.reads) && !key.includes('|x:')) delete state.reads[key];
   }
-  for (const key of ['read', 'offload', 'rewrites', 'trimmed']) state.saved[key] = before.saved[key];
+  for (const key of ['read', 'offload']) state.saved[key] = before.saved[key];
   save(root, session, state);
 }
 
-export function shellReadBudget(payload, input, tool) {
+export function shellReadBudget(payload, input) {
   const command = typeof input.command === 'string' ? input.command : '';
   const before = load(rootOf(payload), sessionOf(payload));
-  let rewrite = null;
   try {
     for (const read of shellReads(command)) {
       if (read.unjudged) continue;
       const file = path.resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), read.file);
-      if (!read.whole) { bookSlice(payload, file, read, { shell: true }); continue; }
-      if (read.piped) { bookSlice(payload, file, { whole: true }, { shell: true }); continue; }
-      const trim = readBudget(payload, { file_path: file }, tool === 'Bash' && read.rewritable && !rewrite ? 'shell' : false);
-      if (trim) {
-        rewrite = {
-          updatedInput: {
-            ...input,
-            command: command.slice(0, read.at)
-              + `head -c ${BIG_FILE_BYTES} ${shellQuote(read.file)}`
-              + command.slice(read.at + read.span),
-          },
-          reason: `READ CAP: ${trim.name} ${kb(trim.size)}. Kept head -c ${BIG_FILE_BYTES}`,
-        };
+      if (!read.whole || read.piped) {
+        bookSlice(payload, file, read.whole ? { whole: true } : read, { shell: true });
+        continue;
       }
+      readBudget(payload, { file_path: file }, false);
     }
   } catch (error) {
     if (error instanceof Blocked) unbook(payload, before);
     throw error;
   }
-  return rewrite;
-}
-
-export function noteWrite(payload) {
-  const root = rootOf(payload);
-  const session = sessionOf(payload);
-  const state = load(root, session);
-  for (const key of Object.keys(state.reads)) {
-    if (key.includes('|q:')) delete state.reads[key];
-  }
-  state.written = Date.now();
-  save(root, session, state);
+  return null;
 }

@@ -1,11 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { load } from '../../plugins/serio-focus/scripts/lib/ledger.mjs';
 import { sessionLine } from '../../plugins/serio-focus/scripts/lib/stats.mjs';
 import { BIG_FILE_BYTES, MAX_PER_WAVE } from '../../plugins/serio-focus/scripts/lib/limits.mjs';
-import { num, secs } from './format.mjs';
 import { PLUGIN, REPO, readJson, writeBlock } from './generate.mjs';
 
 const INK = '#24292f';
@@ -18,10 +17,6 @@ const DEMO_LINE_BYTES = 64;
 
 const DEMO_OPEN = '<!-- handoff-demo -->';
 const DEMO_CLOSE = '<!-- /handoff-demo -->';
-const FLOOD_OPEN = '<!-- handoff-flood -->';
-const FLOOD_CLOSE = '<!-- /handoff-flood -->';
-const FLOOD_DOC_OPEN = '<!-- flood-results -->';
-const FLOOD_DOC_CLOSE = '<!-- /flood-results -->';
 
 const FONT = "system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif";
 const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace";
@@ -36,89 +31,8 @@ const text = (x, y, s, o = {}) => `<text x="${x}" y="${y}" fill="${o.fill ?? INK
 const open = (w, h, label, family = FONT) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)}" font-family="${family}">`;
 const file = (lines) => `${lines.join('\n')}\n`;
 
-export const started = (row) => row.spawned ?? Math.max(0, row.spawnRequested - row.spawnBlocked);
-const held = (r) => Math.max(0, r.requested - started(r.arms.with));
 
-function glyphs(x0, y0, count, filled, fill) {
-  const cols = 5; const w = 24; const h = 28; const gap = 10;
-  return Array.from({ length: count }, (_, i) => {
-    const x = x0 + (i % cols) * (w + gap);
-    const y = y0 + Math.floor(i / cols) * (h + gap);
-    return i < filled
-      ? `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="7" fill="${fill}"/>`
-      : `<rect x="${x + 0.75}" y="${y + 0.75}" width="${w - 1.5}" height="${h - 1.5}" rx="7" fill="none" stroke="${MUTED}" stroke-opacity=".7" stroke-width="1.5"/>`;
-  });
-}
-
-function stat(x, y, big, unit, note) {
-  return [
-    text(x, y, big, { size: 30, weight: 700 }),
-    text(x + width(big, 30) + 16, y, unit, { size: 14 }),
-    text(x, y + 18, note, { size: 11 }),
-  ];
-}
-
-const floodAlt = (r) => `${r.requested} subagents requested. Without the guard ${started(r.arms.without)} start at once; `
-  + `with it ${started(r.arms.with)} start and the rest wait for the next wave.`;
-
-function floodSvg(r) {
-  const W = 720; const H = 282; const L = 24; const R = 384;
-  const measured = `measured · ${r.model}`;
-  return file([
-    open(W, H, floodAlt(r)),
-    text(L, 30, 'One uncapped wave', { size: 15, weight: 600 }),
-    text(R, 30, 'With the guard', { size: 15, weight: 600 }),
-    text(L, 48, `${r.requested} subagents requested · one prompt`, { size: 11 }),
-    text(R, 48, 'same prompt, same files', { size: 11 }),
-    ...glyphs(L, 62, r.requested, started(r.arms.without), HUE.without),
-    ...glyphs(R, 62, r.requested, started(r.arms.with), HUE.with),
-    ...stat(L, 244, String(started(r.arms.without)), 'started at once', measured),
-    ...stat(R, 244, String(started(r.arms.with)), 'started at once', measured),
-    '</svg>',
-  ]);
-}
-
-const subRaw = (row) => (row.subagentRaw ? num(Math.round(row.subagentRaw.mean)) : 'n/a');
-const floodRow = (label, row) => `| ${label} | ${row.spawnRequested} | ${started(row)} | ${row.spawnBlocked} | ${subRaw(row)} | ${num(row.billed)} | ${secs(row.durationMs)} | ${row.pass ? 'yes' : 'no'}${row.error ? ` (${row.error.split(':')[0]})` : ''} |`;
-
-function floodDocBlock(r) {
-  return [
-    `Run ${r.generated} · model \`${r.model}\` · plugin build ${String(r.plugin.commit || 'unknown').slice(0, 7)} (${r.plugin.version}) · \`tooling/results/flood-results.json\`${r.stopped ? ` · stopped: ${r.stopped}` : ''}`,
-    '',
-    '| Arm | Subagent calls | Started | Refused by the guard | Raw tokens per subagent | Tokens billed | Wall time | Finished |',
-    '|---|---|---|---|---|---|---|---|',
-    floodRow('without', r.arms.without),
-    floodRow('with', r.arms.with),
-  ];
-}
-
-export function writeFlood(r) {
-  writeFileSync(DOCS('flood.svg'), floodSvg(r), 'utf8');
-  return [
-    'wrote docs/flood.svg',
-    writeBlock(path.join(REPO, 'README.md'), FLOOD_OPEN, FLOOD_CLOSE, [
-      `<img src="docs/flood.svg" width="720" alt="${esc(floodAlt(r))}">`,
-    ]),
-    writeBlock(path.join(REPO, 'docs', 'BENCHMARK.md'), FLOOD_DOC_OPEN, FLOOD_DOC_CLOSE, floodDocBlock(r)),
-  ];
-}
-
-function abRange() {
-  const file = path.join(REPO, 'tooling', 'results', 'ab-results.json');
-  let pct;
-  try { pct = JSON.parse(readFileSync(file, 'utf8')).aggregate?.billedWeighted?.pct; } catch { pct = null; }
-  return typeof pct === 'number' ? `${pct > 0 ? '+' : ''}${Math.round(pct)}%` : 'n/a';
-}
-
-function fanoutWin() {
-  try {
-    const m = readJson('tooling', 'results', 'ab-results.json').micro['micro-b'];
-    const pct = Math.round(((m.A.billedWeighted - m.B.billedWeighted) / m.B.billedWeighted) * 100);
-    return [`${pct}%`, 'billed on subagent fan-out'];
-  } catch { return ['n/a', 'billed on subagent fan-out']; }
-}
-
-function tiles(r, scores = readJson('tooling', 'results', 'scores.json')) {
+function tiles(scores = readJson('tooling', 'results', 'scores.json')) {
   return {
     stops: [
       [String(MAX_PER_WAVE), 'subagents per wave'],
@@ -127,12 +41,12 @@ function tiles(r, scores = readJson('tooling', 'results', 'scores.json')) {
       ['one line', 'session receipt'],
     ],
     wins: [
-      [String(held(r)), 'subagents held back'],
       [`${scores.keptPct}%`, 'read volume kept out'],
-      fanoutWin(),
+      [`${scores.recall}%`, 'corpus recall'],
+      [`${scores.fpRate}%`, 'false positives'],
     ],
     cost: [
-      [abRange(), 'tokens on ordinary tasks'],
+      [`${scores.contextTokens} tok`, 'context footprint'],
       ['Cowork', 'hooks do not fire'],
       ['OpenCode', 'subagents bypass the guard'],
     ],
@@ -200,7 +114,7 @@ function probe() {
     ['Bash · `git commit -m "wip"`', 'Bash', { command: 'git commit -m "wip"' }],
   ].map(([label, tool, input]) => ({ label, ...fire(tool, input) }));
   const answer = [
-    'Ran docs audit — fixed 3 links',
+    'Audit docs — fix 3 links',
     '- fixed 3 anchors · docs/BENCHMARK.md:12',
     '- held git commit to final state · listed exact command',
     'Next: run npm run upkeep',
@@ -296,9 +210,8 @@ function demoSvg({ steps, answer, receipt } = probe()) {
 }
 
 export function writeFigures() {
-  const r = readJson('tooling', 'results', 'flood-results.json');
-  const out = writeFlood(r);
-  for (const [name, items] of Object.entries(tiles(r))) {
+  const out = [];
+  for (const [name, items] of Object.entries(tiles())) {
     writeFileSync(DOCS(`tiles-${name}.svg`), tileRow(items), 'utf8');
     out.push(`wrote docs/tiles-${name}.svg`);
   }

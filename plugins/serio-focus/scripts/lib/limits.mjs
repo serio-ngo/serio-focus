@@ -1,8 +1,7 @@
 export const BIG_FILE_BYTES = 24 * 1024;
-export const GREP_HEAD_LIMIT = 50;
 export const BASH_OUTPUT_CAP = 30000;
 export const MAX_PER_WAVE = 3;
-export const WAVE_MS = 60 * 1000;
+const WAVE_MS = 60 * 1000;
 export const DENY_SUBAGENT_DEFAULT = 'opus,fable';
 
 const positive = (raw, fallback) => {

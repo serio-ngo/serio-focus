@@ -13,10 +13,12 @@ export function report(payload) {
   const total = savings(state);
   if (total) {
     append(root, {
+      session,
       actor: 'main',
       tier: 'GREEN',
       action: 'read-budget',
       target: JSON.stringify(total),
+      rule: 'read-budget',
       result: JSON.stringify(usage(payload.transcript_path)),
     });
     bank(state);

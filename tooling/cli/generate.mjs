@@ -142,7 +142,6 @@ export const FLOW = [
   'lib/agent-model.mjs',
   'lib/fan-out.mjs',
   'lib/read-budget.mjs',
-  'lib/query-budget.mjs',
 ];
 
 export function inventory(root = REPO) {
@@ -186,7 +185,7 @@ function inventoryBlock(inv = inventory()) {
   return [
     table(['What ships', 'Count'], [
       `| Guard logic, agent-affecting only | **${inv.logicLines}** lines across ${inv.scripts} flow files |`,
-      '| Stats, receipts, adapters (`audit`, `card`, `bridge`, `ledger`, `transcript`) | excluded from the count |',
+      '| Stats, receipts, adapters (`audit`, `card`, `ledger`, `transcript`) | excluded from the count |',
       `| Pattern rules | **${inv.patterns}** |`,
       `| Hooks | **${inv.hookHandlers}** handlers on ${inv.hookEvents} events |`,
       `| Skills | **${inv.skills}** |`,

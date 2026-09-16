@@ -2,14 +2,13 @@
 name: plan-session
 description: "Use when writing or updating a repo plan or spec — the row contract both must follow."
 license: Apache-2.0
-compatibility: No external dependencies. Repo plans and repo specs only — not org ops, not tracker work.
+compatibility: No external dependencies. Repo plans and repo specs only.
 ---
 
 ## 1. A repo-local contract always wins — check first
 
 | Target | Use |
 |---|---|
-| Org ops — tasks, filings, deadlines, anything in the tracker | `/serio-focus:task-loop`, never this skill |
 | Any repo with its own `AGENTS.md`/`CLAUDE.md` planning section | that file — a repo-local contract always wins |
 | Repo plan or repo spec with no local contract | this skill |
 
@@ -48,20 +47,7 @@ compatibility: No external dependencies. Repo plans and repo specs only — not 
 
 - A spec table stating an external fact with no SOURCE column is malformed: delete or source it.
 
-- Every technical choice carries: picked · rejected · custom LOC · client kB · SOURCE.
-
-## 5. Where facts may come from
-
-| Claim is about | Only acceptable source |
-|---|---|
-| This repo's code, design or content | the file path, with a line range |
-| Your organisation | `config/memory.md`, never from training |
-| The outside world — law, prices, APIs, library behaviour, market data | a **primary source URL plus the date it was read** |
-| Anything you could not confirm | the literal tag `UNVERIFIED`, kept in the deliverable |
-
-- A repo document sources facts about that repo only. Committed reports are input, not evidence: re-verify external claims or tag `UNVERIFIED`.
-
-## 6. Decide — do not defer
+## 5. Decide — do not defer
 
 | Situation | What the document must contain |
 |---|---|
@@ -69,18 +55,4 @@ compatibility: No external dependencies. Repo plans and repo specs only — not 
 | Genuinely the owner's call | decide with the default that ships, plus the condition that reverses it |
 | Blocked on a fact you cannot get | the row above, plus what you tried |
 
-- Banned: open questions with no defaults · `TBD`/`later` · deferring what the brief asked to settle.
-
-## 7. Prior art before custom code
-
-- Before any row proposes a script, helper or abstraction, search for an existing tool; the row states the package or built-in with its docs URL, or why none fits, in one clause.
-
-## 8. Register — how both shapes are written
-
-| Rule | Meaning |
-|---|---|
-| Improve in place | edit the existing file — never a parallel `_v2` or `_new` |
-| No speculative abstraction | no config layer the document does not need today |
-| Scope | name which stated goal each row serves. Inferred-but-unasked work goes in an out-of-scope note |
-| Length | more than two lines of prose becomes a table |
-| Banned | first person · options surveys · thinking-process sections · closing summaries · hedge words · rhetorical questions · emoji |
+- Banned: open questions with no defaults · `TBD`/`later` · first person · options surveys · thinking-process sections · closing summaries · hedge words · rhetorical questions · emoji.
