@@ -18,7 +18,7 @@ function forgetReads(payload) {
 
 export function card() {
   return `Serio Focus — session card
-CAPS  ${MAX_PER_WAVE} subagents per wave · files over ${BIG_FILE_BYTES / 1024}KB arrive trimmed · git commit and push stay manual
+CAPS  ${MAX_PER_WAVE} subagents per wave · reads over ${BIG_FILE_BYTES / 1024}KB trimmed or held · git commit and push stay manual
 SHAPE the focus output style shapes every reply`;
 }
 
