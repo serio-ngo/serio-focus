@@ -2,7 +2,7 @@ import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, stat
 import path from 'node:path';
 
 export const COUNTERS = ['agents', 'blocked', 'rereads', 'slices', 'rewrites',
-  'bytes', 'deferred', 'trimmed', 'offload', 'read', 'scouts', 'runners', 'gated',
+  'bytes', 'deferred', 'trimmed', 'offload', 'read', 'scouts', 'runners',
   'waves', 'agentsCapped', 'redirects'];
 
 export const BYTE_COUNTERS = ['bytes', 'deferred', 'trimmed', 'offload'];
@@ -103,10 +103,6 @@ export function fold(base, add = {}) {
 
 export const savings = (state) => (COUNTERS.some((key) => state.saved[key]) ? { ...state.saved } : null);
 
-const lifetime = (state) => fold(state.lifetime, state.saved);
-
 export function bank(state) {
-  state.lifetime = lifetime(state);
   state.session = fold(state.session, state.saved);
-  return state.lifetime;
 }

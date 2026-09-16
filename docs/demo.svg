@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 864 522" width="864" height="522" role="img" aria-label="serio-focus session: Workflow · 100 agents → FAN-OUT CAP: 100 asked, 3 run. Next: wait one wave · Read src/big.js · 35 KB → READ CAP: big.js 35KB. Kept first 384 lines · Bash · `git commit -m &quot;wip&quot;` → GIT WRITE: &quot;git commit -m &quot;wip&quot;&quot; commit and push stays manual — draft the exact command and list it in the final state, do not run it · SERIO FOCUS · 102 held · ~2,816 of ~8,960 tok kept out (31%)" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 864 522" width="864" height="522" role="img" aria-label="serio-focus session: Workflow · 100 agents → FAN-OUT CAP: 100 asked, 3 run. Next: wait one wave · Read src/big.js · 35 KB → READ CAP: big.js 35KB. Kept first 384 lines · Bash · `git commit -m &quot;wip&quot;` → GIT WRITE: &quot;git commit -m &quot;wip&quot;&quot; commit and push stays manual — draft the exact command and list it in the final state, do not run it · SERIO FOCUS · ~2,816 tok kept out (31%) · 102 guard actions" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
 <style>
 text{font-size:13.5px;white-space:pre}
 .row{opacity:0}
@@ -34,6 +34,6 @@ text{font-size:13.5px;white-space:pre}
 <text x="22" y="420" fill="#24292f" font-size="12" class="row d15">   If not: check HANDOFF_GIT_WRITE=0 and rerun</text>
 <text x="22" y="444" fill="#24292f" font-size="12" font-weight="600" class="row d16">Step 2 of 5</text>
 <rect class="row d17" x="14" y="451" width="836" height="30" rx="4" fill="none" stroke="#d0d7de"/>
-<text x="22" y="468" fill="#57606a" font-size="12" font-weight="600" class="row d17">SERIO FOCUS · 102 held · ~2,816 of ~8,960 tok kept out (31%)</text>
-<g class="row d17"><rect class="cursor" x="520" y="457" width="7" height="13" fill="#0969da"/></g>
+<text x="22" y="468" fill="#57606a" font-size="12" font-weight="600" class="row d17">SERIO FOCUS · ~2,816 tok kept out (31%) · 102 guard actions</text>
+<g class="row d17"><rect class="cursor" x="512" y="457" width="7" height="13" fill="#0969da"/></g>
 </svg>

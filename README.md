@@ -21,7 +21,7 @@ Subagent floods capped · big reads trimmed · destructive commands held to the 
 [![dependencies](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fserio-ngo%2Fserio-focus%2Fmain%2Ftooling%2Fresults%2Fscores.json&query=%24.dependencies&label=dependencies&color=57606a)](package.json)
 
 <!-- handoff-demo -->
-<img src="docs/demo.svg" width="864" alt="serio-focus session: Workflow · 100 agents → FAN-OUT CAP: 100 asked, 3 run. Next: wait one wave · Read src/big.js · 35 KB → READ CAP: big.js 35KB. Kept first 384 lines · Bash · `git commit -m &quot;wip&quot;` → GIT WRITE: &quot;git commit -m &quot;wip&quot;&quot; commit and push stays manual — draft the exact command and list it in the final state, do not run it · SERIO FOCUS · 102 held · ~2,816 of ~8,960 tok kept out (31%)">
+<img src="docs/demo.svg" width="864" alt="serio-focus session: Workflow · 100 agents → FAN-OUT CAP: 100 asked, 3 run. Next: wait one wave · Read src/big.js · 35 KB → READ CAP: big.js 35KB. Kept first 384 lines · Bash · `git commit -m &quot;wip&quot;` → GIT WRITE: &quot;git commit -m &quot;wip&quot;&quot; commit and push stays manual — draft the exact command and list it in the final state, do not run it · SERIO FOCUS · ~2,816 tok kept out (31%) · 102 guard actions">
 <!-- /handoff-demo -->
 
 <sub>[Start here](#start-here) · [What it does](#what-it-does) · [Proof](#proof) · [Method](docs/BENCHMARK.md) · [Contributing](CONTRIBUTING.md)</sub>
@@ -34,9 +34,7 @@ Claude Code can launch 20 subagents in one turn. A 5-hour window goes in seconds
 
 The hook caps each wave at 3 and queues the rest.
 
-<!-- handoff-flood -->
 <img src="docs/flood.svg" width="720" alt="20 subagents requested. Without the guard 20 start at once; with it 3 start and the rest wait for the next wave.">
-<!-- /handoff-flood -->
 
 ## Start here
 

@@ -42,7 +42,7 @@ export function unwrap(segment) {
   return out;
 }
 
-export function shellWords(segment) {
+function shellWords(segment) {
   const out = [];
   let buffer = '';
   let quote = null;

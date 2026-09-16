@@ -232,10 +232,14 @@ describe('session receipt', () => {
     const file = path.join(box, 'receipt.txt');
     writeFileSync(file, 'hello');
     at('rc-a', { tool_name: 'Read', tool_input: { file_path: file } });
+    const quiet = run('rc-a', {});
+    assert.equal(quiet.stdout, '', 'an allowed read is not a saving');
+    ask({ cwd: box, session_id: 'rc-a', tool_name: 'Read', tool_input: { file_path: file } });
     const first = run('rc-a', {});
     assert.equal(first.status, ALLOWED);
-    assert.match(first.stdout, /SERIO FOCUS/);
+    assert.match(first.stdout, /SERIO FOCUS · ~\d+ tok kept out \(\d+%\) · 1 guard action"/);
     at('rc-b', { tool_name: 'Read', tool_input: { file_path: file } });
+    ask({ cwd: box, session_id: 'rc-b', tool_name: 'Read', tool_input: { file_path: file } });
     const claim = run('rc-b', { last_assistant_message: 'All done, it works now.' });
     assert.equal(claim.status, ALLOWED);
     assert.match(claim.stdout, /SERIO FOCUS/);

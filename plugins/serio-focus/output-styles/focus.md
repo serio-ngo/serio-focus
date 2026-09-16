@@ -9,7 +9,7 @@ force-for-plugin: true
 
 Action first: the first line runs (command, path, verb). No preamble.
 Done: `-` bullets, past tense, max 5, each with a file:line or run proof.
-Next: exactly one `Next: <verb + object>` with the command, `You should see:`, `If not:`.
+Next: exactly one `Next: <verb + object>` with the command and `You should see:`.
 `Step N of M` on every turn. Never Continue/Proceed/Manage.
 
 ## Format for scanning

@@ -13,14 +13,14 @@ const WORKFLOW_AGENT_CALL = /(?<![.\w$])agent\s*\(/g;
 const SPAWN_TEXT = ['prompt', 'description', 'subagent_type', 'subject', 'script', 'name', 'title'];
 const MODEL_BEARING = ['Agent', 'Task'];
 
-export function deniedSubagentRx(raw = DENY_SUBAGENT_DEFAULT) {
+function deniedSubagentRx(raw = DENY_SUBAGENT_DEFAULT) {
   const names = String(raw ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   if (!names.length) return /(?!)/;
   const esc = names.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
   return new RegExp(`\\b(?:${esc})\\b`, 'i');
 }
 
-export const spawnText = (input) => SPAWN_TEXT.map((key) => input[key]).filter((value) => typeof value === 'string').join(' ');
+const spawnText = (input) => SPAWN_TEXT.map((key) => input[key]).filter((value) => typeof value === 'string').join(' ');
 const selectedTiers = (text) => [...String(text).matchAll(MODEL_OPTION)].map((hit) => hit[1].toLowerCase());
 
 function deniedVerdict(text, hit, denied) {

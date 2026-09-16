@@ -9,7 +9,7 @@ const SAMPLE_BYTES = 64 * 1024;
 const SAMPLE_LINES = 200;
 
 export const kb = (bytes) => `${Math.round(bytes / 1024)}KB`;
-export const actorOf = (payload = {}) => String(payload.agent_type || 'main').replace(/[:|]/g, '');
+const actorOf = (payload = {}) => String(payload.agent_type || 'main').replace(/[:|]/g, '');
 
 function averageLineLength(file, size) {
   if (!size) return 0;
@@ -131,7 +131,7 @@ function unbook(payload, before) {
   for (const key of Object.keys(state.reads)) {
     if (!(key in before.reads) && !key.includes('|x:')) delete state.reads[key];
   }
-  for (const key of ['read', 'offload', 'rewrites', 'trimmed']) state.saved[key] = before.saved[key];
+  for (const key of ['read', 'offload']) state.saved[key] = before.saved[key];
   save(root, session, state);
 }
 

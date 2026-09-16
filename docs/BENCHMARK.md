@@ -10,6 +10,12 @@
 | Replay | what the guard would refuse on recorded real traffic | `npm run benchmark:replay` |
 | Track A | does the guard block what it claims to | `npm run benchmark:eval`, gated in CI |
 
+## Static figures
+
+| Figure | Source |
+|---|---|
+| `docs/flood.svg` | Measured 2026-09-10, `claude-sonnet-5`, plugin 1.9.1 `8e9d9c4`. Without the guard 20 of 20 subagents start; with it 3 start, 40 held across the wave. Runner removed at 1.12.5 — the figure is static, not regenerated. |
+
 ## Cost and limits
 
 | Limit | Detail |
