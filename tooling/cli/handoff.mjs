@@ -4,8 +4,10 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdir
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { SPAWN_TOOLS } from '../../plugins/serio-focus/scripts/guard.mjs';
+import { verdictFor } from '../../.opencode/bridge.mjs';
 import { writeFigures } from './figures.mjs';
 import { PLUGIN, REPO, REPLY_CLOSE, REPLY_OPEN, manifest, markdown, opencodeAgents, pluginVersion, policyFor, readJson, replyBody, walk, writeBlock } from './generate.mjs';
+import { bridgeFile, readOpencodeConfig, userConfigFile, withBridge } from './opencode.mjs';
 
 const CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const BANNED = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
@@ -169,6 +171,21 @@ function register(version) {
   return entry;
 }
 
+function installOpencode() {
+  const file = userConfigFile();
+  let before = {};
+  try {
+    before = readOpencodeConfig(file);
+  } catch (error) {
+    return row('opencode', `${file} untouched — ${error.message}`);
+  }
+  const base = existsSync(file) ? before : { $schema: 'https://opencode.ai/config.json' };
+  const { config, added } = withBridge(base, bridgeFile());
+  if (!added) return row('opencode', `${file} already lists the bridge`);
+  writeJson(file, config);
+  row('opencode', `${file} plugin+=${bridgeFile()}`);
+}
+
 function installTargets() {
   const declared = pluginVersion();
   const existing = existsSync(cacheRoot())
@@ -201,6 +218,7 @@ function install() {
   }
   row('plugin', `${PLUGIN_NAME} ${declared} (${wanted.length} files, ${pruned} file(s) and ${stale.length} old version(s) pruned)`);
   row('registered', `${entry.installPath}`);
+  installOpencode();
   return { declared, targets };
 }
 
@@ -298,6 +316,27 @@ function doctor() {
     && fire(pre('Agent', { model: 'sonnet', prompt: 'review the diff' })).status === 0,
     'opus held, unnamed held, sonnet passes');
   check('the installed card prints', spawnSync(process.execPath, [path.join(cache, 'scripts', 'card.mjs')], { encoding: 'utf8' }).stdout.trim().length > 0);
+
+  const opFile = userConfigFile();
+  const opWired = (() => {
+    try { return (readOpencodeConfig(opFile).plugin ?? []).includes(bridgeFile()); }
+    catch { return false; }
+  })();
+  check('opencode loads this checkout as a plugin', opWired, opFile);
+  const prior = process.env.HANDOFF_OS_DIR;
+  process.env.HANDOFF_OS_DIR = probe;
+  let opShut = false;
+  let opOpen = true;
+  try {
+    const held = (command) => verdictFor('bash', { command }, session(), probe) != null;
+    opShut = ['git commit -m x', 'git push origin main'].every(held);
+    opOpen = ['git status', 'git log --oneline'].every((command) => !held(command));
+  } finally {
+    if (prior === undefined) delete process.env.HANDOFF_OS_DIR;
+    else process.env.HANDOFF_OS_DIR = prior;
+  }
+  check('the bridge blocks git commit and push in opencode calls', opShut, 'bash tool payloads');
+  check('the bridge allows git reads in opencode calls', opOpen, 'bash tool payloads');
 
   // Every check above spawns the scripts here. Only the ledger proves Claude Code spawns them.
   const month = new Date().toISOString().slice(0, 7);

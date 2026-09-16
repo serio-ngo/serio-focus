@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verdictFor } from '../../.opencode/bridge.mjs';
 
 const ALLOWED = 0;
 const ASK = 'deny';
@@ -245,4 +246,38 @@ describe('session receipt', () => {
     assert.match(claim.stdout, /SERIO FOCUS/);
     assert.doesNotMatch(claim.stdout, /VERIFY GATE|stood down|done claimed|nothing run/i);
   });
+});
+
+const bridgeBox = sandbox('bridge-');
+const bridgeVerdict = (tool, args, env = {}) => {
+  const priorOs = process.env.HANDOFF_OS_DIR;
+  const priorGit = process.env.HANDOFF_GIT_WRITE;
+  process.env.HANDOFF_OS_DIR = bridgeBox;
+  if (env.HANDOFF_GIT_WRITE === undefined) delete process.env.HANDOFF_GIT_WRITE;
+  else process.env.HANDOFF_GIT_WRITE = env.HANDOFF_GIT_WRITE;
+  try {
+    return verdictFor(tool, args, 'bridge-probe', bridgeBox);
+  } finally {
+    if (priorOs === undefined) delete process.env.HANDOFF_OS_DIR;
+    else process.env.HANDOFF_OS_DIR = priorOs;
+    if (priorGit === undefined) delete process.env.HANDOFF_GIT_WRITE;
+    else process.env.HANDOFF_GIT_WRITE = priorGit;
+  }
+};
+
+it('the opencode bridge blocks git commit and push', () => {
+  for (const command of ['git commit -m x', 'git push origin main']) {
+    const reason = bridgeVerdict('bash', { command });
+    assert.ok(typeof reason === 'string' && reason.length > 0, command);
+  }
+});
+
+it('the opencode bridge allows git reads', () => {
+  for (const command of ['git status', 'git log --oneline']) {
+    assert.equal(bridgeVerdict('bash', { command }), null, command);
+  }
+});
+
+it('the opencode bridge reopens commit while HANDOFF_GIT_WRITE is 1', () => {
+  assert.equal(bridgeVerdict('bash', { command: 'git commit -m x' }, { HANDOFF_GIT_WRITE: '1' }), null);
 });
