@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.12.7 | 2026-09-16 | docs match the 1.12.6 guard: replay says Read and Bash only, SECURITY names Write/Edit/Grep/Glob as uncovered, README splits the 24KB trim from the shell hold, receipt described as conditional, flood figure 17 held not 40 |
 | 1.12.6 | 2026-09-16 | slim pass: cut task-loop, query budget, shell rewrite, AB and flood runners, lifetime ledger, frozen results; receipt reports only what the guard kept out and stays silent otherwise; audit gains session and rule; keywords drop the solo-founder framing |
 | 1.12.4 | 2026-09-15 | Blocked-only audit log, Wilson eval intervals, full-only guard |
 | 1.12.3 | 2026-09-15 | final-state flow, card memory trim, bridge to opencode, nonprofit hero |

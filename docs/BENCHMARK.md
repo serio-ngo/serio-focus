@@ -14,7 +14,7 @@
 
 | Figure | Source |
 |---|---|
-| `docs/flood.svg` | Measured 2026-09-10, `claude-sonnet-5`, plugin 1.9.1 `8e9d9c4`. Without the guard 20 of 20 subagents start; with it 3 start, 40 held across the wave. Runner removed at 1.12.6 — the figure is static, not regenerated. |
+| `docs/flood.svg` | Measured 2026-09-10, `claude-sonnet-5`, plugin 1.9.1 `8e9d9c4`. Without the guard 20 of 20 subagents start; with it 3 start, 17 held for the next wave. Runner removed at 1.12.6 — the figure is static, not regenerated. |
 
 ## Cost and limits
 
@@ -72,7 +72,7 @@
 npm run benchmark:replay
 ```
 
-- Input: this project's transcripts under `~/.claude/projects/<slug>/`; every `Read`, `Grep`, `Glob`, `Bash` call, in order, one sandbox ledger per session.
+- Input: this project's transcripts under `~/.claude/projects/<slug>/`; every `Read` and `Bash` call, in order, one sandbox ledger per session.
 
 | Property | Value |
 |---|---|
@@ -85,44 +85,45 @@ npm run benchmark:replay
 - Answers what the guard catches on this stream.
 
 <!-- handoff-replay -->
-| The maintainer's 1 sessions — run it on yours | Count | Share of judged |
+| The maintainer's 3 sessions — run it on yours | Count | Share of judged |
 |---|---|---|
-| Tool calls recorded | 101 | — |
-| Judged by the guard | 80 | 100% |
-| **Refused** | **3** | **4%** |
-| — git and delete lock | 3 | 4% |
+| Tool calls recorded | 259 | — |
+| Judged by the guard | 234 | 100% |
+| **Refused** | **6** | **3%** |
+| — git and delete lock | 5 | 2% |
+| — re-read dedup | 1 | 0% |
 
-Every `Read`, `Grep`, `Glob` and `Bash` call from this machine's Claude Code transcripts, re-fed to the guard in order, one sandbox per session. Open-loop: a refusal cannot change what the agent did next, so this is what the guard catches on that exact stream, not a counterfactual. Reproduce with `npm run benchmark:replay`.
+Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed to the guard in order, one sandbox per session. Open-loop: a refusal cannot change what the agent did next, so this is what the guard catches on that exact stream, not a counterfactual. Reproduce with `npm run benchmark:replay`.
 <!-- /handoff-replay -->
 
 ## Live ledger — what the guard did on this machine
 
 <!-- handoff-stats -->
-| Measured over 32 ledger lines | Tokens | Share |
+| Measured over 33 ledger lines | Tokens | Share |
 |---|---|---|
-| Read volume the session asked for | ~397.8k | 100% |
+| Read volume the session asked for | ~403.9k | 100% |
 | **Kept out** | **~67.8k** | **17%** |
 | — re-read dedup | ~4,744 | 1% |
 | — whole-file cap | ~0 | 0% |
 | — moved to a subagent | ~0 | 0% |
-| Admitted to the main thread | ~330.0k | 83% |
+| Admitted to the main thread | ~336.1k | 83% |
 
 | Context tax — the plugin's own footprint | Tokens |
 |---|---|
 | Session card, always in context | ~42 |
 | Skill descriptions, always in context | ~42 |
 | Agent descriptions, always in context | ~43 |
-| **Total footprint** | **~127** |
+| **Total footprint** | **~128** |
 | Per turn, on top of that | **0** (since 1.6.0) |
 | **Net kept out minus footprint** | **~67.7k** |
 
 | Measured billing | Tokens |
 |---|---|
-| Fresh — input + output + cache write | 8,654,431 |
-| Cache-read | 424,298,015 |
-| **Context re-send ratio** | **49.0×** — cache mechanism, not the guard |
+| Fresh — input + output + cache write | 9,088,114 |
+| Cache-read | 429,595,053 |
+| **Context re-send ratio** | **47.3×** — cache mechanism, not the guard |
 
-Guard actions: 23. Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
+Guard actions: 24. Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
 <!-- /handoff-stats -->
 
 ## Track A

@@ -22,18 +22,19 @@
 
 ## Known gaps
 
-<!-- measured 2026-09-14 against `plugins/serio-focus/scripts/guard.mjs`; each row is reproducible with the command below -->
+<!-- measured 2026-09-16 against `plugins/serio-focus/scripts/guard.mjs`; each row is reproducible with the command below -->
 
 | Gap | Probe | Verdict |
 |---|---|---|
 | No connector coverage. `judge()` has no `mcp__` branch, so every MCP call passes. | `mcp__gmail__send_message` | Allowed. |
+| No edit, write or search coverage since 1.12.6. The `PreToolUse` matcher admits `Read`, `Bash`, `PowerShell` and spawn tools only. | `Write`, `Edit`, `Grep`, `Glob` | Allowed. |
 | A binary name held in a shell variable is not resolved. | `X=rm; $X -rf docs` | Allowed. |
 | A payload decoded inside a pipeline is not followed. | `echo … \| base64 -d \| bash` | Allowed. |
 | An unquoted no-op flag used as a value suppresses the whole segment. | `curl -X POST -d --help` | Allowed. |
 
 | Gap | Rule behind it |
 |---|---|
-| Connector calls | `guard.mjs` judges Read, Grep, Glob, spawn, shell and write tools only. Connector egress is left to Claude Code `permissions.deny` rules; `tooling/settings/policy.json` ships none for `mcp__`. |
+| Connector calls | `guard.mjs` judges `Read`, shell and spawn tools only. Connector egress is left to Claude Code `permissions.deny` rules; `tooling/settings/policy.json` ships none for `mcp__`. |
 | No-op flag | cost of `NO_OP_FLAG` in `plugins/serio-focus/scripts/lib/shell-danger.mjs` (`rm --help`, `npm publish --dry-run` stay unblocked); a quoted flag is still inspected |
 
 | Check | Command |

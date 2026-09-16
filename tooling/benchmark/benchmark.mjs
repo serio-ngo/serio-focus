@@ -434,14 +434,14 @@ if (flags.replay) {
   row('bytes admitted', `~${compact(tok(r.admitted))}`, 'tok');
   if (flags.write) {
     console.log(`  ${writeBlock(path.join(REPO, 'docs', 'BENCHMARK.md'), REPLAY_OPEN, REPLAY_CLOSE, [
-      `| The maintainer's ${num(r.sessions)} sessions${scope} — run it on yours | Count | Share of judged |`,
+      `| The maintainer's ${num(r.sessions)} session${r.sessions === 1 ? '' : 's'}${scope} — run it on yours | Count | Share of judged |`,
       '|---|---|---|',
       `| Tool calls recorded | ${num(r.calls)} | — |`,
       `| Judged by the guard | ${num(r.judged)} | 100% |`,
       `| **Refused** | **${num(r.blocked)}** | **${pct(r.blocked)}%** |`,
       ...rules.map(([rule, count]) => `| — ${rule} | ${num(count)} | ${pct(count)}% |`),
       '',
-      'Every `Read`, `Grep`, `Glob` and `Bash` call from this machine\'s Claude Code transcripts, re-fed '
+      'Every `Read` and `Bash` call from this machine\'s Claude Code transcripts, re-fed '
       + 'to the guard in order, one sandbox per session. Open-loop: a refusal cannot change what the '
       + 'agent did next, so this is what the guard catches on that exact stream, not a counterfactual. '
       + 'Reproduce with `npm run benchmark:replay`.',
