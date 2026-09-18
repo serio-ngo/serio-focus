@@ -121,6 +121,14 @@ function retire(settings) {
   return { ...settings, permissions: { ...settings.permissions, deny } };
 }
 
+function ensureAuditIgnored(root) {
+  const file = path.join(root, '.gitignore');
+  const current = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  if (/^\s*audit\/\*?\s*$/m.test(current)) return;
+  const head = current.replace(/\n*$/, '');
+  writeFileSync(file, `${head}${head ? '\n\n' : ''}# serio-focus session ledger\naudit/\n`, 'utf8');
+}
+
 function sync(args) {
   const scope = args.scope || 'user';
   if (!['user', 'project'].includes(scope)) fail(`unknown scope "${scope}"`);
@@ -137,6 +145,10 @@ function sync(args) {
   if (Object.keys(after.env).length === 0) delete after.env;
   refuseMeteredAuth(after);
   if (!args.dryRun) writeJson(target, after);
+  if (scope === 'project' && !args.dryRun) {
+    const dir = path.dirname(path.resolve(target));
+    if (dir.endsWith(`${path.sep}.claude`)) ensureAuditIgnored(path.dirname(dir));
+  }
   const counts = RULE_LISTS
     .map((key) => `${key}+=${(after.permissions?.[key] ?? []).filter((r) => !(before.permissions?.[key] ?? []).includes(r)).length}`);
   row(`settings (${scope})`, `${target} ${counts.join(' ')}${args.dryRun ? ' DRY RUN' : ''}`);
