@@ -1,6 +1,6 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.14.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.15.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Skills
 
@@ -20,7 +20,7 @@
 
 | Event | Matcher | Script |
 |---|---|---|
-| `PreToolUse` | `^(Read\|Bash\|PowerShell\|Task\|Agent\|Workflow\|WebSearch\|WebFetch)` | `scripts/guard.mjs` |
+| `PreToolUse` | `^(Read\|Bash\|PowerShell\|Task\|Agent\|Workflow\|WebSearch\|WebFetch)$` | `scripts/guard.mjs` |
 | `SessionStart` | `startup\|resume\|clear\|compact\|fork` | `scripts/card.mjs` |
 | `StopFailure` | `*` | `scripts/rescue.mjs` |
 | `Stop` | `*` | `scripts/verify.mjs` |
@@ -29,9 +29,9 @@
 
 | What ships | Count |
 |---|---|
-| Guard logic, agent-affecting only | **756** lines across 10 flow files |
+| Guard logic, agent-affecting only | **784** lines across 10 flow files |
 | Stats, receipts, adapters (`audit`, `card`, `ledger`, `transcript`) | excluded from the count |
-| Pattern rules | **34** |
+| Pattern rules | **36** |
 | Hooks | **4** handlers on 4 events |
 | Skills | **2** |
 | Subagents | **2** |

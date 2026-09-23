@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { load } from '../../plugins/serio-focus/scripts/lib/ledger.mjs';
-import { sessionLine } from '../../plugins/serio-focus/scripts/lib/stats.mjs';
-import { BIG_FILE_BYTES, MAX_PER_WAVE } from '../../plugins/serio-focus/scripts/lib/limits.mjs';
+import { compact, sessionLine } from '../../plugins/serio-focus/scripts/lib/stats.mjs';
+import { BIG_FILE_BYTES, MAX_PER_WAVE, stallHold } from '../../plugins/serio-focus/scripts/lib/limits.mjs';
 import { PLUGIN, REPO, readJson, writeBlock } from './generate.mjs';
 
 const INK = '#24292f';
@@ -38,7 +38,7 @@ function tiles(scores = readJson('tooling', 'results', 'scores.json')) {
       [String(MAX_PER_WAVE), 'subagents per wave'],
       [`${Math.round(BIG_FILE_BYTES / 1024)} KB`, 'whole-file read cap'],
       ['commit · push', 'git writes held to final state'],
-      ['one line', 'session receipt'],
+      [`${compact(stallHold())} tok`, 'dispatch held, no repo change'],
     ],
     wins: [
       [`${scores.keptPct}%`, 'read volume kept out'],

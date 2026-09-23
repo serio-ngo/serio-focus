@@ -1,5 +1,3 @@
-.claude/.verified-*
-.claude/.verify-gate-count-*
 .claude/.session-*
 audit/*
 .claude/.wave-*

@@ -2,7 +2,7 @@ import { BYTE_COUNTERS, fold } from './ledger.mjs';
 
 const tok = (bytes) => Math.round(Number(bytes || 0) / 4);
 const num = (value) => Number(value || 0).toLocaleString('en-US');
-const compact = (value) => (value >= 1e6 ? `${(value / 1e6).toFixed(1)}M`
+export const compact = (value) => (value >= 1e6 ? `${(value / 1e6).toFixed(1)}M`
   : value >= 10000 ? `${(value / 1000).toFixed(1)}k` : num(value));
 
 export const kept = (t) => BYTE_COUNTERS.reduce((sum, key) => sum + Number(t[key] || 0), 0);
@@ -13,14 +13,12 @@ const HELD = ['rewrites', 'rereads', 'slices', 'agentsCapped', 'redirects'];
 export const heldCount = (s) => HELD.reduce((sum, key) => sum + Number(s[key] || 0), 0)
   + Math.max(0, Number(s.blocked || 0) - Number(s.redirects || 0) - Number(s.waves || 0));
 
-export function sessionLine(state, spend = null) {
+export function sessionLine(state, stalled = 0) {
   const s = fold(state.session, state.saved);
-  if (!kept(s)) return '';
   const held = heldCount(s);
-  const parts = spend ? [`spent ${compact(spend.fresh)} new + ${compact(spend.cacheRead)} cached tok`,
-    `agents ${num(spend.agents)}, top tier ${num(spend.topAgents)}`, `repo edits ${num(spend.edits)}`] : [];
-  parts.push(`~${compact(tok(kept(s)))} tok kept out (${keptPct(s)}%)`);
+  const parts = [];
+  if (kept(s)) parts.push(`${compact(tok(kept(s)))} tok kept out (${keptPct(s)}%)`);
   if (held) parts.push(`${num(held)} guard action${held === 1 ? '' : 's'}`);
-  if (s.agents && !spend) parts.push(`${num(s.agents)} dispatched`);
-  return `SERIO FOCUS · ${parts.join(' · ')}`;
+  if (stalled) parts.push(`${compact(stalled)} tok since the last repo change`);
+  return parts.length ? `SERIO FOCUS · ${parts.join(' · ')}` : '';
 }

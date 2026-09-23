@@ -13,13 +13,14 @@ const EMPTY = () => ({ reads: {}, saved: zero() });
 export const rootOf = (payload = {}) => process.env.HANDOFF_OS_DIR
   || process.env.CLAUDE_PROJECT_DIR || payload.cwd || process.cwd();
 
+export const projectOf = (payload = {}) => process.env.CLAUDE_PROJECT_DIR || payload.cwd || process.cwd();
+
 export const sessionOf = (payload = {}) => String(payload.session_id || 'unknown').replace(/[^A-Za-z0-9_-]/g, '');
 
 const ledgerPath = (root, session) => path.join(root, '.claude', `.session-${session}.json`);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const STALE = [[/\.lock$/, 60 * 1000], [/^\.wave-/, DAY_MS],
-  [/^\.verif(?:ied|y-gate-count)-/, DAY_MS], [/^\.session-/, 30 * DAY_MS]];
+const STALE = [[/\.lock$/, 60 * 1000], [/^\.wave-/, DAY_MS], [/^\.session-/, 30 * DAY_MS]];
 
 const LOCK_TRIES = 60;
 const LOCK_NAP_MS = 8;

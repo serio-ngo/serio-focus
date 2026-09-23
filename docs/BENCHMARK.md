@@ -99,31 +99,31 @@ Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed
 ## Live ledger — what the guard did on this machine
 
 <!-- handoff-stats -->
-| Measured over 165 ledger lines | Tokens | Share |
+| Measured over 176 ledger lines | Tokens | Share |
 |---|---|---|
-| Read volume the session asked for | ~3.8M | 100% |
-| **Kept out** | **~2.3M** | **59%** |
-| — re-read dedup | ~45.6k | 1% |
-| — whole-file cap | ~59.1k | 2% |
-| — moved to a subagent | ~679.1k | 18% |
-| Admitted to the main thread | ~1.6M | 41% |
+| Read volume the session asked for | ~4.1M | 100% |
+| **Kept out** | **~2.4M** | **59%** |
+| — re-read dedup | ~56.5k | 1% |
+| — whole-file cap | ~72.3k | 2% |
+| — moved to a subagent | ~766.8k | 19% |
+| Admitted to the main thread | ~1.7M | 41% |
 
 | Context tax — the plugin's own footprint | Tokens |
 |---|---|
-| Session card, always in context | ~42 |
+| Session card, always in context | ~59 |
 | Skill descriptions, always in context | ~42 |
 | Agent descriptions, always in context | ~43 |
-| **Total footprint** | **~128** |
+| **Total footprint** | **~144** |
 | Per turn, on top of that | **0** (since 1.6.0) |
-| **Net kept out minus footprint** | **~2.3M** |
+| **Net kept out minus footprint** | **~2.4M** |
 
 | Measured billing | Tokens |
 |---|---|
-| Fresh — input + output + cache write | 107,677,674 |
-| Cache-read | 5,309,366,109 |
-| **Context re-send ratio** | **49.3×** — cache mechanism, not the guard |
+| Fresh — input + output + cache write | 112,094,128 |
+| Cache-read | 5,493,921,750 |
+| **Context re-send ratio** | **49.0×** — cache mechanism, not the guard |
 
-Guard actions: 145 (used 14 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
+Guard actions: 165 (used 15 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
 <!-- /handoff-stats -->
 
 ## Track A
@@ -161,14 +161,14 @@ npm run benchmark:compare
 | Guard | Caught | Wrongly blocked | F1 |
 |---|---|---|---|
 | no guard, permission prompts only | 0% | 0% | 0.00 |
-| Claude Code permissions.deny globs | 12% | 6% | 0.20 |
-| a pattern-list PreToolUse hook | 24% | 11% | 0.35 |
-| block every tool call | 100% | 100% | 0.65 |
+| Claude Code permissions.deny globs | 12% | 5% | 0.20 |
+| a pattern-list PreToolUse hook | 24% | 10% | 0.35 |
+| block every tool call | 100% | 100% | 0.63 |
 | **serio-focus** | 100% | 0% | 1.00 |
 
-35 cases, 2026-09-23; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
+37 cases, 2026-09-23; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
 
-25 of 35 scored cases are `spec` (rule-derived), 3 `probe`, 7 `regression`; recall here is a regression check, not a detection rate.
+26 of 37 scored cases are `spec` (rule-derived), 3 `probe`, 8 `regression`; recall here is a regression check, not a detection rate.
 <!-- /guard-scores -->
 
 - Mechanism baselines from published rule shapes, not vendor code; no product named.
@@ -179,20 +179,20 @@ npm run benchmark:compare
 - Multiple roots aggregate: `node tooling/benchmark/benchmark.mjs <repo…> [--write]`; combined totals print, outputs land in the first root.
 
 <!-- eval-results -->
-Run 2026-09-23 · 35 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
+Run 2026-09-23 · 37 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
 
 | Metric | Value |
 |---|---|
 | Recall | 17/17 (100%) |
 | Precision | 17/17 (100%) |
-| False-positive rate | 0/18 (0%) |
+| False-positive rate | 0/20 (0%) |
 | F1 | 1.00 |
 | Recall 95% CI (Wilson) | 81–100% — n=17 |
-| FP-rate 95% CI (Wilson) | 0–18% — n=18 |
+| FP-rate 95% CI (Wilson) | 0–17% — n=20 |
 | Recall by origin | spec 14/14 (100%) · probe 1/1 (100%) · regression 2/2 (100%) |
 | Known bypasses caught | n/a |
 
-Confusion: TP 17 · FN 0 · FP 0 · TN 18. Bypasses scored apart.
+Confusion: TP 17 · FN 0 · FP 0 · TN 20. Bypasses scored apart.
 
-25 of 35 scored cases are `spec` (rule-derived), 3 `probe`, 7 `regression`; recall here is a regression check, not a detection rate.
+26 of 37 scored cases are `spec` (rule-derived), 3 `probe`, 8 `regression`; recall here is a regression check, not a detection rate.
 <!-- /eval-results -->

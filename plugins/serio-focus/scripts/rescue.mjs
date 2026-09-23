@@ -2,10 +2,9 @@
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sessionOf } from './lib/ledger.mjs';
+import { projectOf, sessionOf } from './lib/ledger.mjs';
 import { sessionSpend } from './lib/transcript.mjs';
 
-export const projectOf = (payload = {}) => process.env.CLAUDE_PROJECT_DIR || payload.cwd || process.cwd();
 const rescueDir = (project) => path.join(project, '.claude', 'rescue');
 
 export function rescued(project) {
