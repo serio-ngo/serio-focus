@@ -5,7 +5,6 @@ const SLICE_CMD = /^(?:head|tail)$/i;
 const SED_QUIET = /^(?:-[a-z]*n[a-z]*|--quiet|--silent)$/i;
 const SED_RANGE = /^(\d+)(?:,(\d+|\$))?p$/;
 
-// Reads we cannot size: the file is chosen at runtime, so book nothing and say so.
 const INTERPRETER_READ = /^(?:python[\d.]*|node|deno|bun|ruby|perl|php)\b[^\n]*\s--?(?:c|e|eval)\b[\s\S]*(?:\bopen\s*\(|readFile|read_text|readlines|File\.read|IO\.read|file_get_contents|\bslurp\b)/i;
 const GIT_SHOW_FILE = /^git\b[^\n]*\b(?:show\s+\S*:\S+|cat-file\s+-p\b)/i;
 

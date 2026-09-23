@@ -8,13 +8,18 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "^(Read|Bash|PowerShell|Task|Agent|Workflow)",
-        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs\"", "timeout": 10, "statusMessage": "Fan-out cap, read budget, git lock" }]
+        "matcher": "^(Read|Bash|PowerShell|Task|Agent|Workflow|WebSearch|WebFetch)",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs\"", "timeout": 10, "statusMessage": "Fan-out cap, read and web budget, git lock" }]
       }
     ],
     "Stop": [
       {
         "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs\"", "timeout": 15, "statusMessage": "Session receipt" }]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/rescue.mjs\"", "timeout": 30 }]
       }
     ]
   }

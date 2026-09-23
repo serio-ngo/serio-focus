@@ -13,6 +13,7 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 | **ROUTINE** | scheduled jobs, monitors, unattended runs | cheap by default. Expensive only if the task line says `QUALITY: <writing\|creative\|legal\|security>` |
 
 - No flag means cheap.
+- The main session is the PO: it sizes each task, picks the actor, and owns the context. Subagents never re-plan.
 
 ## 2. Actor table
 
@@ -24,6 +25,7 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 | Review an implementation, plan or root-cause claim · security, money, personal data, legal, irreversible | subagent | `sonnet` | `high` |
 | Prose you publish — grant narrative, board report | subagent | `opus` | `high` |
 | Architecture, sequencing, deciding what ships | **main session** | — | — |
+| Any Workflow `agent()` call | per the rows above | `model` in every call — the hook blocks a call without one | `low` or `medium` |
 
 - Never delegate the decision: subagents propose, the main session decides.
 - Deterministic tasks never get a model: a script answer costs less and is more accurate.
@@ -39,6 +41,7 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 | Agent Teams vs a standard session | **~7×** tokens |
 | Token usage alone explains, of performance variance | **80%** |
 | Prompt cache read vs input price | **~10%**, cache write **+25%** |
+| Subagent or workflow agent with no `model` | runs on the **session tier** |
 
 - Fan-out choice outweighs every model and effort choice combined.
 - Pays: independent, parallel, read-heavy sweeps. Never: shared mid-flight state (subagents cannot talk while running; dependent chains re-derive context per hop).
@@ -57,7 +60,9 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 | Cap | Value |
 |---|---|
 | Agents per wave | **3** — the fourth is blocked by the hook |
-| Web calls | **10** unless the owner raises it |
+| Web calls | **10** per subagent — the hook holds the 11th (`HANDOFF_WEB_CAP`) |
+| Estimate | one `EST:` line before dispatch — agents × tool calls × expected return lines |
+| Deliverable path | a repo path, never a TEMP scratchpad — a limit hit loses TEMP |
 | Tool calls | **15**, or **25** for a code fix with tests |
 | Output | a stated **line count**, tables only, no preamble, no reasoning narration |
 | Shape | the exact section headings you want back |
@@ -65,5 +70,6 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 
 - Waves are sequential: launch → read → decide if another wave earns its cost. Scopes are disjoint: name each agent's sources and what the others own.
 - Verifier only when the recommendation changes if the claim is wrong.
+- Context hygiene: read a subagent's file by slice, never paste its full report into the main thread; a return over its line count is a failed brief, not new context.
 - Every block lands in the audit ledger; denied models (`HANDOFF_DENY_SUBAGENT_MODELS`, default `opus,fable`) never review, review is sonnet.
 - Levers, in order: delegate reading, keep deciding · demand a line count back · fewer sub-questions · slices (`sed -n`, `grep -n`), never whole files · delete skills that never fire.

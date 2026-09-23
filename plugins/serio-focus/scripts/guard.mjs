@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { Blocked } from './lib/blocked.mjs';
 import { append, entry } from './audit.mjs';
 import { bump } from './lib/ledger.mjs';
-import { agentsRequested, bookRedirect, costBudget, dispatchBudget } from './lib/dispatch.mjs';
+import { agentsRequested, bookRedirect, costBudget, dispatchBudget, withScript } from './lib/dispatch.mjs';
 import { fanOutCap } from './lib/fan-out.mjs';
 import { judgeShell } from './lib/shell-danger.mjs';
-import { kb, readBudget, shellReadBudget } from './lib/read-budget.mjs';
+import { kb, readBudget, shellReadBudget, webBudget } from './lib/read-budget.mjs';
 
 export const SPAWN_TOOLS = ['Agent', 'Task', 'TaskCreate', 'Workflow'];
 export { Blocked };
@@ -29,7 +29,8 @@ function judgeRead(payload, input) {
   } : null;
 }
 
-function judgeSpawn(payload, input, tool) {
+function judgeSpawn(payload, raw, tool) {
+  const input = withScript(raw, tool, payload.cwd);
   const verdict = dispatchBudget(input, payload.cwd, tool) || costBudget(input, tool);
   if (verdict) {
     if (verdict.tier) bookRedirect(payload, verdict.tier);
@@ -65,6 +66,7 @@ export function judge(raw = {}) {
   if (tool === 'Read') return judgeRead(payload, input);
   if (SPAWN_TOOLS.includes(tool)) return judgeSpawn(payload, input, tool);
   if (tool === 'Bash' || tool === 'PowerShell') return judgeShellCall(payload, input);
+  if (tool === 'WebSearch' || tool === 'WebFetch') return webBudget(payload, tool);
   return null;
 }
 
@@ -100,7 +102,6 @@ function main() {
   try {
     payload = JSON.parse(raw);
   } catch {
-    // An unparseable payload hides its own tool name; refuse the ones that can act.
     const spawnOrShell = new RegExp(`"tool_name"\\s*:\\s*"(?:Bash|PowerShell|${SPAWN_TOOLS.join('|')})"`);
     if (spawnOrShell.test(raw)) {
       current = {};

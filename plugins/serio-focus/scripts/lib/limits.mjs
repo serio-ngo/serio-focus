@@ -3,6 +3,7 @@ export const BASH_OUTPUT_CAP = 30000;
 export const MAX_PER_WAVE = 3;
 const WAVE_MS = 60 * 1000;
 export const DENY_SUBAGENT_DEFAULT = 'opus,fable';
+export const WEB_CALLS = 10;
 
 const positive = (raw, fallback) => {
   const n = Math.floor(Number(raw));
@@ -11,5 +12,5 @@ const positive = (raw, fallback) => {
 
 export const waveCap = (raw = process.env.HANDOFF_MAX_PER_WAVE) => positive(raw, MAX_PER_WAVE);
 export const waveWindow = (raw = process.env.HANDOFF_WAVE_MS) => positive(raw, WAVE_MS);
-export const delegateOn = (raw = process.env.HANDOFF_DELEGATE) => String(raw ?? '1').trim() !== '0';
+export const webCap = (raw = process.env.HANDOFF_WEB_CAP) => positive(raw, WEB_CALLS);export const delegateOn = (raw = process.env.HANDOFF_DELEGATE) => String(raw ?? '1').trim() !== '0';
 export const gitWriteAllowed = () => process.env.HANDOFF_GIT_WRITE === '1';

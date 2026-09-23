@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { append } from './audit.mjs';
 import { COUNTERS, bank, load, rootOf, save, savings, sessionOf } from './lib/ledger.mjs';
 import { sessionLine } from './lib/stats.mjs';
-import { usage } from './lib/transcript.mjs';
+import { sessionSpend, usage } from './lib/transcript.mjs';
 
 export function report(payload) {
   const root = rootOf(payload);
@@ -29,10 +29,9 @@ export function report(payload) {
   if (changed) state.printed = stamp;
   if (total || changed) save(root, session, state);
   if (!changed) return null;
-  return sessionLine(state) || null;
+  return sessionLine(state, sessionSpend(payload.transcript_path, process.env.CLAUDE_PROJECT_DIR || payload.cwd || root)) || null;
 }
 
-// One line at Stop, never a stack.
 function announce(stats) {
   if (stats) {
     process.stdout.write(JSON.stringify({ systemMessage: stats, hookSpecificOutput: { hookEventName: 'Stop' } }));
