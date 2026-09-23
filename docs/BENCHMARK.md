@@ -99,7 +99,7 @@ Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed
 ## Live ledger — what the guard did on this machine
 
 <!-- handoff-stats -->
-| Measured over 164 ledger lines | Tokens | Share |
+| Measured over 165 ledger lines | Tokens | Share |
 |---|---|---|
 | Read volume the session asked for | ~3.8M | 100% |
 | **Kept out** | **~2.3M** | **59%** |
@@ -119,9 +119,9 @@ Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed
 
 | Measured billing | Tokens |
 |---|---|
-| Fresh — input + output + cache write | 106,133,122 |
-| Cache-read | 5,237,942,181 |
-| **Context re-send ratio** | **49.4×** — cache mechanism, not the guard |
+| Fresh — input + output + cache write | 107,677,674 |
+| Cache-read | 5,309,366,109 |
+| **Context re-send ratio** | **49.3×** — cache mechanism, not the guard |
 
 Guard actions: 145 (used 14 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
 <!-- /handoff-stats -->

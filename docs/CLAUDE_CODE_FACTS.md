@@ -7,7 +7,7 @@
 ## Hooks
 
 <details open>
-<summary>Hook facts · 30 rows</summary>
+<summary>Hook facts · 31 rows</summary>
 
 | Fact | Value |
 |---|---|
@@ -25,6 +25,7 @@
 | Stop / SubagentStop | `last_assistant_message`, **may be absent** — fall back to transcript JSONL; SubagentStop adds `agent_transcript_path` |
 | StopFailure | turn ended on an API error; matcher on `error`: `rate_limit` `billing_error` `overloaded` `server_error` `max_output_tokens` `unknown` …; stdin adds `error` `error_details` `last_assistant_message`; cannot block, all output ignored |
 | PreCompact / PostCompact | matcher `manual` or `auto`; PreCompact can block; stdout never reaches context |
+| Project instructions | `AGENTS.md` read natively from v2.1.277; any `CLAUDE.md` in the same tree wins and `AGENTS.md` is ignored |
 | Transcript JSONL | one row per content block; rows of one reply share `message.id` and repeat `usage` — count once per id (observed 2026-09-23) |
 | Never use | `tool_response`, `stop_hook_active` |
 | Exit `2` blocks | PreToolUse, UserPromptSubmit, Stop, SubagentStop; no retry cap documented, so a block reason names a remedy |

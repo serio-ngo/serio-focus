@@ -63,3 +63,20 @@ jobs:
         with:
           args: --no-progress --accept 200,206,429 "**/*.md"
           fail: true
+
+  release:
+    name: tag and release
+    if: github.event_name == 'push'
+    needs: [suite, eval, upkeep, workflow, docs]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./plugins/serio-focus/.claude-plugin/plugin.json').version")"
+          if gh release view "v$version" > /dev/null 2>&1; then exit 0; fi
+          grep -m1 "^| $version |" CHANGELOG.md > notes.md
+          gh release create "v$version" --target "$GITHUB_SHA" --title "v$version" --notes-file notes.md
