@@ -41,18 +41,31 @@ refusal, into a permanent check.
 | Rule | Value |
 |---|---|
 | Applies | every repository the plugin runs in |
-| Local rules | that codebase's own `CLAUDE.md`, never here |
+| Local rules | that codebase's own `AGENTS.md` or `CLAUDE.md`, never here |
 | Reuse | check Claude Code built-ins and public plugins first |
 | New skill | on second occurrence of the pattern only |
 
 ## Code
 
-| Rule | Value |
+- Rules: [AGENTS.md](AGENTS.md). Scripts do deterministic work, never models.
+
+## Layout
+
+| Path | Contents |
 |---|---|
-| Dependencies | none; Node standard library only |
-| Comments | none explanatory in code |
-| Models | scripts do deterministic work, never models |
-| File size | 300 lines max per file in `plugins/`; must-ship helpers in `scripts/lib/`, analysis-only code in `tooling/` |
+| `plugins/serio-focus/` | the plugin, the only shipped tree; inventory in `docs/MANIFEST.md` |
+| `.opencode/` | `bridge.mjs` + `plugin/serio-focus.ts`, the opencode adapter, calling the same `scripts/lib/` guards |
+| `tooling/` | never ships; [tooling/README.md](tooling/README.md) |
+| `docs/` | generated manifest and SVG figures, Claude Code reference, benchmark method; `flood.svg` is static, sourced in `BENCHMARK.md` |
+| `audit/` | `YYYY-MM.jsonl`, fields in `scripts/audit.mjs` as `FIELDS`; gitignored, append-only |
+| `config/memory.md` | user memory, gitignored |
+
+| Command | Effect |
+|---|---|
+| `claude --plugin-dir plugins/serio-focus` | run this checkout as the plugin for one session; hooks load once at start |
+| `npm run install:plugin` | copy this checkout into the local plugin cache and register it; restart to load |
+| `npm run upkeep` | regenerate `docs/MANIFEST.md`, README inventory |
+| `npm run upkeep:check` | upkeep, then fail when the tree differs — the CI gate |
 
 ## Tests
 
@@ -86,7 +99,6 @@ npm run release patch "one-line note"
 
 | Rule | Value |
 |---|---|
-| Data | never commit organisation data, secrets, identifiers |
 | Setup | personalise with `npm run setup` |
 | Reports | [SECURITY.md](SECURITY.md) |
 | Git | merge and delete stay denied in both modes |

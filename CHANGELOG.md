@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.14.0 | 2026-09-23 | web cap per subagent raised to 60 so it stops runaways only; CLAUDE.md renamed AGENTS.md with behaviour rules only, layout and commands moved to CONTRIBUTING |
 | 1.13.0 | 2026-09-23 | workflow agent() calls name a model, read ledger keyed per agent_id, 10 web calls per subagent, StopFailure copies files written outside the repo into .claude/rescue, receipt shows spend per message id, agents, top-tier agents and repo edits, comments removed |
 | 1.12.7 | 2026-09-16 | docs match the 1.12.6 guard: replay says Read and Bash only, SECURITY names Write/Edit/Grep/Glob as uncovered, README splits the 24KB trim from the shell hold, receipt described as conditional, flood figure 17 held not 40 |
 | 1.12.6 | 2026-09-16 | slim pass: cut task-loop, query budget, shell rewrite, AB and flood runners, lifetime ledger, frozen results; receipt reports only what the guard kept out and stays silent otherwise; audit gains session and rule; keywords drop the solo-founder framing |

@@ -215,10 +215,10 @@ describe('read and query budgets', () => {
     assert.equal(run('bq-sub', sub('a2')).stdout, '', 'a sibling subagent never read these bytes');
     assert.equal(ask({ cwd: box, session_id: 'bq-sub', ...sub('a1') }), ASK);
   });
-  it('holds the eleventh web call in one subagent', () => {
+  it('holds a runaway subagent past its web call cap', () => {
     const web = { agent_type: 'workflow-subagent', agent_id: 'w1', tool_name: 'WebSearch', tool_input: { query: 'q' } };
-    for (let n = 0; n < 10; n += 1) run('web', web);
-    assert.equal(ask({ cwd: box, session_id: 'web', ...web }), ASK);
+    for (let n = 0; n < 2; n += 1) run('web', web);
+    assert.equal(ask({ cwd: box, session_id: 'web', ...web }, { ...process.env, HANDOFF_OS_DIR: box, HANDOFF_WEB_CAP: '2' }), ASK);
   });
   it('credits a refused read once however often it is retried', () => {
     const file = path.join(box, 'retry.txt');

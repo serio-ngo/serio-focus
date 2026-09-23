@@ -60,7 +60,7 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 | Cap | Value |
 |---|---|
 | Agents per wave | **3** — the fourth is blocked by the hook |
-| Web calls | **10** per subagent — the hook holds the 11th (`HANDOFF_WEB_CAP`) |
+| Web calls | **10** in the brief unless the owner raises it; the hook stops a runaway subagent past `HANDOFF_WEB_CAP` |
 | Estimate | one `EST:` line before dispatch — agents × tool calls × expected return lines |
 | Deliverable path | a repo path, never a TEMP scratchpad — a limit hit loses TEMP |
 | Tool calls | **15**, or **25** for a code fix with tests |
