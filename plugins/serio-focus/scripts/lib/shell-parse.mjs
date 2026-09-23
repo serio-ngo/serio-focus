@@ -62,7 +62,6 @@ function shellWords(segment) {
 
 export const strip = (token) => token.replace(/^['"]|['"]$/g, '');
 
-// Operands only: a segment that redirects its output to a file reads nothing into the thread.
 export function tokens(segment) {
   const out = [];
   let toFile = false;

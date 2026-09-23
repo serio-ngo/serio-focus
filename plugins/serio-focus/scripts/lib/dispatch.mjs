@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { DENY_SUBAGENT_DEFAULT } from './limits.mjs';
 import { declaredModel } from './agent-model.mjs';
 import { load, rootOf, save, sessionOf } from './ledger.mjs';
@@ -6,14 +8,15 @@ const MODEL_TIERS = /\b(?:haiku|sonnet|opus|fable)\b/i;
 const MODEL_OPTION = /\bmodel\s*[:=]\s*['"`]?\s*(haiku|sonnet|opus|fable)\b/gi;
 const QUALITY = /\bQUALITY:\s*(?:writing|creative|legal|security)\b/;
 const REVIEW = /\b(?:review|audit)(?:s|ed|ing|er|ers|or|ors)?\b/i;
-const THINK_ESCALATION = /\b(?:ultrathink|megathink|think\s+(?:hard(?:er)?|deeply)|(?:reasoning[-_ ]?)?effort\s*[=:]\s*(?:high|xhigh|max))\b/i;
+const THINK_ESCALATION = /\b(?:ultrathink|megathink|think\s+(?:hard(?:er)?|deeply)|(?:reasoning[-_ ]?)?effort\s*[=:]\s*['"`]?\s*(?:high|xhigh|max))\b/i;
 const UNBOUNDED_FANOUT = /\b(?:parallel|pipeline|Promise\s*\.\s*all(?:Settled)?)\s*\(/;
 const FANOUT_BUDGET = /(?:^|\n)\s*\/\/\s*AGENTS:\s*(\d+)\b/;
 const WORKFLOW_AGENT_CALL = /(?<![.\w$])agent\s*\(/g;
+const WORKFLOW_TIER_OPTION = /\b(?:model|agentType)\b/g;
 const SPAWN_TEXT = ['prompt', 'description', 'subagent_type', 'subject', 'script', 'name', 'title'];
 const MODEL_BEARING = ['Agent', 'Task'];
 
-function deniedSubagentRx(raw = DENY_SUBAGENT_DEFAULT) {
+export function deniedSubagentRx(raw = DENY_SUBAGENT_DEFAULT) {
   const names = String(raw ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   if (!names.length) return /(?!)/;
   const esc = names.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
@@ -31,15 +34,23 @@ function deniedVerdict(text, hit, denied) {
   return null;
 }
 
-// Judge the model the subagent will actually run on: the call names one, or its definition does.
-// A model-bearing call naming neither is held: an unnamed tier inherits the most expensive one.
+export function withScript(input, tool, cwd = '.') {
+  if (tool !== 'Workflow' || typeof input.script === 'string' || typeof input.scriptPath !== 'string') return input;
+  try { return { ...input, script: readFileSync(path.resolve(String(cwd), input.scriptPath), 'utf8') }; } catch { return { ...input, unreadable: true }; }
+}
+
+const count = (text, rx) => (code(text).match(rx) || []).length;
+
 export function dispatchBudget(input, cwd, tool = 'Agent', denied = deniedSubagentRx(process.env.HANDOFF_DENY_SUBAGENT_MODELS ?? DENY_SUBAGENT_DEFAULT)) {
   const named = String(input.model || '').trim();
   const text = spawnText(input);
   if (!named) {
     if (!MODEL_BEARING.includes(tool)) {
       const selected = selectedTiers(text).find((tier) => denied.test(tier));
-      return selected ? deniedVerdict(text, selected, denied) : null;
+      if (selected) return deniedVerdict(text, selected, denied);
+      if (input.unreadable) return { reason: 'blocked a workflow whose scriptPath could not be read. Next: pass the script inline' };
+      if (tool !== 'Workflow' || count(input.script, WORKFLOW_AGENT_CALL) <= count(input.script, WORKFLOW_TIER_OPTION)) return null;
+      return { reason: "blocked a workflow agent() call naming no model — it inherits the session tier. Next: pass { model: 'haiku' } or { model: 'sonnet' } in every call" };
     }
     const declared = declaredModel(input.subagent_type, cwd);
     if (declared) {
@@ -54,12 +65,14 @@ export function dispatchBudget(input, cwd, tool = 'Agent', denied = deniedSubage
   return hit ? deniedVerdict(text, hit, denied) : null;
 }
 
-const code = (text) => String(text ?? '')
-  .replace(/\/\*[\s\S]*?\*\//g, ' ')
-  .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
-  .replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``')
-  .replace(/'(?:\\[\s\S]|[^'\\\n])*'/g, "''")
-  .replace(/"(?:\\[\s\S]|[^"\\\n])*"/g, '""');
+function code(text) {
+  return String(text ?? '')
+    .replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``')
+    .replace(/'(?:\\[\s\S]|[^'\\\n])*'/g, "''")
+    .replace(/"(?:\\[\s\S]|[^"\\\n])*"/g, '""')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+}
 
 const declaredAgents = (input) => Number((String(input.script ?? '').match(FANOUT_BUDGET) || [])[1] || 0);
 

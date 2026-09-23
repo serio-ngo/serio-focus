@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { BASH_OUTPUT_CAP, BIG_FILE_BYTES, delegateOn } from './limits.mjs';
+import { BASH_OUTPUT_CAP, BIG_FILE_BYTES, delegateOn, webCap } from './limits.mjs';
 import { load, rootOf, save, sessionOf } from './ledger.mjs';
 import { Blocked } from './blocked.mjs';
 import { shellReads } from './shell-reads.mjs';
@@ -9,7 +9,20 @@ const SAMPLE_BYTES = 64 * 1024;
 const SAMPLE_LINES = 200;
 
 export const kb = (bytes) => `${Math.round(bytes / 1024)}KB`;
-const actorOf = (payload = {}) => String(payload.agent_type || 'main').replace(/[:|]/g, '');
+const actorOf = (payload = {}) => [payload.agent_type || 'main', payload.agent_id].filter(Boolean).join('#').replace(/[:|]/g, '');
+
+export function webBudget(payload, tool) {
+  const actor = actorOf(payload);
+  if (actor === 'main') return null;
+  const root = rootOf(payload);
+  const session = sessionOf(payload);
+  const state = load(root, session);
+  const used = Number(state.reads[`${actor}|web`] || 0) + 1;
+  state.reads[`${actor}|web`] = used;
+  save(root, session, state);
+  if (used > webCap()) throw new Blocked(`WEB BUDGET: ${tool} call ${used} is over the ${webCap()}-call subagent cap. Next: return what you have\n`);
+  return null;
+}
 
 function averageLineLength(file, size) {
   if (!size) return 0;

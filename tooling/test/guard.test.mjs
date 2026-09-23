@@ -98,18 +98,23 @@ describe('dispatch budget', () => {
     const named = (tool_input) => at('dp-agents', { tool_name: 'Agent', tool_input });
     assert.equal(held('dp-agents', { prompt: 'x', subagent_type: 'pricey' }), ASK);
     assert.equal(named({ prompt: 'x', subagent_type: 'serio-focus:scout' }), ALLOWED);
-  });
+    assert.equal(held('dp', { script: "// AGENTS: 2\nawait agent('a', { model: 'haiku' }); await agent('b')" }, 'Workflow'), ASK);
+    const saved = path.join(box, 'saved-workflow.js');
+    writeFileSync(saved, "await agent('x')");
+    assert.equal(held('dp', { scriptPath: saved }, 'Workflow'), ASK);
+    assert.equal(held('dp', { scriptPath: path.join(box, 'missing-workflow.js') }, 'Workflow'), ASK);  });
   it('blocks opus without a QUALITY flag, and thinking a deliverable did not earn', () => {
     assert.equal(held('dp', { prompt: 'scan the repo', model: 'opus' }), ASK);
     const state = JSON.parse(readFileSync(path.join(box, '.claude', '.session-dp.json'), 'utf8'));
     assert.equal(state.saved.redirects, 1);
     assert.equal(state.tiers.opus, 1);
     assert.equal(held('dp', { prompt: 'ultrathink about the schema', model: 'sonnet' }), ASK);
-    assert.equal(spawn({ script: 'agent("find where opus is configured")' }, 'Workflow'), ALLOWED);
+    assert.equal(held('dp', { script: "await agent('x', { model: 'sonnet', effort: 'xhigh' })" }, 'Workflow'), ASK);
+    assert.equal(spawn({ script: 'agent("find where opus is configured", { model: "haiku" })' }, 'Workflow'), ALLOWED);
   });
   it('blocks a workflow that never states its agent count, and caps the count it states', () => {
     assert.equal(held('dp', { script: "await Promise.all(rows.map((r) => agent('x', { model: 'sonnet' })))" }, 'Workflow'), ASK);
-    assert.equal(held('dp', { script: '// AGENTS: 30\nawait parallel(rows.map((r) => () => agent(r)))' }, 'Workflow'), ASK);
+    assert.equal(held('dp', { script: "// AGENTS: 30\nawait parallel(rows.map((r) => () => agent(r, { model: 'haiku' })))" }, 'Workflow'), ASK);
     assert.equal(spawn({ prompt: 'the wave a denied workflow claimed is free again', model: 'haiku' }), ALLOWED);
   });
   it('blocks the fourth agent in one wave', () => {
@@ -127,10 +132,10 @@ describe('fan-out cap', () => {
     assert.equal(held('wave', { prompt: 'fourth', model: 'haiku' }), ASK);
   });
   it('holds a declared 30-agent workflow wave', () => {
-    assert.equal(held('wide', { script: '// AGENTS: 30\nawait parallel(rows.map((r) => agent(r)))' }, 'Workflow'), ASK);
+    assert.equal(held('wide', { script: "// AGENTS: 30\nawait parallel(rows.map((r) => agent(r, { model: 'haiku' })))" }, 'Workflow'), ASK);
   });
   it('lets a single workflow agent through', () => {
-    assert.equal(spawn('narrow', { script: 'await agent("find where opus is configured")' }, 'Workflow'), ALLOWED);
+    assert.equal(spawn('narrow', { script: 'await agent("find where opus is configured", { model: "haiku" })' }, 'Workflow'), ALLOWED);
   });
 });
 
@@ -205,6 +210,15 @@ describe('read and query budgets', () => {
     writeFileSync(probe, 'small');
     at('bq', { tool_name: 'Read', tool_input: { file_path: probe } });
     assert.equal(ask({ cwd: box, session_id: 'bq', tool_name: 'Read', tool_input: { file_path: probe } }), ASK);
+    const sub = (agent_id) => ({ agent_type: 'workflow-subagent', agent_id, tool_name: 'Read', tool_input: { file_path: probe } });
+    run('bq-sub', sub('a1'));
+    assert.equal(run('bq-sub', sub('a2')).stdout, '', 'a sibling subagent never read these bytes');
+    assert.equal(ask({ cwd: box, session_id: 'bq-sub', ...sub('a1') }), ASK);
+  });
+  it('holds the eleventh web call in one subagent', () => {
+    const web = { agent_type: 'workflow-subagent', agent_id: 'w1', tool_name: 'WebSearch', tool_input: { query: 'q' } };
+    for (let n = 0; n < 10; n += 1) run('web', web);
+    assert.equal(ask({ cwd: box, session_id: 'web', ...web }), ASK);
   });
   it('credits a refused read once however often it is retried', () => {
     const file = path.join(box, 'retry.txt');
@@ -223,6 +237,16 @@ describe('session receipt', () => {
     input: JSON.stringify({ cwd: box, session_id: session, ...payload }), encoding: 'utf8', env: { ...process.env, HANDOFF_OS_DIR: box },
   });
 
+  const hook = (file, payload) => spawnSync(process.execPath, [file], {
+    input: JSON.stringify({ cwd: box, ...payload }), encoding: 'utf8', env: { ...process.env, HANDOFF_OS_DIR: box, CLAUDE_PROJECT_DIR: '' },
+  });
+  const transcript = (content) => {
+    const file = path.join(sandbox('scratch-'), 'session.jsonl');
+    const row = JSON.stringify({ type: 'assistant', message: { id: 'm1', model: 'opus', usage: { input_tokens: 600000, output_tokens: 1000 }, content } });
+    writeFileSync(file, `${row}\n${row}\n`);
+    return file;
+  };
+
   it('stays silent with nothing to report', () => {
     const quiet = run('quiet', {});
     assert.equal(quiet.status, ALLOWED);
@@ -240,9 +264,17 @@ describe('session receipt', () => {
     assert.match(first.stdout, /SERIO FOCUS · ~\d+ tok kept out \(\d+%\) · 1 guard action"/);
     at('rc-b', { tool_name: 'Read', tool_input: { file_path: file } });
     ask({ cwd: box, session_id: 'rc-b', tool_name: 'Read', tool_input: { file_path: file } });
-    const claim = run('rc-b', { last_assistant_message: 'All done, it works now.' });
+    const edited = transcript([{ type: 'tool_use', name: 'Edit', input: { file_path: file } }]);
+    const claim = hook(GATE, { session_id: 'rc-b', transcript_path: edited, last_assistant_message: 'All done, it works now.' });
     assert.equal(claim.status, ALLOWED);
-    assert.match(claim.stdout, /SERIO FOCUS/);
+    assert.match(claim.stdout, /SERIO FOCUS · spent 601\.0k new \+ 0 cached tok · agents 0, top tier 0 · repo edits 1 · ~/);
     assert.doesNotMatch(claim.stdout, /VERIFY GATE|stood down|done claimed|nothing run/i);
+  });
+  it('copies files written outside the repo when a turn dies on a limit', () => {
+    const draft = path.join(sandbox('draft-'), 'session-draft.md');
+    writeFileSync(draft, 'plan');
+    hook(script('rescue.mjs'), { session_id: 'dead', transcript_path: transcript([{ type: 'tool_use', name: 'Write', input: { file_path: draft } }]) });
+    assert.equal(readFileSync(path.join(box, '.claude', 'rescue', 'dead', '1-session-draft.md'), 'utf8'), 'plan');
+    assert.match(hook(script('card.mjs'), { source: 'startup' }).stdout, /RESCUE 1 session\(s\) ended on an API error/);
   });
 });

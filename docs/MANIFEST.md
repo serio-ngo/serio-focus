@@ -1,13 +1,13 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.12.7 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.13.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Skills
 
 | Skill | Description chars, always in context | Body lines, on use |
 |---|---|---|
 | `plan-session` | 85 | 59 |
-| `research-budget` | 84 | 70 |
+| `research-budget` | 84 | 76 |
 
 ## Agents
 
@@ -20,18 +20,19 @@
 
 | Event | Matcher | Script |
 |---|---|---|
-| `PreToolUse` | `^(Read\|Bash\|PowerShell\|Task\|Agent\|Workflow)` | `scripts/guard.mjs` |
+| `PreToolUse` | `^(Read\|Bash\|PowerShell\|Task\|Agent\|Workflow\|WebSearch\|WebFetch)` | `scripts/guard.mjs` |
 | `SessionStart` | `startup\|resume\|clear\|compact\|fork` | `scripts/card.mjs` |
+| `StopFailure` | `*` | `scripts/rescue.mjs` |
 | `Stop` | `*` | `scripts/verify.mjs` |
 
 ## Inventory
 
 | What ships | Count |
 |---|---|
-| Guard logic, agent-affecting only | **735** lines across 10 flow files |
+| Guard logic, agent-affecting only | **755** lines across 10 flow files |
 | Stats, receipts, adapters (`audit`, `card`, `ledger`, `transcript`) | excluded from the count |
-| Pattern rules | **33** |
-| Hooks | **3** handlers on 3 events |
+| Pattern rules | **34** |
+| Hooks | **4** handlers on 4 events |
 | Skills | **2** |
 | Subagents | **2** |
 | Third-party packages | **0** |

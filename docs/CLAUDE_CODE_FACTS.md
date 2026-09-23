@@ -2,12 +2,12 @@
 
 <sub><b>Answers</b> · which hook, permission, plugin and auth identifiers Claude Code accepts · <a href="../README.md">README</a></sub>
 
-<!-- verified against `code.claude.com/docs` on 2026-09-04, hooks re-verified 2026-09-10; source per section -->
+<!-- verified against `code.claude.com/docs` on 2026-09-04, hooks re-verified 2026-09-23; source per section -->
 
 ## Hooks
 
 <details open>
-<summary>Hook facts · 26 rows</summary>
+<summary>Hook facts · 30 rows</summary>
 
 | Fact | Value |
 |---|---|
@@ -19,10 +19,13 @@
 | Any other char | unanchored JS RegExp (`Edit.*` matches `NotebookEdit`) |
 | Stdout reaches context | `UserPromptSubmit`, `SessionStart`, `PostModelSwitch` only |
 | Stdin, every event | `session_id` `transcript_path` `cwd` `hook_event_name` |
-| Stdin, tool events add | `tool_name` `tool_input`; `agent_type` inside a subagent, absent on main |
-| Subagent session | reuses parent `session_id`; state keys on `agent_type` (observed, not documented upstream) |
+| Stdin, tool events add | `tool_name` `tool_input`; `agent_id` and `agent_type` inside a subagent, workflow subagents included; both absent on main |
+| Subagent session | reuses parent `session_id`; parallel siblings share `agent_type` (`workflow-subagent`, observed) — key per-agent state on `agent_id` |
 | UserPromptSubmit | `user_prompt` (**not** `prompt`) |
-| Stop / SubagentStop | `last_assistant_message`, **may be absent** — fall back to transcript JSONL |
+| Stop / SubagentStop | `last_assistant_message`, **may be absent** — fall back to transcript JSONL; SubagentStop adds `agent_transcript_path` |
+| StopFailure | turn ended on an API error; matcher on `error`: `rate_limit` `billing_error` `overloaded` `server_error` `max_output_tokens` `unknown` …; stdin adds `error` `error_details` `last_assistant_message`; cannot block, all output ignored |
+| PreCompact / PostCompact | matcher `manual` or `auto`; PreCompact can block; stdout never reaches context |
+| Transcript JSONL | one row per content block; rows of one reply share `message.id` and repeat `usage` — count once per id (observed 2026-09-23) |
 | Never use | `tool_response`, `stop_hook_active` |
 | Exit `2` blocks | PreToolUse, UserPromptSubmit, Stop, SubagentStop; no retry cap documented, so a block reason names a remedy |
 | PostToolUse | cannot block |
@@ -94,3 +97,13 @@
 | Status | `/status` |
 
 - Source: <https://code.claude.com/docs/en/authentication.md>
+
+## Subagent tier and usage limits
+
+| Fact | Value |
+|---|---|
+| Subagent with no `model` | inherits the session model |
+| Usage-limit resume | `autoContinueAtUsageLimit` managed setting, Claude Code 2.1.234+: waits for the reset, then continues the interrupted task |
+| Limit messages | "session limit" / "weekly limit" = plan window, all models; "monthly spend limit" = usage credits cap |
+
+- Source: <https://code.claude.com/docs/en/costs.md>, retrieved 2026-09-23

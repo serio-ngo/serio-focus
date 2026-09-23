@@ -27,7 +27,7 @@
 | Gap | Probe | Verdict |
 |---|---|---|
 | No connector coverage. `judge()` has no `mcp__` branch, so every MCP call passes. | `mcp__gmail__send_message` | Allowed. |
-| No edit, write or search coverage since 1.12.6. The `PreToolUse` matcher admits `Read`, `Bash`, `PowerShell` and spawn tools only. | `Write`, `Edit`, `Grep`, `Glob` | Allowed. |
+| No edit, write or search coverage since 1.12.6. The `PreToolUse` matcher admits `Read`, `Bash`, `PowerShell`, spawn tools, and `WebSearch`/`WebFetch` (subagent call cap only). | `Write`, `Edit`, `Grep`, `Glob` | Allowed. |
 | A binary name held in a shell variable is not resolved. | `X=rm; $X -rf docs` | Allowed. |
 | A payload decoded inside a pipeline is not followed. | `echo … \| base64 -d \| bash` | Allowed. |
 | An unquoted no-op flag used as a value suppresses the whole segment. | `curl -X POST -d --help` | Allowed. |

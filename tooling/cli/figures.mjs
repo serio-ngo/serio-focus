@@ -109,7 +109,7 @@ function probe() {
   };
 
   const steps = [
-    [`Workflow · ${DEMO_AGENTS} agents`, 'Workflow', { script: `// AGENTS: ${DEMO_AGENTS}\nawait parallel(mods.map((m) => () => agent(m)))` }],
+    [`Workflow · ${DEMO_AGENTS} agents`, 'Workflow', { script: `// AGENTS: ${DEMO_AGENTS}\nawait parallel(mods.map((m) => () => agent(m, { model: 'haiku' })))` }],
     ['Read src/big.js · 35 KB', 'Read', { file_path: big }],
     ['Bash · `git commit -m "wip"`', 'Bash', { command: 'git commit -m "wip"' }],
   ].map(([label, tool, input]) => ({ label, ...fire(tool, input) }));

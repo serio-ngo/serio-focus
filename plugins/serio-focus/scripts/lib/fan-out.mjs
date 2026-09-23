@@ -4,8 +4,6 @@ import { waveCap, waveWindow } from './limits.mjs';
 import { bumpAll, rootOf, sessionOf } from './ledger.mjs';
 import { Blocked } from './blocked.mjs';
 
-// One file per claimed slot: exclusive create is the only counter that survives
-// concurrent hook processes, which have no shared memory.
 function claimSlot(dir, bucket, cap) {
   try { mkdirSync(dir, { recursive: true }); } catch {
     try { rmSync(dir, { force: true, recursive: true }); mkdirSync(dir, { recursive: true }); } catch { return cap + 1; }

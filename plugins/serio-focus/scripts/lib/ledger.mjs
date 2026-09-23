@@ -25,8 +25,6 @@ const LOCK_TRIES = 60;
 const LOCK_NAP_MS = 8;
 const nap = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { } };
 
-// Hook processes run concurrently and share no memory: an unlocked read-modify-write
-// loses every counter but the last writer's.
 function withLock(root, session, fn) {
   const file = `${ledgerPath(root, session)}.lock`;
   try { mkdirSync(path.dirname(file), { recursive: true }); } catch { return fn(); }
