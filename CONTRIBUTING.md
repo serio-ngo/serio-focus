@@ -81,7 +81,6 @@ npm run release patch "one-line note"
 
 | Release step | Effect |
 |---|---|
-| Tree | must be clean — `release` exits 1 on any uncommitted change |
 | Suite | runs |
 | Version | bumps |
 | Manifest | regenerates |
@@ -95,7 +94,7 @@ npm run release patch "one-line note"
 | Cadence | Rule |
 |---|---|
 | Frequency | one release per week at most, batched from `main` |
-| Every release | CHANGELOG row · `git tag v<version>` · GitHub Release carrying that row as its body |
+| Every release | `npm run release`, then merge to `main`; CI tags `v<version>` and publishes the GitHub Release from the CHANGELOG row after every check passes |
 
 | Rule | Value |
 |---|---|
