@@ -8,8 +8,12 @@ import { agentsRequested, bookRedirect, costBudget, dispatchBudget, withScript }
 import { fanOutCap } from './lib/fan-out.mjs';
 import { judgeShell } from './lib/shell-danger.mjs';
 import { kb, readBudget, shellReadBudget, webBudget } from './lib/read-budget.mjs';
+import { stallHold } from './lib/limits.mjs';
+import { compact } from './lib/stats.mjs';
+import { stall } from './lib/transcript.mjs';
 
-export const SPAWN_TOOLS = ['Agent', 'Task', 'TaskCreate', 'Workflow'];
+export const SPAWN_TOOLS = ['Agent', 'Task', 'Workflow'];
+const WEB_TOOLS = ['WebSearch', 'WebFetch'];
 export { Blocked };
 
 let current = {};
@@ -31,18 +35,18 @@ function judgeRead(payload, input) {
 
 function judgeSpawn(payload, raw, tool) {
   const input = withScript(raw, tool, payload.cwd);
-  const verdict = dispatchBudget(input, payload.cwd, tool) || costBudget(input, tool);
-  if (verdict) {
-    if (verdict.tier) bookRedirect(payload, verdict.tier);
-    deny(verdict.reason, 'DISPATCH BUDGET');
+  const verdicts = [dispatchBudget(input, payload.cwd, tool), costBudget(input, tool)].filter(Boolean);
+  if (verdicts.length) {
+    if (verdicts[0].tier) bookRedirect(payload, verdicts[0].tier);
+    deny(verdicts.map((v) => v.reason).join('; '), 'DISPATCH BUDGET');
   }
-  const count = agentsRequested(input, tool);
-  fanOutCap(payload, count);
+  const { wave, total } = agentsRequested(input, tool);
+  fanOutCap(payload, wave);
 
-  bump(payload, 'agents', count);
+  bump(payload, 'agents', total);
   const kind = String(input.subagent_type || '');
-  if (/scout/i.test(kind)) bump(payload, 'scouts', count);
-  else if (/runner/i.test(kind)) bump(payload, 'runners', count);
+  if (/scout/i.test(kind)) bump(payload, 'scouts', total);
+  else if (/runner/i.test(kind)) bump(payload, 'runners', total);
   return null;
 }
 
@@ -57,16 +61,29 @@ function judgeShellCall(payload, input) {
   return shellReadBudget(payload, input);
 }
 
+function judgeStall(payload, tool) {
+  const main = !payload.agent_id;
+  const hold = stallHold();
+  if (!hold || (main && !SPAWN_TOOLS.includes(tool) && !WEB_TOOLS.includes(tool))) return;
+  const tokens = stall(payload);
+  if (tokens >= hold) {
+    deny(`${compact(tokens)} tok since the last repo change. Next: ${main
+      ? 'write the deliverable into the repo; dispatch and web reopen when the tree changes'
+      : 'return your findings now'}`, 'STALL HOLD');
+  }
+}
+
 export function judge(raw = {}) {
   const payload = raw && typeof raw === 'object' ? raw : {};
   const tool = String(payload.tool_name || '');
   const input = payload.tool_input || {};
   current = payload;
+  judgeStall(payload, tool);
 
   if (tool === 'Read') return judgeRead(payload, input);
   if (SPAWN_TOOLS.includes(tool)) return judgeSpawn(payload, input, tool);
   if (tool === 'Bash' || tool === 'PowerShell') return judgeShellCall(payload, input);
-  if (tool === 'WebSearch' || tool === 'WebFetch') return webBudget(payload, tool);
+  if (WEB_TOOLS.includes(tool)) return webBudget(payload, tool);
   return null;
 }
 

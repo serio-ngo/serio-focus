@@ -21,7 +21,7 @@ Subagent floods capped · big reads trimmed · destructive commands held to the 
 [![dependencies](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fserio-ngo%2Fserio-focus%2Fmain%2Ftooling%2Fresults%2Fscores.json&query=%24.dependencies&label=dependencies&color=57606a)](package.json)
 
 <!-- handoff-demo -->
-<img src="docs/demo.svg" width="864" alt="serio-focus session: Workflow · 100 agents → FAN-OUT CAP: 100 asked, 3 run. Next: wait one wave · Read src/big.js · 35 KB → READ CAP: big.js 35KB. Kept first 384 lines · Bash · `git commit -m &quot;wip&quot;` → GIT WRITE: &quot;git commit -m &quot;wip&quot;&quot; commit and push stays manual — draft the exact command and list it in the final state, do not run it · SERIO FOCUS · ~2,816 tok kept out (31%) · 102 guard actions">
+<img src="docs/demo.svg" width="864" alt="serio-focus session: Workflow · 100 agents → FAN-OUT CAP: 100 asked, 3 run. Next: wait one wave · Read src/big.js · 35 KB → READ CAP: big.js 35KB. Kept first 384 lines · Bash · `git commit -m &quot;wip&quot;` → GIT WRITE: &quot;git commit -m &quot;wip&quot;&quot; commit and push stays manual — draft the exact command and list it in the final state, do not run it · SERIO FOCUS · 2,816 tok kept out (31%) · 102 guard actions">
 <!-- /handoff-demo -->
 
 <sub>[Start here](#start-here) · [What it does](#what-it-does) · [Proof](#proof) · [Method](docs/BENCHMARK.md) · [Contributing](CONTRIBUTING.md)</sub>
@@ -49,16 +49,17 @@ Without a checkout: `/plugin marketplace add serio-ngo/serio-focus`, then `/plug
 
 ## What it does
 
-<img src="docs/tiles-stops.svg" width="720" alt="Stops: 3 subagents per wave; 24 KB whole-file read cap; commit · push git writes held to final state; one line session receipt">
+<img src="docs/tiles-stops.svg" width="720" alt="Stops: 3 subagents per wave; 24 KB whole-file read cap; commit · push git writes held to final state; 1.0M tok dispatch held, no repo change">
 
 | Guard | Notes |
 |---|---|
-| Fan-out cap | `HANDOFF_MAX_PER_WAVE=3`, `HANDOFF_WAVE_MS=60000` — excess waits for the next wave. |
+| Fan-out cap | `HANDOFF_MAX_PER_WAVE=3`, `HANDOFF_WAVE_MS=60000` — excess waits for the next wave. A workflow states `// AGENTS: 3`, or `// AGENTS: 3+1` for waves run one after another. |
 | Read budget | A `Read` over 24 KB arrives trimmed; the same read in a shell is held instead; an unchanged file is never re-sent. |
 | Dispatch budget | Every subagent names a tier; `HANDOFF_DENY_SUBAGENT_MODELS=opus,fable` never reviews. |
+| Stall hold | Past `HANDOFF_STALL_HOLD=1000000` fresh tokens with no change to the repo tree, the main session's dispatch and web calls are held and subagents are told to return. Reads, shell and edits stay open; any repo change reopens. `0` disables. |
 | Git lock | `git commit` and `git push` are held to the final state; the card lists the exact command. Recursive deletes and `clean -fdx` / `reset --hard` too. Reads, branches, stashes and merges run. `HANDOFF_GIT_WRITE=1` reopens commit and push. |
 | Focus style | `output-styles/focus.md` ships forced for the plugin: action first, Done ≤5, one next step. |
-| Session receipt | One line at Stop when the guard kept something out, silent otherwise. |
+| Session receipt | One line at Stop: tokens kept out and guard actions, plus tokens since the last repo change past `HANDOFF_STALL_WARN=500000`. Silent otherwise. |
 
 Every guard blocks first and suggests second. No block is a refusal — each names the override above
 or the command to run yourself, and the owner decides.

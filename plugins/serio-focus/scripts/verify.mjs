@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { append } from './audit.mjs';
 import { COUNTERS, bank, load, rootOf, save, savings, sessionOf } from './lib/ledger.mjs';
 import { sessionLine } from './lib/stats.mjs';
-import { sessionSpend, usage } from './lib/transcript.mjs';
+import { stallWarn } from './lib/limits.mjs';
+import { stall, usage } from './lib/transcript.mjs';
 
 export function report(payload) {
+  const tokens = stall(payload);
   const root = rootOf(payload);
   const session = sessionOf(payload);
   const state = load(root, session);
@@ -24,12 +26,13 @@ export function report(payload) {
     bank(state);
     for (const key of COUNTERS) state.saved[key] = 0;
   }
-  const stamp = JSON.stringify([state.session || {}, state.tiers || {}]);
+  const stalled = tokens >= stallWarn() ? tokens : 0;
+  const stamp = JSON.stringify([state.session || {}, state.tiers || {}, Math.floor(stalled / stallWarn())]);
   const changed = stamp !== state.printed;
   if (changed) state.printed = stamp;
   if (total || changed) save(root, session, state);
   if (!changed) return null;
-  return sessionLine(state, sessionSpend(payload.transcript_path, process.env.CLAUDE_PROJECT_DIR || payload.cwd || root)) || null;
+  return sessionLine(state, stalled) || null;
 }
 
 function announce(stats) {

@@ -5,6 +5,7 @@ import { load, rootOf, save, sessionOf } from './ledger.mjs';
 import { Blocked } from './blocked.mjs';
 import { shellReads } from './shell-reads.mjs';
 
+const MEDIA = /\.(?:png|jpe?g|gif|webp|bmp|ico|pdf)$/i;
 const SAMPLE_BYTES = 64 * 1024;
 const SAMPLE_LINES = 200;
 
@@ -73,7 +74,7 @@ function bookSlice(payload, file, spec, { shell = false } = {}) {
 
 export function readBudget(payload, input, rewritable = false) {
   const file = String(input.file_path || '');
-  if (!file) return null;
+  if (!file || MEDIA.test(file)) return null;
   if (input.offset !== undefined || input.limit !== undefined || input.pages !== undefined) {
     bookSlice(payload, file, {
       from: Math.max(0, Number(input.offset || 0) - 1),

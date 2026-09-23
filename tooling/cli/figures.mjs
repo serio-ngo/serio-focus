@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { load } from '../../plugins/serio-focus/scripts/lib/ledger.mjs';
-import { sessionLine } from '../../plugins/serio-focus/scripts/lib/stats.mjs';
-import { BIG_FILE_BYTES, MAX_PER_WAVE } from '../../plugins/serio-focus/scripts/lib/limits.mjs';
+import { compact, sessionLine } from '../../plugins/serio-focus/scripts/lib/stats.mjs';
+import { BIG_FILE_BYTES, MAX_PER_WAVE, stallHold } from '../../plugins/serio-focus/scripts/lib/limits.mjs';
 import { PLUGIN, REPO, readJson, writeBlock } from './generate.mjs';
 
 const INK = '#24292f';
@@ -38,7 +38,7 @@ function tiles(scores = readJson('tooling', 'results', 'scores.json')) {
       [String(MAX_PER_WAVE), 'subagents per wave'],
       [`${Math.round(BIG_FILE_BYTES / 1024)} KB`, 'whole-file read cap'],
       ['commit · push', 'git writes held to final state'],
-      ['one line', 'session receipt'],
+      [`${compact(stallHold())} tok`, 'dispatch held, no repo change'],
     ],
     wins: [
       [`${scores.keptPct}%`, 'read volume kept out'],
@@ -118,8 +118,6 @@ function probe() {
     '- fixed 3 anchors · docs/BENCHMARK.md:12',
     '- held git commit to final state · listed exact command',
     'Next: run npm run upkeep',
-    'You should see: wrote docs/demo.svg',
-    'If not: check HANDOFF_GIT_WRITE=0 and rerun',
     'Step 2 of 5',
   ];
 
@@ -144,7 +142,7 @@ function demoSvg({ steps, answer, receipt } = probe()) {
   }
   rows.push({ text: '⏺  Answer · focus style', fill: INK, weight: 600 });
   answer.forEach((line, i) => rows.push({
-    text: line.startsWith('-') || line.startsWith('You ') || line.startsWith('If ') ? `   ${line}` : line,
+    text: line.startsWith('-') ? `   ${line}` : line,
     fill: /^Next:/.test(line) ? HUE.with : INK,
     weight: i === 0 || /^Next:|^Step /.test(line) ? 600 : undefined,
     wash: i === 0 ? null : null,

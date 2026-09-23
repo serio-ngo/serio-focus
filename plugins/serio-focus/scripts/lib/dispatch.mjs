@@ -8,12 +8,12 @@ const MODEL_TIERS = /\b(?:haiku|sonnet|opus|fable)\b/i;
 const MODEL_OPTION = /\bmodel\s*[:=]\s*['"`]?\s*(haiku|sonnet|opus|fable)\b/gi;
 const QUALITY = /\bQUALITY:\s*(?:writing|creative|legal|security)\b/;
 const REVIEW = /\b(?:review|audit)(?:s|ed|ing|er|ers|or|ors)?\b/i;
-const THINK_ESCALATION = /\b(?:ultrathink|megathink|think\s+(?:hard(?:er)?|deeply)|(?:reasoning[-_ ]?)?effort\s*[=:]\s*['"`]?\s*(?:high|xhigh|max))\b/i;
+const THINK_ESCALATION = /\b(?:(?:ultrathink|megathink|think\s+(?:hard(?:er)?|deeply))\b|(?:reasoning[-_ ]?)?effort\s*[=:]\s*(['"`]?)(?:high|xhigh|max)\1(?=\s*(?:[,})\]]|$)))/i;
 const UNBOUNDED_FANOUT = /\b(?:parallel|pipeline|Promise\s*\.\s*all(?:Settled)?)\s*\(/;
-const FANOUT_BUDGET = /(?:^|\n)\s*\/\/\s*AGENTS:\s*(\d+)\b/;
+const FANOUT_BUDGET = /(?:^|\n)\s*\/\/\s*AGENTS:\s*(\d+(?:\s*\+\s*\d+)*)/;
 const WORKFLOW_AGENT_CALL = /(?<![.\w$])agent\s*\(/g;
 const WORKFLOW_TIER_OPTION = /\b(?:model|agentType)\b/g;
-const SPAWN_TEXT = ['prompt', 'description', 'subagent_type', 'subject', 'script', 'name', 'title'];
+const SPAWN_TEXT = ['prompt', 'description', 'subagent_type', 'script', 'name', 'title'];
 const MODEL_BEARING = ['Agent', 'Task'];
 
 export function deniedSubagentRx(raw = DENY_SUBAGENT_DEFAULT) {
@@ -74,21 +74,24 @@ function code(text) {
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
 }
 
-const declaredAgents = (input) => Number((String(input.script ?? '').match(FANOUT_BUDGET) || [])[1] || 0);
+const waves = (input) => ((String(input.script ?? '').match(FANOUT_BUDGET) || [])[1] || '').split('+').map(Number).filter(Boolean);
 
 export function costBudget(input, tool) {
   const text = spawnText(input);
   if (QUALITY.test(text)) return null;
   const think = (text.match(THINK_ESCALATION) || [])[0];
   if (think) return { reason: `blocked "${think}"` };
-  if (tool !== 'Workflow' || declaredAgents(input)) return null;
+  if (tool !== 'Workflow' || waves(input).length) return null;
   const fan = (code(input.script).match(UNBOUNDED_FANOUT) || [])[0];
-  return fan ? { reason: `blocked a workflow fanning out through "${fan.trim()}" with no agent count` } : null;
+  return fan ? { reason: `blocked a workflow fanning out through "${fan.trim()}" with no agent count. Next: add the line // AGENTS: 3, or // AGENTS: 3+1 for waves run one after another` } : null;
 }
 
-export const agentsRequested = (input, tool) => (tool === 'Workflow'
-  ? Math.max(1, declaredAgents(input) || (code(input.script).match(WORKFLOW_AGENT_CALL) || []).length)
-  : 1);
+export function agentsRequested(input, tool) {
+  if (tool !== 'Workflow') return { wave: 1, total: 1 };
+  const declared = waves(input);
+  const total = Math.max(1, declared.reduce((sum, n) => sum + n, 0) || (code(input.script).match(WORKFLOW_AGENT_CALL) || []).length);
+  return { wave: declared.length ? Math.max(...declared) : total, total };
+}
 
 export function bookRedirect(payload, tier) {
   const root = rootOf(payload);
