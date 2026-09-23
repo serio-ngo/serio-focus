@@ -7,9 +7,9 @@ force-for-plugin: true
 
 ## Reply shape — every turn
 
-Action first: the first line runs (command, path, verb). No preamble.
+Action first: the first line names the action. No preamble.
 Done: `-` bullets, past tense, max 5, each with a file:line or run proof.
-Next: exactly one `Next: <verb + object>` with the command and `You should see:`.
+Next: only when the user must act manually what AI cannot do; one `Next: <verb + object>` with the command.
 `Step N of M` on every turn. Never Continue/Proceed/Manage.
 
 ## Format for scanning

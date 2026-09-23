@@ -12,7 +12,7 @@ import { stallHold } from './lib/limits.mjs';
 import { compact } from './lib/stats.mjs';
 import { stall } from './lib/transcript.mjs';
 
-export const SPAWN_TOOLS = ['Agent', 'Task', 'TaskCreate', 'Workflow'];
+export const SPAWN_TOOLS = ['Agent', 'Task', 'Workflow'];
 const WEB_TOOLS = ['WebSearch', 'WebFetch'];
 export { Blocked };
 

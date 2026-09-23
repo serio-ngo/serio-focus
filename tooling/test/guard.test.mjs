@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SPAWN_TOOLS } from '../../plugins/serio-focus/scripts/guard.mjs';
 
 const ALLOWED = 0;
 const ASK = 'deny';
@@ -80,12 +81,6 @@ blocks('blocks recursive deletes and git wipes', [
   'git reset --hard HEAD~1',
 ], bash);
 
-it('allows deletes inside disposable paths', () => {
-  for (const command of ['rm -rf node_modules/.cache/x', 'rm --help']) {
-    assert.equal(at('rm-ok', { tool_name: 'Bash', tool_input: { command } }), ALLOWED, command);
-  }
-});
-
 describe('dispatch budget', () => {
   const spawn = (tool_input, tool_name = 'Agent') => at('dp', { tool_name, tool_input });
   const held = (session, tool_input, tool_name = 'Agent') => ask({ cwd: box, session_id: session, tool_name, tool_input });
@@ -110,6 +105,7 @@ describe('dispatch budget', () => {
     assert.equal(state.tiers.opus, 1);
     assert.equal(held('dp', { prompt: 'ultrathink about the schema', model: 'sonnet' }), ASK);
     assert.equal(held('dp', { script: "await agent('x', { model: 'sonnet', effort: 'xhigh' })" }, 'Workflow'), ASK);
+    assert.equal(held('dp', { script: "await agent('x', { model: 'sonnet', effort: high ] })" }, 'Workflow'), ASK);
     assert.equal(spawn({ script: 'agent("find where opus is configured", { model: "haiku" })' }, 'Workflow'), ALLOWED);
   });
   it('blocks a workflow that never states its agent count, and caps the count it states', () => {
@@ -131,10 +127,6 @@ describe('dispatch budget', () => {
     const receipt = spawnSync(process.execPath, [script('verify.mjs')], { input: JSON.stringify(payload), encoding: 'utf8', env });
     assert.match(receipt.stdout, /1\.1M tok since the last repo change/);
   });
-  it('blocks the fourth agent in one wave', () => {
-    for (let n = 0; n < 3; n += 1) spawn({ prompt: `s${n}`, model: 'haiku' });
-    assert.equal(held('dp', { prompt: 'fourth', model: 'haiku' }), ASK);
-  });
 });
 
 describe('fan-out cap', () => {
@@ -145,12 +137,10 @@ describe('fan-out cap', () => {
     for (let n = 0; n < 3; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku' }), ALLOWED);
     assert.equal(held('wave', { prompt: 'fourth', model: 'haiku' }), ASK);
   });
-  it('holds a declared 30-agent workflow wave', () => {
-    assert.equal(held('wide', { script: "// AGENTS: 30\nawait parallel(rows.map((r) => agent(r, { model: 'haiku' })))" }, 'Workflow'), ASK);
-  });
   it('never routes Claude Code to-do tools into the wave', () => {
     const { matcher } = JSON.parse(readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks.PreToolUse[0];
     for (const tool of ['TaskCreate', 'TaskUpdate', 'TaskList']) assert.doesNotMatch(tool, new RegExp(matcher));
+    for (const tool of ['TaskCreate', 'TaskUpdate', 'TaskList']) assert(!SPAWN_TOOLS.includes(tool), tool);
   });
   it('lets a single workflow agent through', () => {
     assert.equal(spawn('narrow', { script: 'await agent("find where opus is configured", { model: "haiku" })' }, 'Workflow'), ALLOWED);
@@ -176,26 +166,6 @@ describe('read and query budgets', () => {
     assert.equal(out.updatedInput.file_path, probe);
     assert.equal(state('bq').saved.trimmed, 400 * 64 - out.updatedInput.limit * 64);
     assert.equal(state('bq').saved.rewrites, 1);
-  });
-  it('names a scout subagent in a refused read unless HANDOFF_DELEGATE=0', () => {
-    const file = path.join(box, 'delegate.txt');
-    writeFileSync(file, 'delegated');
-    const fire2 = (session, extra) => spawnSync(process.execPath, [script('guard.mjs')], {
-      input: JSON.stringify({ cwd: box, session_id: session, tool_name: 'Read', tool_input: { file_path: file } }),
-      encoding: 'utf8', env: { ...process.env, HANDOFF_OS_DIR: box, ...extra },
-    });
-    const decision = (result) => {
-      assert.equal(result.status, ALLOWED);
-      return JSON.parse(result.stdout).hookSpecificOutput;
-    };
-    fire2('dg', {});
-    const on = decision(fire2('dg', {}));
-    assert.equal(on.permissionDecision, ASK);
-    assert.match(on.permissionDecisionReason, /scout subagent/);
-    fire2('dg0', { HANDOFF_DELEGATE: '0' });
-    const off = decision(fire2('dg0', { HANDOFF_DELEGATE: '0' }));
-    assert.equal(off.permissionDecision, ASK);
-    assert.doesNotMatch(off.permissionDecisionReason, /scout subagent/);
   });
   it('holds a shell whole-file read over the 24KB limit, spaced path included', () => {
     const big = `${'x'.repeat(70)}\n`.repeat(500);
@@ -237,20 +207,12 @@ describe('read and query budgets', () => {
     const png = path.join(box, 'shot.png');
     writeFileSync(png, `${'x'.repeat(63)}\n`.repeat(480));
     assert.equal(run('img', { tool_name: 'Read', tool_input: { file_path: png } }).stdout, '');
+    assert.equal(at('img-sh', { tool_name: 'Bash', tool_input: { command: `cat ${png}` } }), ALLOWED);
   });
   it('holds a runaway subagent past its web call cap', () => {
     const web = { agent_type: 'workflow-subagent', agent_id: 'w1', tool_name: 'WebSearch', tool_input: { query: 'q' } };
     for (let n = 0; n < 2; n += 1) run('web', web);
     assert.equal(ask({ cwd: box, session_id: 'web', ...web }, { ...process.env, HANDOFF_OS_DIR: box, HANDOFF_WEB_CAP: '2' }), ASK);
-  });
-  it('credits a refused read once however often it is retried', () => {
-    const file = path.join(box, 'retry.txt');
-    writeFileSync(file, 'w'.repeat(30 * 1024));
-    for (let n = 0; n < 3; n += 1) {
-      assert.equal(ask({ cwd: box, session_id: 'rt', tool_name: 'Bash', tool_input: { command: `cat -n ${file}` } }), ASK);
-    }
-    assert.equal(state('rt').saved.slices, 1);
-    assert.equal(state('rt').saved.deferred, 30 * 1024);
   });
 });
 

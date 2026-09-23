@@ -1,13 +1,13 @@
 {
   "generated": "2026-09-23",
   "version": "1.15.0",
-  "cases": 37,
+  "cases": 38,
   "recall": 100,
   "precision": 100,
   "fpRate": 0,
   "f1": 1,
   "confusion": {
-    "tp": 17,
+    "tp": 18,
     "fn": 0,
     "fp": 0,
     "tn": 20
@@ -24,19 +24,19 @@
       "f1": 0
     },
     "policy": {
-      "recall": 12,
+      "recall": 11,
       "fpRate": 5,
-      "f1": 0.2
+      "f1": 0.19
     },
     "keyword": {
-      "recall": 24,
+      "recall": 22,
       "fpRate": 10,
-      "f1": 0.35
+      "f1": 0.33
     },
     "denyall": {
       "recall": 100,
       "fpRate": 100,
-      "f1": 0.63
+      "f1": 0.64
     }
   },
   "keptPct": 59,
@@ -50,10 +50,10 @@
   "origins": {
     "spec": 26,
     "probe": 3,
-    "regression": 8
+    "regression": 9
   },
   "recallCI": [
-    81,
+    82,
     100
   ],
   "fpRateCI": [

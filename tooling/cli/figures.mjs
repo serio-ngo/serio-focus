@@ -118,8 +118,6 @@ function probe() {
     '- fixed 3 anchors · docs/BENCHMARK.md:12',
     '- held git commit to final state · listed exact command',
     'Next: run npm run upkeep',
-    'You should see: wrote docs/demo.svg',
-    'If not: check HANDOFF_GIT_WRITE=0 and rerun',
     'Step 2 of 5',
   ];
 
@@ -144,7 +142,7 @@ function demoSvg({ steps, answer, receipt } = probe()) {
   }
   rows.push({ text: '⏺  Answer · focus style', fill: INK, weight: 600 });
   answer.forEach((line, i) => rows.push({
-    text: line.startsWith('-') || line.startsWith('You ') || line.startsWith('If ') ? `   ${line}` : line,
+    text: line.startsWith('-') ? `   ${line}` : line,
     fill: /^Next:/.test(line) ? HUE.with : INK,
     weight: i === 0 || /^Next:|^Step /.test(line) ? 600 : undefined,
     wash: i === 0 ? null : null,

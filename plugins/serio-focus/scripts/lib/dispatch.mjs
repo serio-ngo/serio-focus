@@ -8,7 +8,7 @@ const MODEL_TIERS = /\b(?:haiku|sonnet|opus|fable)\b/i;
 const MODEL_OPTION = /\bmodel\s*[:=]\s*['"`]?\s*(haiku|sonnet|opus|fable)\b/gi;
 const QUALITY = /\bQUALITY:\s*(?:writing|creative|legal|security)\b/;
 const REVIEW = /\b(?:review|audit)(?:s|ed|ing|er|ers|or|ors)?\b/i;
-const THINK_ESCALATION = /\b(?:(?:ultrathink|megathink|think\s+(?:hard(?:er)?|deeply))\b|(?:reasoning[-_ ]?)?effort\s*[=:]\s*(['"`]?)(?:high|xhigh|max)\1(?=\s*(?:[,})]|$)))/i;
+const THINK_ESCALATION = /\b(?:(?:ultrathink|megathink|think\s+(?:hard(?:er)?|deeply))\b|(?:reasoning[-_ ]?)?effort\s*[=:]\s*(['"`]?)(?:high|xhigh|max)\1(?=\s*(?:[,})\]]|$)))/i;
 const UNBOUNDED_FANOUT = /\b(?:parallel|pipeline|Promise\s*\.\s*all(?:Settled)?)\s*\(/;
 const FANOUT_BUDGET = /(?:^|\n)\s*\/\/\s*AGENTS:\s*(\d+(?:\s*\+\s*\d+)*)/;
 const WORKFLOW_AGENT_CALL = /(?<![.\w$])agent\s*\(/g;

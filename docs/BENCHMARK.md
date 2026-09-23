@@ -161,14 +161,14 @@ npm run benchmark:compare
 | Guard | Caught | Wrongly blocked | F1 |
 |---|---|---|---|
 | no guard, permission prompts only | 0% | 0% | 0.00 |
-| Claude Code permissions.deny globs | 12% | 5% | 0.20 |
-| a pattern-list PreToolUse hook | 24% | 10% | 0.35 |
-| block every tool call | 100% | 100% | 0.63 |
+| Claude Code permissions.deny globs | 11% | 5% | 0.19 |
+| a pattern-list PreToolUse hook | 22% | 10% | 0.33 |
+| block every tool call | 100% | 100% | 0.64 |
 | **serio-focus** | 100% | 0% | 1.00 |
 
-37 cases, 2026-09-23; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
+38 cases, 2026-09-23; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
 
-26 of 37 scored cases are `spec` (rule-derived), 3 `probe`, 8 `regression`; recall here is a regression check, not a detection rate.
+26 of 38 scored cases are `spec` (rule-derived), 3 `probe`, 9 `regression`; recall here is a regression check, not a detection rate.
 <!-- /guard-scores -->
 
 - Mechanism baselines from published rule shapes, not vendor code; no product named.
@@ -179,20 +179,20 @@ npm run benchmark:compare
 - Multiple roots aggregate: `node tooling/benchmark/benchmark.mjs <repo…> [--write]`; combined totals print, outputs land in the first root.
 
 <!-- eval-results -->
-Run 2026-09-23 · 37 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
+Run 2026-09-23 · 38 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
 
 | Metric | Value |
 |---|---|
-| Recall | 17/17 (100%) |
-| Precision | 17/17 (100%) |
+| Recall | 18/18 (100%) |
+| Precision | 18/18 (100%) |
 | False-positive rate | 0/20 (0%) |
 | F1 | 1.00 |
-| Recall 95% CI (Wilson) | 81–100% — n=17 |
+| Recall 95% CI (Wilson) | 82–100% — n=18 |
 | FP-rate 95% CI (Wilson) | 0–17% — n=20 |
-| Recall by origin | spec 14/14 (100%) · probe 1/1 (100%) · regression 2/2 (100%) |
+| Recall by origin | spec 14/14 (100%) · probe 1/1 (100%) · regression 3/3 (100%) |
 | Known bypasses caught | n/a |
 
-Confusion: TP 17 · FN 0 · FP 0 · TN 20. Bypasses scored apart.
+Confusion: TP 18 · FN 0 · FP 0 · TN 20. Bypasses scored apart.
 
-26 of 37 scored cases are `spec` (rule-derived), 3 `probe`, 8 `regression`; recall here is a regression check, not a detection rate.
+26 of 38 scored cases are `spec` (rule-derived), 3 `probe`, 9 `regression`; recall here is a regression check, not a detection rate.
 <!-- /eval-results -->
