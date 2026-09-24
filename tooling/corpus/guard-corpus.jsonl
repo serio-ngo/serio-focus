@@ -17,7 +17,7 @@
 {"id":"budget-a08","category":"budget","tool":"Workflow","input":{"script":"await agent('flag any // comment left in src', { model: 'haiku' })"},"want":"allow","origin":"regression","note":"a // inside a prompt string is not a comment; the model option after it still counts"}
 {"id":"budget-a09","category":"budget","tool":"Workflow","input":{"script":"await agent(\"list each rule that denies effort: 'high' in a script\", { model: \"sonnet\" })"},"want":"allow","origin":"regression","note":"an effort value quoted inside a prompt is text, not an option"}
 {"id":"budget-a10","category":"budget","tool":"Workflow","input":{"script":"// AGENTS: 3+1\nawait parallel(rows.map((r) => () => agent(r, { model: \"haiku\" })))\nawait agent(\"judge\", { model: \"sonnet\" })"},"want":"allow","origin":"spec","note":"waves run one after another declared as 3+1; the cap reads the widest wave"}
-{"id":"budget-a11","category":"budget","tool":"Workflow","input":{"script":"await agent('x', { model: 'sonnet', effort: high ] })"},"want":"block","origin":"regression","note":"an unquoted effort value before a bracket is still an option"}
+{"id":"budget-a11","category":"budget","tool":"Workflow","input":{"script":"await agent('x', { model: 'sonnet', effort: max ] })"},"want":"block","origin":"regression","note":"an unquoted effort value before a bracket is still an option"}
 {"id":"git-d01","category":"git","tool":"Bash","input":{"command":"git commit -m x"},"want":"block","origin":"spec","note":"the owner commits"}
 {"id":"git-d02","category":"git","tool":"Bash","input":{"command":"git commit --verify -m x"},"want":"block","origin":"regression","note":"a flag after commit does not excuse it"}
 {"id":"git-d03","category":"git","tool":"Bash","input":{"command":"git push origin main"},"want":"block","origin":"spec","note":"push is the one write that leaves the machine"}
@@ -36,3 +36,8 @@
 {"id":"delete-d03","category":"delete","tool":"Bash","input":{"command":"git clean -fdx"},"want":"block","origin":"spec","note":"deletes untracked files"}
 {"id":"delete-d04","category":"delete","tool":"Bash","input":{"command":"git reset --hard HEAD~1"},"want":"block","origin":"spec","note":"discards tracked work"}
 {"id":"delete-b01","category":"delete","tool":"Bash","input":{"command":"rm -rf node_modules/.cache/x"},"want":"allow","origin":"spec","note":"disposable build path"}
+{"id":"budget-a12","category":"budget","tool":"Workflow","input":{"script":"await agent('x', { model: 'sonnet', effort: 'high' })"},"want":"allow","origin":"regression","note":"high is the default effort level, not an escalation"}
+{"id":"budget-a13","category":"budget","tool":"Workflow","input":{"script":"await parallel([() => agent('a', { model: 'haiku' }), () => agent('b', { model: 'haiku' })])"},"want":"allow","origin":"regression","note":"a fixed list of agent() calls carries its own count"}
+{"id":"delete-b02","category":"delete","tool":"Bash","input":{"command":"D=\"$TEMP/probe\"; rm -rf \"$D\""},"want":"allow","origin":"regression","note":"a variable assigned a temp path in the same command"}
+{"id":"delete-d05","category":"delete","tool":"Bash","input":{"command":"rm -rf tmp/../src"},"want":"block","origin":"probe","note":"a disposable name that climbs out with .."}
+{"id":"git-d06","category":"git","tool":"Bash","input":{"command":"if true; then git push origin main; fi"},"want":"block","origin":"probe","note":"a push behind a shell keyword"}

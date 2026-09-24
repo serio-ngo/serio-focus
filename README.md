@@ -53,13 +53,13 @@ Without a checkout: `/plugin marketplace add serio-ngo/serio-focus`, then `/plug
 
 | Guard | Notes |
 |---|---|
-| Fan-out cap | `SERIO_MAX_PER_WAVE=3`, `SERIO_WAVE_MS=60000` — excess waits for the next wave. A workflow states `// AGENTS: 3`, or `// AGENTS: 3+1` for waves run one after another. |
+| Fan-out cap | `SERIO_MAX_PER_WAVE=3`, `SERIO_WAVE_MS=60000` — excess waits for the next wave. A workflow fanning out through a map or loop states `// AGENTS: 3`, or `// AGENTS: 3+1` for waves run one after another; a fixed list of `agent()` calls is counted as written. |
 | Read budget | A `Read` over 24 KB arrives trimmed; the same read in a shell is held instead; an unchanged file is never re-sent. |
-| Dispatch budget | Every subagent names a tier; `SERIO_DENY_SUBAGENT_MODELS=opus,fable` never reviews. |
+| Dispatch budget | A subagent with no tier, or a tier in `SERIO_DENY_SUBAGENT_MODELS=opus,fable`, runs as sonnet; every workflow `agent()` names a tier. Effort above `high` is held unless the brief says `QUALITY:`. |
 | Stall hold | Past `SERIO_STALL_HOLD=1200000` fresh tokens with no change to the repo tree, the main session's dispatch and web calls are held and subagents are told to return. Reads, shell and edits stay open; any repo change reopens. `0` disables. |
-| Git lock | `git commit` and `git push` are held to the final state; the card lists the exact command. Recursive deletes and `clean -fdx` / `reset --hard` too. Reads, branches, stashes and merges run. `SERIO_GIT_WRITE=1` reopens commit and push. |
+| Git lock | `git commit` and `git push` are held to the final state; the card lists the exact command. Recursive deletes and `clean -fdx` / `reset --hard` too, except temp, build output and a variable or `cd` pointing there. Reads, branches, stashes and merges run. `SERIO_GIT_WRITE=1` reopens commit and push. |
 | Focus style | `output-styles/focus.md` ships forced for the plugin: action first, Done ≤5, one next step. |
-| Session receipt | One line at Stop: tokens kept out and guard actions, plus tokens since the last repo change past `SERIO_STALL_WARN=500000`. Silent otherwise. |
+| Session receipt | One line at Stop: tokens kept out and guard actions, plus tokens since the last repo change past `SERIO_STALL_WARN=500000`. Silent otherwise. `audit/` gets a `session` line with effort mix, thinking tokens, repo edits and settings denials; each settings denial also gets a `SETTINGS DENY` line. |
 
 Every guard blocks first and suggests second. No block is a refusal — each names the override above
 or the command to run yourself, and the owner decides.

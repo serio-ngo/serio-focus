@@ -1,5 +1,5 @@
 const REDIRECT_AMP = (prev, next) => /[<>]/.test(prev || '') || next === '>';
-const SHELL_PREFIX = /^(?:eval|command|exec|builtin|nohup|time|nice|stdbuf|xargs)\b(?:\s+-\S+)*\s+/i;
+const SHELL_PREFIX = /^(?:(?:eval|command|exec|builtin|nohup|time|nice|stdbuf|xargs|if|then|else|elif|while|until|do)\b(?:\s+-\S+)*\s+|[!{(]\s*)/i;
 const SHELL_QUOTED = /^(['"])([\s\S]*)\1$/;
 const REDIRECT = /^&?\d*[<>]{1,2}&?\d*$/;
 const REDIRECTED = /^&?\d*[<>]{1,2}/;
