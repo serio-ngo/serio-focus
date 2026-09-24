@@ -2,12 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { load, projectOf, rootOf, save, sessionOf } from './ledger.mjs';
+import { projectOf, rootOf, sessionOf, update } from './ledger.mjs';
 
 const WRITERS = /^(?:Write|Edit|MultiEdit|NotebookEdit)$/;
 
 function scan(file) {
-  const out = { fresh: 0, cacheRead: 0, turns: 0, writes: [] };
+  const out = { fresh: 0, cacheRead: 0, turns: 0, context: 0, writes: [] };
   let lines = [];
   try { lines = readFileSync(file, 'utf8').split(/\r?\n/); } catch { return out; }
   const seen = new Set();
@@ -26,13 +26,14 @@ function scan(file) {
     out.turns += 1;
     out.fresh += (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0);
     out.cacheRead += u.cache_read_input_tokens || 0;
+    out.context = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) || out.context;
   }
   return out;
 }
 
 export function usage(file) {
-  const { fresh, cacheRead, turns } = scan(file);
-  return { fresh, cacheRead, turns };
+  const { fresh, cacheRead, turns, context } = scan(file);
+  return { fresh, cacheRead, turns, context };
 }
 
 const norm = (value) => path.resolve(value).replace(/\\/g, '/').toLowerCase();
@@ -65,12 +66,9 @@ export function stall(payload = {}) {
   const print = tree(project);
   if (!print) return 0;
   const fresh = sessionSpend(payload.transcript_path, project)?.fresh || 0;
-  const root = rootOf(payload);
-  const session = sessionOf(payload);
-  const state = load(root, session);
-  if (state.progress?.print !== print) {
-    state.progress = { print, at: fresh };
-    save(root, session, state);
-  }
-  return Math.max(0, fresh - state.progress.at);
+  const at = update(rootOf(payload), sessionOf(payload), (state) => {
+    if (state.progress?.print !== print) state.progress = { print, at: fresh };
+    return state.progress.at;
+  });
+  return Math.max(0, fresh - at);
 }

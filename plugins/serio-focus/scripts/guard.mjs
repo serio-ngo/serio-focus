@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Blocked } from './lib/blocked.mjs';
 import { append, entry } from './audit.mjs';
-import { bump } from './lib/ledger.mjs';
+import { bump, rootOf } from './lib/ledger.mjs';
 import { agentsRequested, bookRedirect, costBudget, dispatchBudget, withScript } from './lib/dispatch.mjs';
 import { fanOutCap } from './lib/fan-out.mjs';
 import { judgeShell } from './lib/shell-danger.mjs';
@@ -20,9 +20,7 @@ let current = {};
 
 const deny = (reason, label = 'BLOCKED') => {
   bump(current, 'blocked');
-  const error = new Blocked(`${label}: ${reason}\n`);
-  error.rule = label;
-  throw error;
+  throw new Blocked(`${label}: ${reason}\n`);
 };
 
 function judgeRead(payload, input) {
@@ -90,16 +88,8 @@ export function judge(raw = {}) {
 const refuse = (error) => {
   if (!(error instanceof Blocked)) throw error;
   const reason = error.message.trim();
-  try {
-    const root = process.env.HANDOFF_OS_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
-    const project = process.env.CLAUDE_PROJECT_DIR || current.cwd || process.cwd();
-    const values = entry(current, project);
-    if (values) {
-      values.result = `blocked: ${reason}`;
-      values.rule = error.rule || reason.split('\n')[0].split(':')[0].trim();
-      append(root, values);
-    }
-  } catch { }
+  const values = entry(current, reason);
+  if (values) append(rootOf(current), values);
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',

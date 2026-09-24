@@ -63,10 +63,10 @@ const wilson = (x, total) => {
 const ci = ([lo, hi]) => `${lo}–${hi}%`;
 
 function score(cmd, cases) {
-  const probe = mkdtempSync(path.join(tmpdir(), 'handoff-eval-'));
+  const probe = mkdtempSync(path.join(tmpdir(), 'serio-eval-'));
   const env = {
     ...process.env,
-    HANDOFF_OS_DIR: probe,
+    SERIO_OS_DIR: probe,
     POLICY_FILE: path.join(REPO, 'tooling', 'settings', 'policy.json'),
   };
   const isHeld = (run) => {
@@ -120,21 +120,18 @@ function mergeScores(root, patch) {
   let current = {};
   try { current = JSON.parse(readFileSync(file, 'utf8')); } catch { current = {}; }
   const next = { ...current, ...patch };
-  delete next.latencyMedianMs;
-  delete next.latencyP95Ms;
-  delete next.resendsRemoved;
   writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
   console.log('  wrote tooling/results/scores.json');
 }
 
-const ownCmd = () => (process.env.HANDOFF_EVAL_GUARD
-  ? process.env.HANDOFF_EVAL_GUARD.split(/\s+/)
+const ownCmd = () => (process.env.SERIO_EVAL_GUARD
+  ? process.env.SERIO_EVAL_GUARD.split(/\s+/)
   : [process.execPath, path.join(REPO, OWN)]);
 
 function latency(cases = 90) {
   const cmd = ownCmd();
-  const probe = mkdtempSync(path.join(tmpdir(), 'handoff-lat-'));
-  const env = { ...process.env, HANDOFF_OS_DIR: probe };
+  const probe = mkdtempSync(path.join(tmpdir(), 'serio-lat-'));
+  const env = { ...process.env, SERIO_OS_DIR: probe };
   const shapes = [
     { id: 'lat-allow', tool: 'Bash', input: { command: 'git status' } },
     { id: 'lat-block', tool: 'Bash', input: { command: 'git commit -m x' } },
@@ -186,7 +183,7 @@ function compareBlock(own, baselines) {
 
 function run() {
   const cases = corpus();
-  const label = process.env.HANDOFF_EVAL_GUARD || OWN;
+  const label = process.env.SERIO_EVAL_GUARD || OWN;
   const own = score(ownCmd(), cases);
 
   const baselines = {};
@@ -260,8 +257,8 @@ function replay(root) {
   const guard = path.join(root, OWN);
   for (const name of readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
     const session = name.replace(/\.jsonl$/, '');
-    const probe = mkdtempSync(path.join(tmpdir(), 'handoff-replay-'));
-    const env = { ...process.env, HANDOFF_OS_DIR: probe, CLAUDE_PROJECT_DIR: root };
+    const probe = mkdtempSync(path.join(tmpdir(), 'serio-replay-'));
+    const env = { ...process.env, SERIO_OS_DIR: probe, CLAUDE_PROJECT_DIR: root };
     let seen = false;
     for (const line of readFileSync(path.join(dir, name), 'utf8').split(/\r?\n/)) {
       if (!line) continue;
@@ -328,6 +325,7 @@ function collect(root) {
     : [];
 
   const t = zeroT();
+  const billed = {};
 
   for (const file of ledgers) {
     for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
@@ -343,9 +341,12 @@ function collect(root) {
       } catch { continue; }
       t.turns += 1;
       for (const key of COUNTERS) t[key] += BYTES.has(key) ? tok(saved[key] || 0) : Number(saved[key] || 0);
-      t.fresh += Number(real.fresh || 0);
-      t.cacheRead += Number(real.cacheRead || 0);
+      billed[entry.session] = real;
     }
+  }
+  for (const real of Object.values(billed)) {
+    t.fresh += Number(real.fresh || 0);
+    t.cacheRead += Number(real.cacheRead || 0);
   }
 
   const billing = t.fresh
@@ -395,8 +396,9 @@ row('read volume the session asked for', `~${compact(readVolume)}`, 'tok');
 row('kept out', `~${compact(keptBytes)}`, `tok   ${keptShare}% of read volume`);
 row('  re-read dedup', `~${compact(t.bytes)}`, 'tok   file was already in context, unchanged');
 row('  whole-file cap', `~${compact(t.deferred)}`, 'tok   over 24KB, a slice or scout instead');
-row('  moved to a subagent', `~${compact(t.offload)}`, 'tok   read under a scout, never in this thread');
+row('  trimmed', `~${compact(t.trimmed)}`, 'tok   cut from reads over 24KB');
 row('admitted to the main thread', `~${compact(t.read)}`, `tok   ${100 - keptShare}% of read volume`);
+row('read by subagents', `~${compact(t.offload)}`, 'tok   not counted as kept out');
 console.log('  token counts above are file bytes / 4, an estimate, never billing');
 console.log('\n  context tax — what the plugin itself costs the window');
 row('session card', `~${compact(tax.card)}`, 'tok   always in context');
@@ -412,8 +414,8 @@ if (t.fresh) {
   row('context re-send ratio', `${resend.toFixed(1)}x`, 'cache mechanism, not the guard');
 }
 
-const REPLAY_OPEN = '<!-- handoff-replay -->';
-const REPLAY_CLOSE = '<!-- /handoff-replay -->';
+const REPLAY_OPEN = '<!-- serio-replay -->';
+const REPLAY_CLOSE = '<!-- /serio-replay -->';
 if (flags.replay) {
   const rs = REPOS.map((root) => replay(root));
   const r = {
@@ -461,8 +463,8 @@ rule('capped waves', t.waves, 'fan-out cap');
 rule('blocked', t.blocked, 'git and delete lock, dispatch budget, fan-out cap');
 console.log();
 
-const OPEN = '<!-- handoff-stats -->';
-const CLOSE = '<!-- /handoff-stats -->';
+const OPEN = '<!-- serio-stats -->';
+const CLOSE = '<!-- /serio-stats -->';
 const statsBlock = () => {
   if (!actions) return ['No ledger lines recorded yet. Method: docs/BENCHMARK.md.'];
   return [
@@ -472,8 +474,9 @@ const statsBlock = () => {
     `| **Kept out** | **~${compact(keptBytes)}** | **${keptShare}%** |`,
     `| — re-read dedup | ~${compact(t.bytes)} | ${share(t.bytes, readVolume)}% |`,
     `| — whole-file cap | ~${compact(t.deferred)} | ${share(t.deferred, readVolume)}% |`,
-    `| — moved to a subagent | ~${compact(t.offload)} | ${share(t.offload, readVolume)}% |`,
+    `| — trimmed | ~${compact(t.trimmed)} | ${share(t.trimmed, readVolume)}% |`,
     `| Admitted to the main thread | ~${compact(t.read)} | ${100 - keptShare}% |`,
+    `| Read by subagents, not counted as kept out | ~${compact(t.offload)} | — |`,
     '',
     `| Context tax — the plugin's own footprint | Tokens |`,
     '|---|---|',
@@ -481,7 +484,7 @@ const statsBlock = () => {
     `| Skill descriptions, always in context | ~${compact(tax.skills)} |`,
     `| Agent descriptions, always in context | ~${compact(tax.agents)} |`,
     `| **Total footprint** | **~${compact(tax.total)}** |`,
-    '| Per turn, on top of that | **0** (since 1.6.0) |',
+    '| Per turn, on top of that | **0** |',
     `| **Net kept out minus footprint** | **~${compact(net)}** |`,
     '',
     ...(t.fresh ? [

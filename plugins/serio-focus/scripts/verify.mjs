@@ -2,8 +2,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { append } from './audit.mjs';
-import { COUNTERS, bank, load, rootOf, save, savings, sessionOf } from './lib/ledger.mjs';
-import { sessionLine } from './lib/stats.mjs';
+import { COUNTERS, bank, fold, rootOf, savings, sessionOf, update } from './lib/ledger.mjs';
+import { heldCount, kept, sessionLine } from './lib/stats.mjs';
 import { stallWarn } from './lib/limits.mjs';
 import { stall, usage } from './lib/transcript.mjs';
 
@@ -11,28 +11,21 @@ export function report(payload) {
   const tokens = stall(payload);
   const root = rootOf(payload);
   const session = sessionOf(payload);
-  const state = load(root, session);
-  const total = savings(state);
-  if (total) {
-    append(root, {
-      session,
-      actor: 'main',
-      tier: 'GREEN',
-      action: 'read-budget',
-      target: JSON.stringify(total),
-      rule: 'read-budget',
-      result: JSON.stringify(usage(payload.transcript_path)),
-    });
-    bank(state);
-    for (const key of COUNTERS) state.saved[key] = 0;
-  }
-  const stalled = tokens >= stallWarn() ? tokens : 0;
-  const stamp = JSON.stringify([state.session || {}, state.tiers || {}, Math.floor(stalled / stallWarn())]);
-  const changed = stamp !== state.printed;
-  if (changed) state.printed = stamp;
-  if (total || changed) save(root, session, state);
-  if (!changed) return null;
-  return sessionLine(state, stalled) || null;
+  const real = usage(payload.transcript_path);
+  return update(root, session, (state) => {
+    const total = savings(state);
+    if (total) {
+      append(root, { session, actor: 'main', action: 'read-budget', target: JSON.stringify(total), result: JSON.stringify(real) });
+      bank(state);
+      for (const key of COUNTERS) state.saved[key] = 0;
+    }
+    const stalled = tokens >= stallWarn() ? tokens : 0;
+    const s = fold(state.session, state.saved);
+    const stamp = JSON.stringify([kept(s), heldCount(s), Math.floor(stalled / stallWarn())]);
+    if (stamp === state.printed) return null;
+    state.printed = stamp;
+    return sessionLine(state, stalled, real.context) || null;
+  });
 }
 
 function announce(stats) {

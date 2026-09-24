@@ -23,7 +23,7 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 | Find a file, symbol, route, config, test · quote a known value · extract to a fixed schema · read one live page | **scout agent** | `haiku` (pinned in `agents/scout.md` — just call scout) | `low` |
 | Web research needing synthesis · code to a spec with a runnable check | subagent | `sonnet` | `medium` |
 | Review an implementation, plan or root-cause claim · security, money, personal data, legal, irreversible | subagent | `sonnet` | `high` |
-| Prose you publish — grant narrative, board report | subagent | `opus` | `high` |
+| Prose you publish — grant narrative, board report | subagent | `opus` with `QUALITY: writing` in the brief | `high` |
 | Architecture, sequencing, deciding what ships | **main session** | — | — |
 | Any Workflow `agent()` call | per the rows above | `model` in every call — the hook blocks a call without one | `low` or `medium` |
 
@@ -60,16 +60,16 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 | Cap | Value |
 |---|---|
 | Agents per wave | **3** — the fourth is blocked by the hook; a workflow declares `// AGENTS: 3`, or `3+1` for sequential waves |
-| Web calls | **10** in the brief unless the owner raises it; the hook stops a runaway subagent past `HANDOFF_WEB_CAP` |
+| Web calls | **10** in the brief unless the owner raises it; the hook stops a runaway subagent past `SERIO_WEB_CAP` |
 | Estimate | one `EST:` line before dispatch — agents × tool calls × expected return lines |
 | Deliverable path | a repo path, never a TEMP scratchpad — a limit hit loses TEMP |
 | Tool calls | **15**, or **25** for a code fix with tests |
 | Output | a stated **line count**, tables only, no preamble, no reasoning narration |
 | Shape | the exact section headings you want back |
-| model + effort | from §2 — state them, never default them |
+| model + effort | from §2 — state them, never default them; above `medium` the hook blocks all but a review at `high` or a `QUALITY:` brief |
 
 - Waves are sequential: launch → read → decide if another wave earns its cost. Scopes are disjoint: name each agent's sources and what the others own.
 - Verifier only when the recommendation changes if the claim is wrong.
 - Context hygiene: read a subagent's file by slice, never paste its full report into the main thread; a return over its line count is a failed brief, not new context.
-- Every block lands in the audit ledger; denied models (`HANDOFF_DENY_SUBAGENT_MODELS`, default `opus,fable`) never review, review is sonnet.
+- Every block lands in the audit ledger; denied models (`SERIO_DENY_SUBAGENT_MODELS`, default `opus,fable`) never review, review is sonnet.
 - Levers, in order: delegate reading, keep deciding · demand a line count back · fewer sub-questions · slices (`sed -n`, `grep -n`), never whole files · delete skills that never fire.

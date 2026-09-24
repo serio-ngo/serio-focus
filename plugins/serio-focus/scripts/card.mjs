@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { load, projectOf, rootOf, save, sessionOf, sweep } from './lib/ledger.mjs';
+import { projectOf, rootOf, sessionOf, sweep, update } from './lib/ledger.mjs';
 import { BIG_FILE_BYTES, MAX_PER_WAVE, stallHold } from './lib/limits.mjs';
 import { compact } from './lib/stats.mjs';
 import { stall } from './lib/transcript.mjs';
@@ -11,21 +11,14 @@ const { version } = JSON.parse(readFileSync(new URL('../.claude-plugin/plugin.js
 
 const FREEING = new Set(['compact', 'clear']);
 function forgetReads(payload) {
-  if (!FREEING.has(String(payload.source || ''))) return false;
-  const root = rootOf(payload);
-  const session = sessionOf(payload);
-  const state = load(root, session);
-  if (!Object.keys(state.reads).length) return false;
-  state.reads = {};
-  save(root, session, state);
-  return true;
+  if (FREEING.has(String(payload.source || ''))) update(rootOf(payload), sessionOf(payload), (state) => { state.reads = {}; });
 }
 
 export function card(project) {
   const saved = project ? rescued(project).length : 0;
   const hold = stallHold();
   return `Serio Focus ${version} — session card
-CAPS  ${MAX_PER_WAVE} subagents per wave · reads over ${BIG_FILE_BYTES / 1024}KB trimmed or held${hold ? ` · dispatch and web held after ${compact(hold)} tok with no repo change` : ''} · git commit and push stay manual
+CAPS  ${MAX_PER_WAVE} subagents per wave · every agent() names a model · a workflow states // AGENTS: ${MAX_PER_WAVE}, or ${MAX_PER_WAVE}+1 for waves · reads over ${BIG_FILE_BYTES / 1024}KB trimmed or held${hold ? ` · dispatch and web held after ${compact(hold)} tok with no repo change` : ''} · git commit and push stay manual
 SHAPE the focus output style shapes every reply${saved ? `\nRESCUE ${saved} session(s) ended on an API error. Next: read .claude/rescue/` : ''}`;
 }
 

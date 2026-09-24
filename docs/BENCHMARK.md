@@ -14,7 +14,7 @@
 
 | Figure | Source |
 |---|---|
-| `docs/flood.svg` | Measured 2026-09-10, `claude-sonnet-5`, plugin 1.9.1 `8e9d9c4`. Without the guard 20 of 20 subagents start; with it 3 start, 17 held for the next wave. Runner removed at 1.12.6 — the figure is static, not regenerated. |
+| `docs/flood.svg` | Guard replay 2026-09-23, plugin 1.15.0 working tree: 20 `Agent` dispatches in one wave, 3 start, 17 held for the next wave. Without the hook nothing is held, so all 20 start. Static, not regenerated. |
 
 ## Cost and limits
 
@@ -37,16 +37,18 @@
 |---|---|---|
 | re-read dedup | `bytes` | full file size — already in context, byte-identical |
 | whole-file cap | `deferred` | full file size at refusal |
-| moved to a subagent | `offload` | bytes read under a non-`main` actor |
+| trimmed | `trimmed` | bytes cut from a read over 24KB |
+| read by subagents | `offload` | bytes read under a non-`main` actor; shown, never counted as kept out |
 | admitted | `read` | bytes let into the main thread |
-| dispatched scout / runner | `scouts`, `runners` | counted only; their reads credit `offload` |
+| dispatched scout / runner | `scouts`, `runners` | counted only |
 | plugin footprint | — | session card + skill and agent descriptions, chars / 4, always in context |
 
 | Share rule | Why |
 |---|---|
 | `net` is kept-out tokens minus footprint | the window cost in tokens; negative when the window did no whole-file reads |
 | a retried refusal credits once | first refusal stamps `actor + path + mtime:size + rule`; repeats skip the byte credit |
-| the follow-up read lands in the denominator | slice or scout read after a cap counts as `admitted` or `offload` |
+| the follow-up read lands in the denominator | a slice read after a cap counts as `admitted` |
+| session receipt | `kept out` as a share of the main thread's context: last request's input + cache write + cache read tokens |
 
 - Only the current ledger format parses; older lines skip, never guessed.
 - Bytes / 4 estimates tokens; never billing.
@@ -77,54 +79,56 @@ npm run benchmark:replay
 | Property | Value |
 |---|---|
 | Input | real tool calls from real sessions, not fixtures |
-| Isolation | one temp `HANDOFF_OS_DIR` per session, matching that session's dedup state |
+| Isolation | one temp `SERIO_OS_DIR` per session, matching that session's dedup state |
 | Loop | open — a refusal cannot change what the agent did next |
 | Misses | shell pipelines and `$(...)`, which the read budget cannot size |
 | Bias | guarded sessions produce fewer hits, so the count is a floor |
 
 - Answers what the guard catches on this stream.
 
-<!-- handoff-replay -->
-| The maintainer's 3 sessions — run it on yours | Count | Share of judged |
+<!-- serio-replay -->
+| The maintainer's 7 sessions — run it on yours | Count | Share of judged |
 |---|---|---|
-| Tool calls recorded | 259 | — |
-| Judged by the guard | 234 | 100% |
-| **Refused** | **6** | **3%** |
-| — git and delete lock | 5 | 2% |
-| — re-read dedup | 1 | 0% |
+| Tool calls recorded | 742 | — |
+| Judged by the guard | 553 | 100% |
+| **Refused** | **10** | **2%** |
+| — git and delete lock | 7 | 1% |
+| — re-read dedup | 2 | 0% |
+| — whole-file cap | 1 | 0% |
 
 Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed to the guard in order, one sandbox per session. Open-loop: a refusal cannot change what the agent did next, so this is what the guard catches on that exact stream, not a counterfactual. Reproduce with `npm run benchmark:replay`.
-<!-- /handoff-replay -->
+<!-- /serio-replay -->
 
 ## Live ledger — what the guard did on this machine
 
-<!-- handoff-stats -->
-| Measured over 176 ledger lines | Tokens | Share |
+<!-- serio-stats -->
+| Measured over 162 ledger lines | Tokens | Share |
 |---|---|---|
-| Read volume the session asked for | ~4.1M | 100% |
-| **Kept out** | **~2.4M** | **59%** |
-| — re-read dedup | ~56.5k | 1% |
-| — whole-file cap | ~72.3k | 2% |
-| — moved to a subagent | ~766.8k | 19% |
-| Admitted to the main thread | ~1.7M | 41% |
+| Read volume the session asked for | ~3.3M | 100% |
+| **Kept out** | **~1.7M** | **51%** |
+| — re-read dedup | ~55.4k | 2% |
+| — whole-file cap | ~176.9k | 5% |
+| — trimmed | ~1.5M | 44% |
+| Admitted to the main thread | ~1.6M | 49% |
+| Read by subagents, not counted as kept out | ~1.1M | — |
 
 | Context tax — the plugin's own footprint | Tokens |
 |---|---|
-| Session card, always in context | ~59 |
+| Session card, always in context | ~79 |
 | Skill descriptions, always in context | ~42 |
 | Agent descriptions, always in context | ~43 |
-| **Total footprint** | **~144** |
-| Per turn, on top of that | **0** (since 1.6.0) |
-| **Net kept out minus footprint** | **~2.4M** |
+| **Total footprint** | **~164** |
+| Per turn, on top of that | **0** |
+| **Net kept out minus footprint** | **~1.7M** |
 
 | Measured billing | Tokens |
 |---|---|
-| Fresh — input + output + cache write | 112,094,128 |
-| Cache-read | 5,493,921,750 |
-| **Context re-send ratio** | **49.0×** — cache mechanism, not the guard |
+| Fresh — input + output + cache write | 46,976,557 |
+| Cache-read | 2,620,687,798 |
+| **Context re-send ratio** | **55.8×** — cache mechanism, not the guard |
 
-Guard actions: 165 (used 15 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
-<!-- /handoff-stats -->
+Guard actions: 170 (used 14 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
+<!-- /serio-stats -->
 
 ## Track A
 
@@ -139,7 +143,7 @@ Guard actions: 165 (used 15 scout, 1 runner). Token counts are file bytes / 4 fr
 - Same corpus, same scoring, any `PreToolUse` guard on stdin:
 
 ```bash
-HANDOFF_EVAL_GUARD="node ../other-guard/hook.mjs" npm run benchmark:eval
+SERIO_EVAL_GUARD="node ../other-guard/hook.mjs" npm run benchmark:eval
 ```
 
 - No third-party guard run here. Self-test with published method.
@@ -166,7 +170,7 @@ npm run benchmark:compare
 | block every tool call | 100% | 100% | 0.64 |
 | **serio-focus** | 100% | 0% | 1.00 |
 
-38 cases, 2026-09-23; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
+38 cases, 2026-09-24; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
 
 26 of 38 scored cases are `spec` (rule-derived), 3 `probe`, 9 `regression`; recall here is a regression check, not a detection rate.
 <!-- /guard-scores -->
@@ -179,7 +183,7 @@ npm run benchmark:compare
 - Multiple roots aggregate: `node tooling/benchmark/benchmark.mjs <repo…> [--write]`; combined totals print, outputs land in the first root.
 
 <!-- eval-results -->
-Run 2026-09-23 · 38 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
+Run 2026-09-24 · 38 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
 
 | Metric | Value |
 |---|---|

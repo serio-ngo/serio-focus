@@ -1,6 +1,6 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.15.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.16.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Skills
 
@@ -29,7 +29,7 @@
 
 | What ships | Count |
 |---|---|
-| Guard logic, agent-affecting only | **784** lines across 10 flow files |
+| Guard logic, agent-affecting only | **746** lines across 10 flow files |
 | Stats, receipts, adapters (`audit`, `card`, `ledger`, `transcript`) | excluded from the count |
 | Pattern rules | **36** |
 | Hooks | **4** handlers on 4 events |
