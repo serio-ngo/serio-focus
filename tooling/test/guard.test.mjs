@@ -25,11 +25,10 @@ after(() => {
 });
 
 const box = sandbox('guard-');
-const fire = (file, payload, env = { ...process.env, SERIO_OS_DIR: box }) => spawnSync(process.execPath, [file], {
-  input: typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}),
-  encoding: 'utf8',
-  env,
-}).status;
+const fire = (file, payload, env = { ...process.env, SERIO_OS_DIR: box }) => {
+  const run = spawnSync(process.execPath, [file], { input: typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}), encoding: 'utf8', env });
+  return /"permissionDecision":"deny"/.test(run.stdout) ? ASK : run.status;
+};
 
 const guard = (payload, env) => fire(script('guard.mjs'), payload, env);
 const at = (session, payload) => guard({ cwd: box, session_id: session, ...payload },
@@ -54,6 +53,7 @@ blocks('blocks git commit and push', [
   'git push --force origin main',
   'bash -c "git push origin main"',
   'powershell -Command "git commit -m x"',
+  'if true; then git push origin main; fi',
 ], bash);
 
 it('reopens commit and push while SERIO_GIT_WRITE is 1', () => {
@@ -64,11 +64,17 @@ it('reopens commit and push while SERIO_GIT_WRITE is 1', () => {
   }
 });
 
-it('allows git reads and local branch work', () => {
+it('allows git reads, local branch work and scratch deletes, in the guard and in the settings policy', () => {
+  const policy = JSON.parse(readFileSync(new URL('../settings/policy.json', import.meta.url), 'utf8'));
+  const denied = [...policy.deny, ...Object.values(policy.unlock).flat()].map((rule) => /^Bash\((.*)\)$/.exec(rule)?.[1]).filter(Boolean)
+    .map((glob) => new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
   for (const command of ['git status', 'git log --oneline', 'git diff --stat', 'git fetch origin',
     'git checkout main', 'git stash push -m wip', 'git branch feat/x', 'git merge main',
-    'git push --dry-run origin main']) {
+    'git push --dry-run origin main', 'git branch -a', 'git branch --show-current', 'git tag -l', 'git stash list',
+    'git checkout -- src/a.ts', 'D="$TEMP/probe"; rm -rf "$D"', 'rm -rf "$TMPDIR/probe"', 'cd /tmp && rm -rf probe', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null',
+    '$b = Join-Path ([System.IO.Path]::GetTempPath()) "x"; Remove-Item -Recurse -Force $b']) {
     assert.equal(at('git-ok', { tool_name: 'Bash', tool_input: { command } }), ALLOWED, command);
+    if (/^git (?!merge|push)/.test(command)) assert(!denied.some((rx) => rx.test(command)), `settings deny ${command}`);
   }
 });
 
@@ -79,19 +85,28 @@ blocks('blocks recursive deletes and git wipes', [
   'Remove-Item -Recurse -Force docs',
   'git clean -fdx',
   'git reset --hard HEAD~1',
+  'rm -rf tmp/../src',
+  'rm -rf "$D"; D=/tmp',
+  'D=/tmp; D=/home; rm -rf "$D"',
+  'true && D=/tmp; rm -rf "$D"',
+  'test $D = /tmp || rm -rf $D',
+  'D=/tmp; for D in /home; do rm -rf "$D"; done',
+  'for d in a; do rm -rf docs; done',
 ], bash);
 
 describe('dispatch budget', () => {
   const spawn = (tool_input, tool_name = 'Agent') => at('dp', { tool_name, tool_input });
   const held = (session, tool_input, tool_name = 'Agent') => ask({ cwd: box, session_id: session, tool_name, tool_input });
+  const routed = (session, tool_input, tool_name = 'Agent') => JSON.parse(spawnSync(process.execPath, [script('guard.mjs')], { encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: box },
+    input: JSON.stringify({ cwd: box, session_id: session, tool_name, tool_input }) }).stdout).hookSpecificOutput.updatedInput ?? {};
 
-  it('blocks a dispatch that names no model, an unknown tier, and a denied tier from the agent definition', () => {
-    assert.equal(held('dp', { prompt: 'x' }), ASK);
+  it('routes a dispatch with no model or a denied tier from the agent definition to sonnet, and blocks an unknown tier', () => {
+    assert.equal(routed('dp-route', { prompt: 'x' }).model, 'sonnet');
     assert.equal(held('dp', { prompt: 'x', model: 'best-available' }), ASK);
     mkdirSync(path.join(box, '.claude', 'agents'), { recursive: true });
     writeFileSync(path.join(box, '.claude', 'agents', 'pricey.md'), '---\nname: pricey\nmodel: opus\n---\n');
     const named = (tool_input) => at('dp-agents', { tool_name: 'Agent', tool_input });
-    assert.equal(held('dp-agents', { prompt: 'x', subagent_type: 'pricey' }), ASK);
+    assert.equal(routed('dp-agents', { prompt: 'x', subagent_type: 'pricey' }).model, 'sonnet');
     assert.equal(named({ prompt: 'x', subagent_type: 'serio-focus:scout' }), ALLOWED);
     assert.equal(held('dp', { script: "// AGENTS: 2\nawait agent('a', { model: 'haiku' }); await agent('b')" }, 'Workflow'), ASK);
     const saved = path.join(box, 'saved-workflow.js');
@@ -99,25 +114,28 @@ describe('dispatch budget', () => {
     assert.equal(held('dp', { scriptPath: saved }, 'Workflow'), ASK);
     assert.equal(held('dp', { scriptPath: path.join(box, 'missing-workflow.js') }, 'Workflow'), ASK);
     const row = readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse).pop();
-    assert.deepEqual(Object.keys(row), ['ts', 'session', 'actor', 'action', 'target', 'rule', 'result']);
+    assert.deepEqual(Object.keys(row), ['ts', 'v', 'session', 'actor', 'agent', 'call', 'action', 'target', 'rule', 'result']);
     assert.doesNotMatch(row.result, new RegExp(`^(?:blocked: )?${row.rule}`));
   });
-  it('blocks opus without a QUALITY flag, and thinking a deliverable did not earn', () => {
-    assert.equal(held('dp', { prompt: 'scan the repo', model: 'opus' }), ASK);
-    const state = JSON.parse(readFileSync(path.join(box, '.claude', '.session-dp.json'), 'utf8'));
+  it('routes opus without a QUALITY flag to sonnet, and blocks thinking a deliverable did not earn', () => {
+    assert.equal(routed('dp-opus', { prompt: 'scan the repo', model: 'opus' }).model, 'sonnet');
+    const state = JSON.parse(readFileSync(path.join(box, '.claude', '.session-dp-opus.json'), 'utf8'));
     assert.equal(state.saved.redirects, 1);
     assert.equal(state.tiers.opus, 1);
+    assert.match(routed('dp-wf', { script: "await agent('x', { model: 'opus' })" }, 'Workflow').script ?? '', /model: 'sonnet'/);
+    assert.equal(at('dp-high', { tool_name: 'Workflow', tool_input: { script: "await agent('x', { model: 'sonnet', effort: 'high' })" } }), ALLOWED);
     assert.equal(held('dp', { prompt: 'ultrathink about the schema', model: 'sonnet' }), ASK);
     assert.equal(held('dp', { script: "await agent('x', { model: 'sonnet', effort: 'xhigh' })" }, 'Workflow'), ASK);
-    assert.equal(held('dp', { script: "await agent('x', { model: 'sonnet', effort: high ] })" }, 'Workflow'), ASK);
+    assert.equal(held('dp', { script: "await agent('x', { model: 'sonnet', effort: max ] })" }, 'Workflow'), ASK);
     assert.equal(held('dp', { prompt: 'review the diff, effort: xhigh', model: 'sonnet' }), ASK);
     assert.equal(held('dp', { prompt: 'review this, effort: high, effort: max', model: 'sonnet' }), ASK);
     assert.doesNotMatch(spawnSync(process.execPath, [script('guard.mjs')], { encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: box },
       input: JSON.stringify({ cwd: box, session_id: 'dp', tool_name: 'Agent', tool_input: { prompt: 'review the diff, effort: high', model: 'sonnet' } }) }).stdout, /deny/);
     assert.equal(spawn({ script: 'agent("find where opus is configured", { model: "haiku" })' }, 'Workflow'), ALLOWED);
   });
-  it('blocks a workflow that never states its agent count, and caps the count it states', () => {
+  it('blocks a workflow that fans out through a map or loop without its agent count, and caps the count it states', () => {
     assert.equal(held('dp', { script: "await Promise.all(rows.map((r) => agent('x', { model: 'sonnet' })))" }, 'Workflow'), ASK);
+    assert.equal(at('dp-static', { tool_name: 'Workflow', tool_input: { script: "await parallel([() => agent('a', { model: 'haiku' }), () => agent('b', { model: 'haiku' })])" } }), ALLOWED);
     const both = spawnSync(process.execPath, [script('guard.mjs')], { encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: box },
       input: JSON.stringify({ cwd: box, session_id: 'dp', tool_name: 'Workflow', tool_input: { script: 'await parallel(rows.map((r) => () => agent(r)))' } }) });
     assert.match(JSON.parse(both.stdout).hookSpecificOutput.permissionDecisionReason, /naming no model.*; .*AGENTS: 3/);
@@ -248,8 +266,9 @@ describe('session receipt', () => {
   });
   const transcript = (content) => {
     const file = path.join(sandbox('scratch-'), 'session.jsonl');
-    const row = JSON.stringify({ type: 'assistant', message: { id: 'm1', model: 'opus', usage: { input_tokens: 600000, output_tokens: 1000 }, content } });
-    writeFileSync(file, `${row}\n${row}\n`);
+    const row = JSON.stringify({ type: 'assistant', perTurnEffort: 'xhigh', message: { id: 'm1', model: 'opus', usage: { input_tokens: 600000, output_tokens: 1000, output_tokens_details: { thinking_tokens: 400 } }, content } });
+    const denied = JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'Permission to use Bash with command git branch -a has been denied.' }] } });
+    writeFileSync(file, `${row}\n${row}\n${denied}\n`);
     return file;
   };
 
@@ -268,14 +287,19 @@ describe('session receipt', () => {
     const first = run('rc-a', {});
     assert.equal(first.status, ALLOWED);
     assert.match(first.stdout, /SERIO FOCUS · \d+ tok kept out · 1 guard action"/);
-    const receipt = readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse).filter((r) => r.session === 'rc-a').pop();
-    assert(Object.values(JSON.parse(receipt.target)).every(Boolean), receipt.target);
+    const rows = (session) => readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse).filter((r) => r.session === session);
+    const receipt = rows('rc-a').pop();
+    assert.equal(receipt.action, 'session');
+    assert(Object.values(receipt.target).every(Boolean), JSON.stringify(receipt.target));
     at('rc-b', { tool_name: 'Read', tool_input: { file_path: file } });
     ask({ cwd: box, session_id: 'rc-b', tool_name: 'Read', tool_input: { file_path: file } });
-    const edited = transcript([{ type: 'tool_use', name: 'Edit', input: { file_path: file } }]);
+    const edited = transcript([{ type: 'tool_use', name: 'Edit', input: { file_path: file } }, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'git branch -a' } }]);
     const claim = hook(GATE, { session_id: 'rc-b', transcript_path: edited, last_assistant_message: 'All done, it works now.' });
     assert.equal(claim.status, ALLOWED);
     assert.match(claim.stdout, /SERIO FOCUS · \d+ tok kept out \(0% of main context\) · 1 guard action"/);
+    const [deniedRow, sessionRow] = rows('rc-b').slice(-2);
+    assert.deepEqual([deniedRow.rule, deniedRow.target, deniedRow.call], ['SETTINGS DENY', 'git branch -a', 't1']);
+    assert.deepEqual([sessionRow.result.effort, sessionRow.result.thinking, sessionRow.result.edits, sessionRow.result.denied], [{ xhigh: 1 }, 400, 1, 1]);
     at('rc-sub', { agent_type: 'workflow-subagent', agent_id: 's1', tool_name: 'Read', tool_input: { file_path: file } });
     assert.equal(run('rc-sub', {}).stdout, '', 'a subagent read is not a guard action');
     assert.doesNotMatch(claim.stdout, /VERIFY GATE|stood down|done claimed|nothing run|spent|cached|top tier|repo edits|~/i);

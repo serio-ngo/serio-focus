@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.17.0 | 2026-09-24 | dispatch with no or a denied tier runs as sonnet instead of being refused; effort high and fixed agent() lists pass; temp and build deletes via variables, cd, .wrangler and dist-* pass, .. held; commands after if, then, do or while are judged; settings lock only commit, push and history rewrites; audit adds version, agent and call ids, a session outcome line and settings denials |
 | 1.16.0 | 2026-09-24 | serio namespace: SERIO_* env, serio CLI, runtime home, no handoff compat |
 | 1.15.0 | 2026-09-23 | stall hold: dispatch and web held after 1M fresh tokens with no repo change, subagents told to return; receipt shows only what the guard did; missing model and agent count reported together with the fix; effort text in prompts, 3+1 waves, image reads and to-do tools no longer blocked |
 | 1.14.0 | 2026-09-23 | web cap per subagent raised to 60 so it stops runaways only; CLAUDE.md renamed AGENTS.md with behaviour rules only, layout and commands moved to CONTRIBUTING |

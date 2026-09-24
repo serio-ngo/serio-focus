@@ -5,35 +5,42 @@ import path from 'node:path';
 import { projectOf, rootOf, sessionOf, update } from './ledger.mjs';
 
 const WRITERS = /^(?:Write|Edit|MultiEdit|NotebookEdit)$/;
+const SETTINGS_DENY = /Permission to use \S+ .*has been denied/;
 
 function scan(file) {
-  const out = { fresh: 0, cacheRead: 0, turns: 0, context: 0, writes: [] };
+  const out = { fresh: 0, cacheRead: 0, turns: 0, context: 0, thinking: 0, effort: {}, writes: [], denied: [] };
   let lines = [];
   try { lines = readFileSync(file, 'utf8').split(/\r?\n/); } catch { return out; }
   const seen = new Set();
+  const calls = {};
   for (const line of lines) {
     let entry;
     try { entry = JSON.parse(line); } catch { continue; }
-    const message = entry?.type === 'assistant' ? entry.message : null;
-    if (!message) continue;
-    for (const part of Array.isArray(message.content) ? message.content : []) {
+    for (const part of Array.isArray(entry?.message?.content) ? entry.message.content : []) {
+      if (part.type === 'tool_use' && calls[part.id]) continue;
+      if (part.type === 'tool_use') calls[part.id] = part;
+      if (part.type === 'tool_result' && SETTINGS_DENY.test(JSON.stringify(part.content ?? ''))) out.denied.push(calls[part.tool_use_id] || {});
       const target = WRITERS.test(part.name) && (part.input?.file_path || part.input?.notebook_path);
       if (typeof target === 'string') out.writes.push(target);
     }
-    const u = message.usage;
+    const message = entry?.type === 'assistant' ? entry.message : null;
+    const u = message?.usage;
     if (!u || seen.has(message.id)) continue;
     if (message.id) seen.add(message.id);
     out.turns += 1;
     out.fresh += (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0);
     out.cacheRead += u.cache_read_input_tokens || 0;
     out.context = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) || out.context;
+    out.thinking += u.output_tokens_details?.thinking_tokens || 0;
+    const level = entry.perTurnEffort || entry.effort;
+    if (level) out.effort[level] = (out.effort[level] || 0) + 1;
   }
   return out;
 }
 
-export function usage(file) {
-  const { fresh, cacheRead, turns, context } = scan(file);
-  return { fresh, cacheRead, turns, context };
+export function usage(file, project = '.') {
+  const { writes, ...rest } = scan(file);
+  return { ...rest, edits: writes.filter((w) => inside(w, project)).length };
 }
 
 const norm = (value) => path.resolve(value).replace(/\\/g, '/').toLowerCase();

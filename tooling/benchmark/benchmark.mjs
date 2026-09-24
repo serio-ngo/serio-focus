@@ -71,7 +71,10 @@ function score(cmd, cases) {
   };
   const isHeld = (run) => {
     if (run.status === 2) return true;
-    try { return ['ask', 'deny'].includes(JSON.parse(run.stdout || '').hookSpecificOutput?.permissionDecision); }
+    try {
+      const out = JSON.parse(run.stdout || '').hookSpecificOutput;
+      return ['ask', 'deny'].includes(out?.permissionDecision) || Boolean(out?.updatedInput);
+    }
     catch { return false; }
   };
   const rows = cases.map((c) => {
@@ -335,9 +338,8 @@ function collect(root) {
       let real;
       try {
         entry = JSON.parse(line);
-        if (entry.action !== 'read-budget') continue;
-        saved = JSON.parse(entry.target);
-        real = JSON.parse(entry.result);
+        if (entry.action !== 'session' && entry.action !== 'read-budget') continue;
+        [saved, real] = [entry.target, entry.result].map((field) => (typeof field === 'string' ? JSON.parse(field) : field));
       } catch { continue; }
       t.turns += 1;
       for (const key of COUNTERS) t[key] += BYTES.has(key) ? tok(saved[key] || 0) : Number(saved[key] || 0);

@@ -65,7 +65,14 @@
   ],
   "ask": [],
   "retired": [
-    "Bash(gh pr create *)"
+    "Bash(gh pr create *)",
+    "Bash(git add)",
+    "Bash(git add *)",
+    "Bash(git branch *)",
+    "Bash(git checkout *)",
+    "Bash(git switch *)",
+    "Bash(git stash *)",
+    "Bash(git tag *)"
   ],
   "unlock": {
     "git": [
@@ -75,18 +82,11 @@
       "Bash(git -c * push*)",
       "Bash(git commit)",
       "Bash(git commit *)",
-      "Bash(git add)",
-      "Bash(git add *)",
-      "Bash(git branch *)",
       "Bash(git reset *)",
-      "Bash(git checkout *)",
-      "Bash(git switch *)",
-      "Bash(git stash *)",
       "Bash(git rebase *)",
       "Bash(git revert *)",
       "Bash(git cherry-pick *)",
       "Bash(git clean *)",
-      "Bash(git tag *)",
       "Bash(git remote add *)",
       "Bash(git remote set-url *)"
     ]

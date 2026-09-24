@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -11,3 +12,4 @@ export const ledgerPath = (root, session) => path.join(stateDir(root), `.session
 export const waveDir = (root, session) => path.join(stateDir(root), `.wave-${session}`);
 export const rescueDir = (project) => path.join(stateDir(project), 'rescue');
 export const pluginRoot = () => path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+export const version = () => JSON.parse(readFileSync(path.join(pluginRoot(), '.claude-plugin', 'plugin.json'), 'utf8')).version;

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Blocked } from './lib/blocked.mjs';
 import { append, entry } from './audit.mjs';
 import { bump, rootOf } from './lib/ledger.mjs';
-import { agentsRequested, bookRedirect, costBudget, dispatchBudget, withScript } from './lib/dispatch.mjs';
+import { agentsRequested, bookRedirect, costBudget, dispatchBudget, reroute, withScript } from './lib/dispatch.mjs';
 import { fanOutCap } from './lib/fan-out.mjs';
 import { judgeShell } from './lib/shell-danger.mjs';
 import { kb, readBudget, shellReadBudget, webBudget } from './lib/read-budget.mjs';
@@ -33,11 +33,11 @@ function judgeRead(payload, input) {
 
 function judgeSpawn(payload, raw, tool) {
   const input = withScript(raw, tool, payload.cwd);
-  const verdicts = [dispatchBudget(input, payload.cwd, tool), costBudget(input, tool)].filter(Boolean);
-  if (verdicts.length) {
-    if (verdicts[0].tier) bookRedirect(payload, verdicts[0].tier);
-    deny(verdicts.map((v) => v.reason).join('; '), 'DISPATCH BUDGET');
-  }
+  const routed = dispatchBudget(input, payload.cwd, tool);
+  const updatedInput = routed && reroute(raw, input, tool, routed);
+  const verdicts = [!updatedInput && routed, costBudget(input, tool)].filter(Boolean);
+  if (routed?.tier) bookRedirect(payload, routed.tier);
+  if (verdicts.length) deny(verdicts.map((v) => v.reason).join('; '), 'DISPATCH BUDGET');
   const { wave, total } = agentsRequested(input, tool);
   fanOutCap(payload, wave);
 
@@ -45,7 +45,10 @@ function judgeSpawn(payload, raw, tool) {
   const kind = String(input.subagent_type || '');
   if (/scout/i.test(kind)) bump(payload, 'scouts', total);
   else if (/runner/i.test(kind)) bump(payload, 'runners', total);
-  return null;
+  if (!updatedInput) return null;
+  const reason = `DISPATCH BUDGET: ${routed.tier ? `${routed.tier} is denied for subagents` : 'no model named'}, routed to ${routed.alt}`;
+  append(rootOf(payload), entry(payload, reason));
+  return { updatedInput, reason };
 }
 
 function judgeShellCall(payload, input) {

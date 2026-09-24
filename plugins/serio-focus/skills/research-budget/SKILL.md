@@ -59,14 +59,14 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 
 | Cap | Value |
 |---|---|
-| Agents per wave | **3** — the fourth is blocked by the hook; a workflow declares `// AGENTS: 3`, or `3+1` for sequential waves |
+| Agents per wave | **3** — the fourth is blocked by the hook; a workflow fanning out through a map or loop declares `// AGENTS: 3`, or `3+1` for sequential waves |
 | Web calls | **10** in the brief unless the owner raises it; the hook stops a runaway subagent past `SERIO_WEB_CAP` |
 | Estimate | one `EST:` line before dispatch — agents × tool calls × expected return lines |
 | Deliverable path | a repo path, never a TEMP scratchpad — a limit hit loses TEMP |
 | Tool calls | **15**, or **25** for a code fix with tests |
 | Output | a stated **line count**, tables only, no preamble, no reasoning narration |
 | Shape | the exact section headings you want back |
-| model + effort | from §2 — state them, never default them; above `medium` the hook blocks all but a review at `high` or a `QUALITY:` brief |
+| model + effort | from §2 — state them, never default them; above `high` the hook blocks all but a `QUALITY:` brief |
 
 - Waves are sequential: launch → read → decide if another wave earns its cost. Scopes are disjoint: name each agent's sources and what the others own.
 - Verifier only when the recommendation changes if the claim is wrong.

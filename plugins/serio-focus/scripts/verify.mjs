@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { append } from './audit.mjs';
-import { COUNTERS, bank, fold, rootOf, savings, sessionOf, update } from './lib/ledger.mjs';
+import { append, entry } from './audit.mjs';
+import { COUNTERS, bank, fold, projectOf, rootOf, savings, sessionOf, update } from './lib/ledger.mjs';
 import { heldCount, kept, sessionLine } from './lib/stats.mjs';
 import { stallWarn } from './lib/limits.mjs';
 import { stall, usage } from './lib/transcript.mjs';
@@ -11,11 +11,14 @@ export function report(payload) {
   const tokens = stall(payload);
   const root = rootOf(payload);
   const session = sessionOf(payload);
-  const real = usage(payload.transcript_path);
+  const { denied, ...real } = usage(payload.transcript_path, projectOf(payload));
   return update(root, session, (state) => {
+    const fresh = denied.slice(state.denied || 0);
+    for (const call of fresh) append(root, entry({ session_id: session, tool_name: call.name, tool_input: call.input, tool_use_id: call.id }, 'SETTINGS DENY: a permission rule denied the call'));
+    state.denied = denied.length;
     const total = savings(state);
-    if (total) {
-      append(root, { session, actor: 'main', action: 'read-budget', target: JSON.stringify(total), result: JSON.stringify(real) });
+    if (total || fresh.length) {
+      append(root, { session, actor: 'main', action: 'session', target: total || {}, result: { ...real, denied: denied.length } });
       bank(state);
       for (const key of COUNTERS) state.saved[key] = 0;
     }
