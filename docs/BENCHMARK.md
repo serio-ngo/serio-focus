@@ -102,14 +102,14 @@ Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed
 ## Live ledger — what the guard did on this machine
 
 <!-- serio-stats -->
-| Measured over 155 ledger lines | Tokens | Share |
+| Measured over 162 ledger lines | Tokens | Share |
 |---|---|---|
-| Read volume the session asked for | ~3.2M | 100% |
-| **Kept out** | **~1.7M** | **53%** |
-| — re-read dedup | ~53.0k | 2% |
-| — whole-file cap | ~157.4k | 5% |
-| — trimmed | ~1.5M | 46% |
-| Admitted to the main thread | ~1.5M | 47% |
+| Read volume the session asked for | ~3.3M | 100% |
+| **Kept out** | **~1.7M** | **51%** |
+| — re-read dedup | ~55.4k | 2% |
+| — whole-file cap | ~176.9k | 5% |
+| — trimmed | ~1.5M | 44% |
+| Admitted to the main thread | ~1.6M | 49% |
 | Read by subagents, not counted as kept out | ~1.1M | — |
 
 | Context tax — the plugin's own footprint | Tokens |
@@ -127,7 +127,7 @@ Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed
 | Cache-read | 2,620,687,798 |
 | **Context re-send ratio** | **55.8×** — cache mechanism, not the guard |
 
-Guard actions: 163 (used 14 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
+Guard actions: 170 (used 14 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
 <!-- /serio-stats -->
 
 ## Track A
@@ -170,7 +170,7 @@ npm run benchmark:compare
 | block every tool call | 100% | 100% | 0.64 |
 | **serio-focus** | 100% | 0% | 1.00 |
 
-38 cases, 2026-09-23; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
+38 cases, 2026-09-24; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
 
 26 of 38 scored cases are `spec` (rule-derived), 3 `probe`, 9 `regression`; recall here is a regression check, not a detection rate.
 <!-- /guard-scores -->
@@ -183,7 +183,7 @@ npm run benchmark:compare
 - Multiple roots aggregate: `node tooling/benchmark/benchmark.mjs <repo…> [--write]`; combined totals print, outputs land in the first root.
 
 <!-- eval-results -->
-Run 2026-09-23 · 38 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
+Run 2026-09-24 · 38 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
 
 | Metric | Value |
 |---|---|

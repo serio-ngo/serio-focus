@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.16.0 | 2026-09-24 | serio namespace: SERIO_* env, serio CLI, runtime home, no handoff compat |
 | 1.15.0 | 2026-09-23 | stall hold: dispatch and web held after 1M fresh tokens with no repo change, subagents told to return; receipt shows only what the guard did; missing model and agent count reported together with the fix; effort text in prompts, 3+1 waves, image reads and to-do tools no longer blocked |
 | 1.14.0 | 2026-09-23 | web cap per subagent raised to 60 so it stops runaways only; CLAUDE.md renamed AGENTS.md with behaviour rules only, layout and commands moved to CONTRIBUTING |
 | 1.13.0 | 2026-09-23 | workflow agent() calls name a model, read ledger keyed per agent_id, 10 web calls per subagent, StopFailure copies files written outside the repo into .claude/rescue, receipt shows spend per message id, agents, top-tier agents and repo edits, comments removed |
