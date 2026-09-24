@@ -1,11 +1,12 @@
-import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export const COUNTERS = ['agents', 'blocked', 'rereads', 'slices', 'rewrites',
   'bytes', 'deferred', 'trimmed', 'offload', 'read', 'scouts', 'runners',
   'waves', 'agentsCapped', 'redirects'];
 
-export const BYTE_COUNTERS = ['bytes', 'deferred', 'trimmed', 'offload'];
+export const KEPT = ['bytes', 'deferred', 'trimmed'];
+export const BYTE_COUNTERS = [...KEPT, 'offload'];
 
 export const zero = () => Object.fromEntries(COUNTERS.map((key) => [key, 0]));
 const EMPTY = () => ({ reads: {}, saved: zero() });
@@ -72,23 +73,25 @@ export function save(root, session, state) {
   const file = ledgerPath(root, session);
   try {
     mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, JSON.stringify(state), 'utf8');
+    writeFileSync(`${file}.${process.pid}`, JSON.stringify(state), 'utf8');
+    renameSync(`${file}.${process.pid}`, file);
     return true;
   } catch {
     return false;
   }
 }
 
-export function bumpAll(root, session, deltas) {
+export function update(root, session, fn) {
   return withLock(root, session, () => {
     const state = load(root, session);
-    for (const [field, amount] of Object.entries(deltas)) {
-      state.saved[field] = (state.saved[field] || 0) + amount;
-    }
-    save(root, session, state);
-    return state;
+    try { return fn(state); } finally { save(root, session, state); }
   });
 }
+
+export const bumpAll = (root, session, deltas) => update(root, session, (state) => {
+  for (const [field, amount] of Object.entries(deltas)) state.saved[field] = (state.saved[field] || 0) + amount;
+  return state;
+});
 
 export function bump(payload, field, amount = 1) {
   return bumpAll(rootOf(payload), sessionOf(payload), { [field]: amount });
@@ -100,7 +103,10 @@ export function fold(base, add = {}) {
   return out;
 }
 
-export const savings = (state) => (COUNTERS.some((key) => state.saved[key]) ? { ...state.saved } : null);
+export const savings = (state) => {
+  const hit = COUNTERS.filter((key) => state.saved[key]);
+  return hit.length ? Object.fromEntries(hit.map((key) => [key, state.saved[key]])) : null;
+};
 
 export function bank(state) {
   state.session = fold(state.session, state.saved);

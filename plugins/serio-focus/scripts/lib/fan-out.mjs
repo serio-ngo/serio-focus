@@ -37,8 +37,9 @@ export function fanOutCap(payload, count = 1) {
       try { rmSync(path.join(dir, `${bucket}-${held}`), { force: true }); } catch { }
     }
     bumpAll(rootOf(payload), sessionOf(payload), { blocked: 1, waves: 1, agentsCapped: count });
-    throw new Blocked(count > 1
-      ? `FAN-OUT CAP: ${count} asked, ${cap} run. Next: wait one wave\n`
-      : `FAN-OUT CAP: subagent ${slot} held. Next: wait one wave\n`);
+    const waves = Array.from({ length: Math.ceil(count / cap) }, (_, n) => Math.min(cap, count - n * cap)).join('+');
+    throw new Blocked(count > cap
+      ? `FAN-OUT CAP: ${count} asked, ${cap} run. Next: run them as waves, // AGENTS: ${waves}\n`
+      : `FAN-OUT CAP: ${count > 1 ? `${count} asked` : `subagent ${slot}`} held. Next: wait one wave\n`);
   }
 }

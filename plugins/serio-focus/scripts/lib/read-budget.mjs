@@ -1,7 +1,7 @@
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { BASH_OUTPUT_CAP, BIG_FILE_BYTES, delegateOn, webCap } from './limits.mjs';
-import { load, rootOf, save, sessionOf } from './ledger.mjs';
+import { rootOf, sessionOf, update } from './ledger.mjs';
 import { Blocked } from './blocked.mjs';
 import { shellReads } from './shell-reads.mjs';
 
@@ -10,17 +10,16 @@ const SAMPLE_BYTES = 64 * 1024;
 const SAMPLE_LINES = 200;
 
 export const kb = (bytes) => `${Math.round(bytes / 1024)}KB`;
+const transact = (payload, fn) => update(rootOf(payload), sessionOf(payload), fn);
 const actorOf = (payload = {}) => [payload.agent_type || 'main', payload.agent_id].filter(Boolean).join('#').replace(/[:|]/g, '');
 
 export function webBudget(payload, tool) {
   const actor = actorOf(payload);
   if (actor === 'main') return null;
-  const root = rootOf(payload);
-  const session = sessionOf(payload);
-  const state = load(root, session);
-  const used = Number(state.reads[`${actor}|web`] || 0) + 1;
-  state.reads[`${actor}|web`] = used;
-  save(root, session, state);
+  const used = transact(payload, (state) => {
+    state.reads[`${actor}|web`] = Number(state.reads[`${actor}|web`] || 0) + 1;
+    return state.reads[`${actor}|web`];
+  });
   if (used > webCap()) throw new Blocked(`WEB BUDGET: ${tool} call ${used} is over the ${webCap()}-call subagent cap. Next: return what you have\n`);
   return null;
 }
@@ -59,24 +58,20 @@ const statFile = (file) => {
   } catch { return null; }
 };
 
-function bookSlice(payload, file, spec, { shell = false } = {}) {
+function bookSlice(state, payload, file, spec, { shell = false } = {}) {
   const stats = statFile(file);
   if (!stats) return;
-  const root = rootOf(payload);
-  const session = sessionOf(payload);
-  const state = load(root, session);
   let bytes = spec.whole ? stats.size : sliceBytes(file, stats.size, spec);
   if (shell) bytes = Math.min(bytes, BASH_OUTPUT_CAP);
   if (actorOf(payload) !== 'main') state.saved.offload += bytes;
   else state.saved.read += bytes;
-  save(root, session, state);
 }
 
-export function readBudget(payload, input, rewritable = false) {
+function judgeRead(state, payload, input, rewritable) {
   const file = String(input.file_path || '');
   if (!file || MEDIA.test(file)) return null;
   if (input.offset !== undefined || input.limit !== undefined || input.pages !== undefined) {
-    bookSlice(payload, file, {
+    bookSlice(state, payload, file, {
       from: Math.max(0, Number(input.offset || 0) - 1),
       lines: input.limit === undefined ? undefined : Number(input.limit),
     });
@@ -85,9 +80,6 @@ export function readBudget(payload, input, rewritable = false) {
   const stats = statFile(file);
   if (!stats) return null;
 
-  const root = rootOf(payload);
-  const session = sessionOf(payload);
-  const state = load(root, session);
   const actor = actorOf(payload);
   const main = actor === 'main';
   const resolved = path.resolve(file);
@@ -102,8 +94,7 @@ export function readBudget(payload, input, rewritable = false) {
       state.saved[action] += 1;
       state.saved[bucket] += credit;
     }
-    save(root, session, state);
-    throw new Blocked(`READ BUDGET: ${message}${main && delegateOn() ? ' — delegate the read to a scout subagent' : ''}\n`);
+    throw new Blocked(`READ BUDGET: ${message}${main && delegateOn() ? ' — read the lines you need with offset and limit, or delegate the read to a scout subagent' : ''}\n`);
   };
 
   const seen = String(state.reads[key] ?? '');
@@ -134,37 +125,29 @@ export function readBudget(payload, input, rewritable = false) {
   state.reads[key] = `${fingerprint}:${bytes}`;
   if (main) state.saved.read += bytes;
   else state.saved.offload += bytes;
-  save(root, session, state);
   return trim;
 }
 
-function unbook(payload, before) {
-  const root = rootOf(payload);
-  const session = sessionOf(payload);
-  const state = load(root, session);
-  for (const key of Object.keys(state.reads)) {
-    if (!(key in before.reads) && !key.includes('|x:')) delete state.reads[key];
-  }
-  for (const key of ['read', 'offload']) state.saved[key] = before.saved[key];
-  save(root, session, state);
-}
+export const readBudget = (payload, input, rewritable = false) => transact(payload, (state) => judgeRead(state, payload, input, rewritable));
 
 export function shellReadBudget(payload, input) {
   const command = typeof input.command === 'string' ? input.command : '';
-  const before = load(rootOf(payload), sessionOf(payload));
-  try {
-    for (const read of shellReads(command)) {
-      if (read.unjudged) continue;
-      const file = path.resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), read.file);
-      if (!read.whole || read.piped) {
-        bookSlice(payload, file, read.whole ? { whole: true } : read, { shell: true });
-        continue;
+  return transact(payload, (state) => {
+    const before = { reads: { ...state.reads }, read: state.saved.read, offload: state.saved.offload };
+    try {
+      for (const read of shellReads(command)) {
+        if (read.unjudged) continue;
+        const file = path.resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), read.file);
+        if (!read.whole || read.piped) bookSlice(state, payload, file, read.whole ? { whole: true } : read, { shell: true });
+        else judgeRead(state, payload, { file_path: file }, false);
       }
-      readBudget(payload, { file_path: file }, false);
+    } catch (error) {
+      if (error instanceof Blocked) {
+        for (const key of Object.keys(state.reads)) if (!(key in before.reads) && !key.includes('|x:')) delete state.reads[key];
+        Object.assign(state.saved, { read: before.read, offload: before.offload });
+      }
+      throw error;
     }
-  } catch (error) {
-    if (error instanceof Blocked) unbook(payload, before);
-    throw error;
-  }
-  return null;
+    return null;
+  });
 }

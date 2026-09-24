@@ -14,7 +14,7 @@
 
 | Figure | Source |
 |---|---|
-| `docs/flood.svg` | Measured 2026-09-10, `claude-sonnet-5`, plugin 1.9.1 `8e9d9c4`. Without the guard 20 of 20 subagents start; with it 3 start, 17 held for the next wave. Runner removed at 1.12.6 — the figure is static, not regenerated. |
+| `docs/flood.svg` | Guard replay 2026-09-23, plugin 1.15.0 working tree: 20 `Agent` dispatches in one wave, 3 start, 17 held for the next wave. Without the hook nothing is held, so all 20 start. Static, not regenerated. |
 
 ## Cost and limits
 
@@ -37,16 +37,18 @@
 |---|---|---|
 | re-read dedup | `bytes` | full file size — already in context, byte-identical |
 | whole-file cap | `deferred` | full file size at refusal |
-| moved to a subagent | `offload` | bytes read under a non-`main` actor |
+| trimmed | `trimmed` | bytes cut from a read over 24KB |
+| read by subagents | `offload` | bytes read under a non-`main` actor; shown, never counted as kept out |
 | admitted | `read` | bytes let into the main thread |
-| dispatched scout / runner | `scouts`, `runners` | counted only; their reads credit `offload` |
+| dispatched scout / runner | `scouts`, `runners` | counted only |
 | plugin footprint | — | session card + skill and agent descriptions, chars / 4, always in context |
 
 | Share rule | Why |
 |---|---|
 | `net` is kept-out tokens minus footprint | the window cost in tokens; negative when the window did no whole-file reads |
 | a retried refusal credits once | first refusal stamps `actor + path + mtime:size + rule`; repeats skip the byte credit |
-| the follow-up read lands in the denominator | slice or scout read after a cap counts as `admitted` or `offload` |
+| the follow-up read lands in the denominator | a slice read after a cap counts as `admitted` |
+| session receipt | `kept out` as a share of the main thread's context: last request's input + cache write + cache read tokens |
 
 - Only the current ledger format parses; older lines skip, never guessed.
 - Bytes / 4 estimates tokens; never billing.
@@ -99,31 +101,32 @@ Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed
 ## Live ledger — what the guard did on this machine
 
 <!-- handoff-stats -->
-| Measured over 176 ledger lines | Tokens | Share |
+| Measured over 151 ledger lines | Tokens | Share |
 |---|---|---|
-| Read volume the session asked for | ~4.1M | 100% |
-| **Kept out** | **~2.4M** | **59%** |
-| — re-read dedup | ~56.5k | 1% |
-| — whole-file cap | ~72.3k | 2% |
-| — moved to a subagent | ~766.8k | 19% |
-| Admitted to the main thread | ~1.7M | 41% |
+| Read volume the session asked for | ~3.1M | 100% |
+| **Kept out** | **~1.7M** | **53%** |
+| — re-read dedup | ~49.7k | 2% |
+| — whole-file cap | ~157.4k | 5% |
+| — trimmed | ~1.5M | 47% |
+| Admitted to the main thread | ~1.5M | 47% |
+| Read by subagents, not counted as kept out | ~932.0k | — |
 
 | Context tax — the plugin's own footprint | Tokens |
 |---|---|
-| Session card, always in context | ~59 |
+| Session card, always in context | ~79 |
 | Skill descriptions, always in context | ~42 |
 | Agent descriptions, always in context | ~43 |
-| **Total footprint** | **~144** |
-| Per turn, on top of that | **0** (since 1.6.0) |
-| **Net kept out minus footprint** | **~2.4M** |
+| **Total footprint** | **~164** |
+| Per turn, on top of that | **0** |
+| **Net kept out minus footprint** | **~1.7M** |
 
 | Measured billing | Tokens |
 |---|---|
-| Fresh — input + output + cache write | 112,094,128 |
-| Cache-read | 5,493,921,750 |
-| **Context re-send ratio** | **49.0×** — cache mechanism, not the guard |
+| Fresh — input + output + cache write | 45,675,678 |
+| Cache-read | 2,551,637,416 |
+| **Context re-send ratio** | **55.9×** — cache mechanism, not the guard |
 
-Guard actions: 165 (used 15 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
+Guard actions: 149 (used 14 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
 <!-- /handoff-stats -->
 
 ## Track A

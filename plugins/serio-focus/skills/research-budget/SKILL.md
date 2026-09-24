@@ -23,7 +23,7 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 | Find a file, symbol, route, config, test · quote a known value · extract to a fixed schema · read one live page | **scout agent** | `haiku` (pinned in `agents/scout.md` — just call scout) | `low` |
 | Web research needing synthesis · code to a spec with a runnable check | subagent | `sonnet` | `medium` |
 | Review an implementation, plan or root-cause claim · security, money, personal data, legal, irreversible | subagent | `sonnet` | `high` |
-| Prose you publish — grant narrative, board report | subagent | `opus` | `high` |
+| Prose you publish — grant narrative, board report | subagent | `opus` with `QUALITY: writing` in the brief | `high` |
 | Architecture, sequencing, deciding what ships | **main session** | — | — |
 | Any Workflow `agent()` call | per the rows above | `model` in every call — the hook blocks a call without one | `low` or `medium` |
 
@@ -66,7 +66,7 @@ compatibility: No external dependencies. The cap is enforced by scripts/guard.mj
 | Tool calls | **15**, or **25** for a code fix with tests |
 | Output | a stated **line count**, tables only, no preamble, no reasoning narration |
 | Shape | the exact section headings you want back |
-| model + effort | from §2 — state them, never default them |
+| model + effort | from §2 — state them, never default them; above `medium` the hook blocks all but a review at `high` or a `QUALITY:` brief |
 
 - Waves are sequential: launch → read → decide if another wave earns its cost. Scopes are disjoint: name each agent's sources and what the others own.
 - Verifier only when the recommendation changes if the claim is wrong.

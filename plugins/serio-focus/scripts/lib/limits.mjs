@@ -5,7 +5,7 @@ const WAVE_MS = 60 * 1000;
 export const DENY_SUBAGENT_DEFAULT = 'opus,fable';
 const WEB_CALLS = 60;
 const STALL_WARN = 500000;
-const STALL_HOLD = 1000000;
+const STALL_HOLD = 1200000;
 
 const positive = (raw, fallback) => {
   const n = Math.floor(Number(raw));

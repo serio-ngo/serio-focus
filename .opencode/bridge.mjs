@@ -1,4 +1,4 @@
-import { append } from '../plugins/serio-focus/scripts/audit.mjs';
+import { append, entry } from '../plugins/serio-focus/scripts/audit.mjs';
 import { Blocked, judge } from '../plugins/serio-focus/scripts/guard.mjs';
 import { rootOf } from '../plugins/serio-focus/scripts/lib/ledger.mjs';
 import { report } from '../plugins/serio-focus/scripts/verify.mjs';
@@ -38,15 +38,7 @@ export function verdictFor(tool, args, sessionID, cwd) {
   } catch (error) {
     if (!(error instanceof Blocked)) throw error;
     const reason = error.message.trim();
-    append(rootOf(payload), {
-      session: String(sessionID || 'unknown'),
-      actor: 'main',
-      tier: 'YELLOW',
-      action: payload.tool_name,
-      target: String(payload.tool_input.command ?? payload.tool_input.file_path ?? payload.tool_input.pattern ?? '').slice(0, 120),
-      rule: error.rule || reason.split('\n')[0].split(':')[0].trim(),
-      result: `blocked: ${reason}`,
-    });
+    append(rootOf(payload), entry(payload, reason));
     return reason;
   }
 }

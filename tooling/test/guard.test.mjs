@@ -1,6 +1,6 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -97,7 +97,11 @@ describe('dispatch budget', () => {
     const saved = path.join(box, 'saved-workflow.js');
     writeFileSync(saved, "await agent('x')");
     assert.equal(held('dp', { scriptPath: saved }, 'Workflow'), ASK);
-    assert.equal(held('dp', { scriptPath: path.join(box, 'missing-workflow.js') }, 'Workflow'), ASK);  });
+    assert.equal(held('dp', { scriptPath: path.join(box, 'missing-workflow.js') }, 'Workflow'), ASK);
+    const row = readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse).pop();
+    assert.deepEqual(Object.keys(row), ['ts', 'session', 'actor', 'action', 'target', 'rule', 'result']);
+    assert.doesNotMatch(row.result, new RegExp(`^(?:blocked: )?${row.rule}`));
+  });
   it('blocks opus without a QUALITY flag, and thinking a deliverable did not earn', () => {
     assert.equal(held('dp', { prompt: 'scan the repo', model: 'opus' }), ASK);
     const state = JSON.parse(readFileSync(path.join(box, '.claude', '.session-dp.json'), 'utf8'));
@@ -106,6 +110,10 @@ describe('dispatch budget', () => {
     assert.equal(held('dp', { prompt: 'ultrathink about the schema', model: 'sonnet' }), ASK);
     assert.equal(held('dp', { script: "await agent('x', { model: 'sonnet', effort: 'xhigh' })" }, 'Workflow'), ASK);
     assert.equal(held('dp', { script: "await agent('x', { model: 'sonnet', effort: high ] })" }, 'Workflow'), ASK);
+    assert.equal(held('dp', { prompt: 'review the diff, effort: xhigh', model: 'sonnet' }), ASK);
+    assert.equal(held('dp', { prompt: 'review this, effort: high, effort: max', model: 'sonnet' }), ASK);
+    assert.doesNotMatch(spawnSync(process.execPath, [script('guard.mjs')], { encoding: 'utf8', env: { ...process.env, HANDOFF_OS_DIR: box },
+      input: JSON.stringify({ cwd: box, session_id: 'dp', tool_name: 'Agent', tool_input: { prompt: 'review the diff, effort: high', model: 'sonnet' } }) }).stdout, /deny/);
     assert.equal(spawn({ script: 'agent("find where opus is configured", { model: "haiku" })' }, 'Workflow'), ALLOWED);
   });
   it('blocks a workflow that never states its agent count, and caps the count it states', () => {
@@ -114,6 +122,9 @@ describe('dispatch budget', () => {
       input: JSON.stringify({ cwd: box, session_id: 'dp', tool_name: 'Workflow', tool_input: { script: 'await parallel(rows.map((r) => () => agent(r)))' } }) });
     assert.match(JSON.parse(both.stdout).hookSpecificOutput.permissionDecisionReason, /naming no model.*; .*AGENTS: 3/);
     assert.equal(held('dp', { script: "// AGENTS: 30\nawait parallel(rows.map((r) => () => agent(r, { model: 'haiku' })))" }, 'Workflow'), ASK);
+    const wide = spawnSync(process.execPath, [script('guard.mjs')], { encoding: 'utf8', env: { ...process.env, HANDOFF_OS_DIR: box },
+      input: JSON.stringify({ cwd: box, session_id: 'dp-wide', tool_name: 'Workflow', tool_input: { script: "// AGENTS: 4\nawait parallel(rows.map((r) => () => agent(r, { model: 'haiku' })))" } }) });
+    assert.match(JSON.parse(wide.stdout).hookSpecificOutput.permissionDecisionReason, /AGENTS: 3\+1/);
     assert.equal(spawn({ prompt: 'the wave a denied workflow claimed is free again', model: 'haiku' }), ALLOWED);
   });
   it('holds dispatch and web after the stall budget with no repo change', () => {
@@ -203,6 +214,16 @@ describe('read and query budgets', () => {
     assert.equal(run('bq-sub', sub('a2')).stdout, '', 'a sibling subagent never read these bytes');
     assert.equal(ask({ cwd: box, session_id: 'bq-sub', ...sub('a1') }), ASK);
   });
+  it('books every read from parallel subagents', async () => {
+    const reads = Array.from({ length: 24 }, (_, n) => path.join(box, `par-${n}.txt`));
+    reads.forEach((file) => writeFileSync(file, 'x'.repeat(100)));
+    await Promise.all(reads.map((file, n) => new Promise((done) => {
+      const child = spawn(process.execPath, [script('guard.mjs')], { env: { ...process.env, HANDOFF_OS_DIR: box } });
+      child.on('close', done);
+      child.stdin.end(JSON.stringify({ cwd: box, session_id: 'par', agent_type: 'workflow-subagent', agent_id: `p${n}`, tool_name: 'Read', tool_input: { file_path: file } }));
+    })));
+    assert.equal(state('par').saved.offload, 2400);
+  });
   it('leaves an image read whole', () => {
     const png = path.join(box, 'shot.png');
     writeFileSync(png, `${'x'.repeat(63)}\n`.repeat(480));
@@ -246,13 +267,17 @@ describe('session receipt', () => {
     ask({ cwd: box, session_id: 'rc-a', tool_name: 'Read', tool_input: { file_path: file } });
     const first = run('rc-a', {});
     assert.equal(first.status, ALLOWED);
-    assert.match(first.stdout, /SERIO FOCUS · \d+ tok kept out \(\d+%\) · 1 guard action"/);
+    assert.match(first.stdout, /SERIO FOCUS · \d+ tok kept out · 1 guard action"/);
+    const receipt = readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse).filter((r) => r.session === 'rc-a').pop();
+    assert(Object.values(JSON.parse(receipt.target)).every(Boolean), receipt.target);
     at('rc-b', { tool_name: 'Read', tool_input: { file_path: file } });
     ask({ cwd: box, session_id: 'rc-b', tool_name: 'Read', tool_input: { file_path: file } });
     const edited = transcript([{ type: 'tool_use', name: 'Edit', input: { file_path: file } }]);
     const claim = hook(GATE, { session_id: 'rc-b', transcript_path: edited, last_assistant_message: 'All done, it works now.' });
     assert.equal(claim.status, ALLOWED);
-    assert.match(claim.stdout, /SERIO FOCUS · \d+ tok kept out \(\d+%\) · 1 guard action"/);
+    assert.match(claim.stdout, /SERIO FOCUS · \d+ tok kept out \(0% of main context\) · 1 guard action"/);
+    at('rc-sub', { agent_type: 'workflow-subagent', agent_id: 's1', tool_name: 'Read', tool_input: { file_path: file } });
+    assert.equal(run('rc-sub', {}).stdout, '', 'a subagent read is not a guard action');
     assert.doesNotMatch(claim.stdout, /VERIFY GATE|stood down|done claimed|nothing run|spent|cached|top tier|repo edits|~/i);
   });
   it('copies files written outside the repo when a turn dies on a limit', () => {

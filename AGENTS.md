@@ -15,7 +15,7 @@
 6. Nothing model-, price- or plan-specific in shipped files.
 7. Max 300 lines per file in `plugins/`. Must-ship helpers live in `plugins/serio-focus/scripts/lib/`. Analysis-only code lives in `tooling/`.
 8. The suite is one file, `tooling/test/guard.test.mjs`. Do not add a test file or a test helper. Assertions are blocking and failure cases only. A new guard rule adds one case to an existing list, not a new `describe`.
-9. Prove every fix: the new case fails on `git archive HEAD` and passes on the tree.
+9. Prove every fix with `npm run prove`: the new case fails on `git archive HEAD` and passes on the tree.
 10. Before working with Claude Code identifiers (hooks, permissions, plugin layout), read [docs/CLAUDE_CODE_FACTS.md](docs/CLAUDE_CODE_FACTS.md).
 11. Docs carry data, not prose. `README.md` is the only exception.
 12. Never hand-edit generated blocks between `<!-- name -->` markers.

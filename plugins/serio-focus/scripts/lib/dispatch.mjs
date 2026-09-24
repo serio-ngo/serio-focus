@@ -2,13 +2,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { DENY_SUBAGENT_DEFAULT } from './limits.mjs';
 import { declaredModel } from './agent-model.mjs';
-import { load, rootOf, save, sessionOf } from './ledger.mjs';
+import { rootOf, sessionOf, update } from './ledger.mjs';
 
 const MODEL_TIERS = /\b(?:haiku|sonnet|opus|fable)\b/i;
 const MODEL_OPTION = /\bmodel\s*[:=]\s*['"`]?\s*(haiku|sonnet|opus|fable)\b/gi;
 const QUALITY = /\bQUALITY:\s*(?:writing|creative|legal|security)\b/;
 const REVIEW = /\b(?:review|audit)(?:s|ed|ing|er|ers|or|ors)?\b/i;
-const THINK_ESCALATION = /\b(?:(?:ultrathink|megathink|think\s+(?:hard(?:er)?|deeply))\b|(?:reasoning[-_ ]?)?effort\s*[=:]\s*(['"`]?)(?:high|xhigh|max)\1(?=\s*(?:[,})\]]|$)))/i;
+const THINK_ESCALATION = /\b(?:(?:ultrathink|megathink|think\s+(?:hard(?:er)?|deeply))\b|(?:reasoning[-_ ]?)?effort\s*[=:]\s*(['"`]?)(?:high|xhigh|max)\1(?=\s*(?:[,})\]]|$)))/gi;
 const UNBOUNDED_FANOUT = /\b(?:parallel|pipeline|Promise\s*\.\s*all(?:Settled)?)\s*\(/;
 const FANOUT_BUDGET = /(?:^|\n)\s*\/\/\s*AGENTS:\s*(\d+(?:\s*\+\s*\d+)*)/;
 const WORKFLOW_AGENT_CALL = /(?<![.\w$])agent\s*\(/g;
@@ -79,7 +79,7 @@ const waves = (input) => ((String(input.script ?? '').match(FANOUT_BUDGET) || []
 export function costBudget(input, tool) {
   const text = spawnText(input);
   if (QUALITY.test(text)) return null;
-  const think = (text.match(THINK_ESCALATION) || [])[0];
+  const think = (text.match(THINK_ESCALATION) || []).find((hit) => !(REVIEW.test(text) && /\bhigh\b/i.test(hit)));
   if (think) return { reason: `blocked "${think}"` };
   if (tool !== 'Workflow' || waves(input).length) return null;
   const fan = (code(input.script).match(UNBOUNDED_FANOUT) || [])[0];
@@ -93,11 +93,7 @@ export function agentsRequested(input, tool) {
   return { wave: declared.length ? Math.max(...declared) : total, total };
 }
 
-export function bookRedirect(payload, tier) {
-  const root = rootOf(payload);
-  const session = sessionOf(payload);
-  const state = load(root, session);
+export const bookRedirect = (payload, tier) => update(rootOf(payload), sessionOf(payload), (state) => {
   state.saved.redirects += 1;
   state.tiers = { ...(state.tiers || {}), [tier]: ((state.tiers || {})[tier] || 0) + 1 };
-  save(root, session, state);
-}
+});

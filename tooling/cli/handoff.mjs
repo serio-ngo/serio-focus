@@ -363,6 +363,26 @@ function release(args) {
   report();
 }
 
+function prove() {
+  const suite = path.join('tooling', 'test', 'guard.test.mjs');
+  const failing = (cwd) => [...new Set([...spawnSync(process.execPath, ['--test', '--test-reporter=tap', suite], { cwd, encoding: 'utf8' })
+    .stdout.matchAll(/^\s*not ok \d+ - (.+)$/gm)].map((hit) => hit[1]))];
+  const box = mkdtempSync(path.join(tmpdir(), 'serio-prove-'));
+  let head = [];
+  let tree = [];
+  try {
+    spawnSync('git', ['-C', REPO, 'archive', '--format=tar', '-o', path.join(box, 'head.tar'), 'HEAD']);
+    spawnSync('tar', ['-xf', 'head.tar'], { cwd: box });
+    copyFileSync(path.join(REPO, suite), path.join(box, suite));
+    head = failing(box);
+    tree = failing(REPO);
+  } finally { rmSync(box, { recursive: true, force: true }); }
+  row('fails on HEAD', head.join(' · ') || 'nothing — no case proves the change');
+  row('fails on tree', tree.join(' · ') || 'nothing');
+  report();
+  if (!head.length || tree.length) process.exitCode = 1;
+}
+
 function setup(args) {
   sync(args);
   if (args.project) sync({ ...args, scope: 'project', target: args.project });
@@ -381,7 +401,7 @@ function setup(args) {
 }
 
 const args = parse(process.argv.slice(2));
-const command = ['sync', 'install', 'upkeep', 'doctor', 'release', 'setup'].includes(args._[0])
+const command = ['sync', 'install', 'upkeep', 'doctor', 'release', 'setup', 'prove'].includes(args._[0])
   ? args._.shift()
   : 'setup';
 
@@ -391,3 +411,4 @@ else if (command === 'install') { install(); report(); }
 else if (command === 'upkeep') { upkeep(); if (args.install) install(); report(); if (args.check) check(); }
 else if (command === 'doctor') process.exit(doctor().failed ? 1 : 0);
 else if (command === 'release') release(args);
+else if (command === 'prove') prove();

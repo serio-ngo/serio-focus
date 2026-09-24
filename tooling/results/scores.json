@@ -39,13 +39,13 @@
       "f1": 0.64
     }
   },
-  "keptPct": 59,
-  "keptTokens": 2397975,
-  "readVolumeTokens": 4055378,
-  "offloadTokens": 766755,
-  "resendRatio": 49,
-  "ledgerTurns": 176,
-  "taxTokens": 144,
+  "keptPct": 53,
+  "keptTokens": 1664689,
+  "readVolumeTokens": 3129194,
+  "offloadTokens": 932005,
+  "resendRatio": 55.9,
+  "ledgerTurns": 151,
+  "taxTokens": 164,
   "repos": 1,
   "origins": {
     "spec": 26,

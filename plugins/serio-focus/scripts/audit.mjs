@@ -1,32 +1,22 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { sessionOf } from './lib/ledger.mjs';
 
-const FIELDS = ['ts', 'session', 'actor', 'tier', 'action', 'target', 'rule', 'result'];
+const FIELDS = ['ts', 'session', 'actor', 'action', 'target', 'rule', 'result'];
 
-export function entry(payload, root) {
+export function entry(payload, reason) {
   const tool = String(payload.tool_name || '');
   if (!tool) return null;
   const input = payload.tool_input || {};
-  const target = String(input.file_path || input.notebook_path || input.path
-    || (typeof input.command === 'string' ? input.command.slice(0, 120) : '') || '');
-
-  const external = tool.startsWith('mcp__') || tool === 'Bash' || tool === 'PowerShell';
-  let inside = false;
-  if (target && !external) {
-    try {
-      const norm = (value) => resolve(value).replace(/\\/g, '/').toLowerCase();
-      inside = norm(target) === norm(root) || norm(target).startsWith(`${norm(root)}/`);
-    } catch { inside = false; }
-  }
-
+  const [rule, ...rest] = String(reason).trim().split(': ');
   return {
-    session: String(payload.session_id || 'unknown').replace(/[^A-Za-z0-9_-]/g, ''),
+    session: sessionOf(payload),
     actor: payload.agent_type || 'main',
-    tier: external || !inside ? 'YELLOW' : 'GREEN',
     action: tool,
-    target,
-    rule: '',
-    result: 'ok',
+    target: String(input.file_path || input.notebook_path || input.path
+      || (typeof input.command === 'string' ? input.command : '') || input.description || input.scriptPath
+      || (String(input.script ?? '').match(/\bname:\s*['"`]([^'"`]+)/) || [])[1] || '').slice(0, 120),
+    rule,
+    result: rest.join(': '),
   };
 }
 
