@@ -2,6 +2,7 @@ import { closeSync, mkdirSync, openSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { waveCap, waveWindow } from './limits.mjs';
 import { bumpAll, rootOf, sessionOf } from './ledger.mjs';
+import { waveDir } from './runtime.mjs';
 import { Blocked } from './blocked.mjs';
 
 function claimSlot(dir, bucket, cap) {
@@ -25,7 +26,7 @@ function claimSlot(dir, bucket, cap) {
 
 export function fanOutCap(payload, count = 1) {
   const cap = waveCap();
-  const dir = path.join(rootOf(payload), '.claude', `.wave-${sessionOf(payload)}`);
+  const dir = waveDir(rootOf(payload), sessionOf(payload));
   const bucket = Math.floor(Date.now() / waveWindow());
   const claimed = [];
 

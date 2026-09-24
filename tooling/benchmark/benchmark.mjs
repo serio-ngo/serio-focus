@@ -63,10 +63,10 @@ const wilson = (x, total) => {
 const ci = ([lo, hi]) => `${lo}–${hi}%`;
 
 function score(cmd, cases) {
-  const probe = mkdtempSync(path.join(tmpdir(), 'handoff-eval-'));
+  const probe = mkdtempSync(path.join(tmpdir(), 'serio-eval-'));
   const env = {
     ...process.env,
-    HANDOFF_OS_DIR: probe,
+    SERIO_OS_DIR: probe,
     POLICY_FILE: path.join(REPO, 'tooling', 'settings', 'policy.json'),
   };
   const isHeld = (run) => {
@@ -124,14 +124,14 @@ function mergeScores(root, patch) {
   console.log('  wrote tooling/results/scores.json');
 }
 
-const ownCmd = () => (process.env.HANDOFF_EVAL_GUARD
-  ? process.env.HANDOFF_EVAL_GUARD.split(/\s+/)
+const ownCmd = () => (process.env.SERIO_EVAL_GUARD
+  ? process.env.SERIO_EVAL_GUARD.split(/\s+/)
   : [process.execPath, path.join(REPO, OWN)]);
 
 function latency(cases = 90) {
   const cmd = ownCmd();
-  const probe = mkdtempSync(path.join(tmpdir(), 'handoff-lat-'));
-  const env = { ...process.env, HANDOFF_OS_DIR: probe };
+  const probe = mkdtempSync(path.join(tmpdir(), 'serio-lat-'));
+  const env = { ...process.env, SERIO_OS_DIR: probe };
   const shapes = [
     { id: 'lat-allow', tool: 'Bash', input: { command: 'git status' } },
     { id: 'lat-block', tool: 'Bash', input: { command: 'git commit -m x' } },
@@ -183,7 +183,7 @@ function compareBlock(own, baselines) {
 
 function run() {
   const cases = corpus();
-  const label = process.env.HANDOFF_EVAL_GUARD || OWN;
+  const label = process.env.SERIO_EVAL_GUARD || OWN;
   const own = score(ownCmd(), cases);
 
   const baselines = {};
@@ -257,8 +257,8 @@ function replay(root) {
   const guard = path.join(root, OWN);
   for (const name of readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
     const session = name.replace(/\.jsonl$/, '');
-    const probe = mkdtempSync(path.join(tmpdir(), 'handoff-replay-'));
-    const env = { ...process.env, HANDOFF_OS_DIR: probe, CLAUDE_PROJECT_DIR: root };
+    const probe = mkdtempSync(path.join(tmpdir(), 'serio-replay-'));
+    const env = { ...process.env, SERIO_OS_DIR: probe, CLAUDE_PROJECT_DIR: root };
     let seen = false;
     for (const line of readFileSync(path.join(dir, name), 'utf8').split(/\r?\n/)) {
       if (!line) continue;
@@ -414,8 +414,8 @@ if (t.fresh) {
   row('context re-send ratio', `${resend.toFixed(1)}x`, 'cache mechanism, not the guard');
 }
 
-const REPLAY_OPEN = '<!-- handoff-replay -->';
-const REPLAY_CLOSE = '<!-- /handoff-replay -->';
+const REPLAY_OPEN = '<!-- serio-replay -->';
+const REPLAY_CLOSE = '<!-- /serio-replay -->';
 if (flags.replay) {
   const rs = REPOS.map((root) => replay(root));
   const r = {
@@ -463,8 +463,8 @@ rule('capped waves', t.waves, 'fan-out cap');
 rule('blocked', t.blocked, 'git and delete lock, dispatch budget, fan-out cap');
 console.log();
 
-const OPEN = '<!-- handoff-stats -->';
-const CLOSE = '<!-- /handoff-stats -->';
+const OPEN = '<!-- serio-stats -->';
+const CLOSE = '<!-- /serio-stats -->';
 const statsBlock = () => {
   if (!actions) return ['No ledger lines recorded yet. Method: docs/BENCHMARK.md.'];
   return [

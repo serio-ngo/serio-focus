@@ -3,9 +3,8 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } fro
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { projectOf, sessionOf } from './lib/ledger.mjs';
+import { rescueDir } from './lib/runtime.mjs';
 import { sessionSpend } from './lib/transcript.mjs';
-
-const rescueDir = (project) => path.join(project, '.claude', 'rescue');
 
 export function rescued(project) {
   try { return readdirSync(rescueDir(project)).filter((name) => name !== '.gitignore'); } catch { return []; }

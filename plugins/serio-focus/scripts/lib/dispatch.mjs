@@ -41,7 +41,7 @@ export function withScript(input, tool, cwd = '.') {
 
 const count = (text, rx) => (code(text).match(rx) || []).length;
 
-export function dispatchBudget(input, cwd, tool = 'Agent', denied = deniedSubagentRx(process.env.HANDOFF_DENY_SUBAGENT_MODELS ?? DENY_SUBAGENT_DEFAULT)) {
+export function dispatchBudget(input, cwd, tool = 'Agent', denied = deniedSubagentRx(process.env.SERIO_DENY_SUBAGENT_MODELS ?? DENY_SUBAGENT_DEFAULT)) {
   const named = String(input.model || '').trim();
   const text = spawnText(input);
   if (!named) {

@@ -79,37 +79,38 @@ npm run benchmark:replay
 | Property | Value |
 |---|---|
 | Input | real tool calls from real sessions, not fixtures |
-| Isolation | one temp `HANDOFF_OS_DIR` per session, matching that session's dedup state |
+| Isolation | one temp `SERIO_OS_DIR` per session, matching that session's dedup state |
 | Loop | open — a refusal cannot change what the agent did next |
 | Misses | shell pipelines and `$(...)`, which the read budget cannot size |
 | Bias | guarded sessions produce fewer hits, so the count is a floor |
 
 - Answers what the guard catches on this stream.
 
-<!-- handoff-replay -->
-| The maintainer's 3 sessions — run it on yours | Count | Share of judged |
+<!-- serio-replay -->
+| The maintainer's 7 sessions — run it on yours | Count | Share of judged |
 |---|---|---|
-| Tool calls recorded | 259 | — |
-| Judged by the guard | 234 | 100% |
-| **Refused** | **6** | **3%** |
-| — git and delete lock | 5 | 2% |
-| — re-read dedup | 1 | 0% |
+| Tool calls recorded | 742 | — |
+| Judged by the guard | 553 | 100% |
+| **Refused** | **10** | **2%** |
+| — git and delete lock | 7 | 1% |
+| — re-read dedup | 2 | 0% |
+| — whole-file cap | 1 | 0% |
 
 Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed to the guard in order, one sandbox per session. Open-loop: a refusal cannot change what the agent did next, so this is what the guard catches on that exact stream, not a counterfactual. Reproduce with `npm run benchmark:replay`.
-<!-- /handoff-replay -->
+<!-- /serio-replay -->
 
 ## Live ledger — what the guard did on this machine
 
-<!-- handoff-stats -->
-| Measured over 151 ledger lines | Tokens | Share |
+<!-- serio-stats -->
+| Measured over 155 ledger lines | Tokens | Share |
 |---|---|---|
-| Read volume the session asked for | ~3.1M | 100% |
+| Read volume the session asked for | ~3.2M | 100% |
 | **Kept out** | **~1.7M** | **53%** |
-| — re-read dedup | ~49.7k | 2% |
+| — re-read dedup | ~53.0k | 2% |
 | — whole-file cap | ~157.4k | 5% |
-| — trimmed | ~1.5M | 47% |
+| — trimmed | ~1.5M | 46% |
 | Admitted to the main thread | ~1.5M | 47% |
-| Read by subagents, not counted as kept out | ~932.0k | — |
+| Read by subagents, not counted as kept out | ~1.1M | — |
 
 | Context tax — the plugin's own footprint | Tokens |
 |---|---|
@@ -122,12 +123,12 @@ Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed
 
 | Measured billing | Tokens |
 |---|---|
-| Fresh — input + output + cache write | 45,675,678 |
-| Cache-read | 2,551,637,416 |
-| **Context re-send ratio** | **55.9×** — cache mechanism, not the guard |
+| Fresh — input + output + cache write | 46,976,557 |
+| Cache-read | 2,620,687,798 |
+| **Context re-send ratio** | **55.8×** — cache mechanism, not the guard |
 
-Guard actions: 149 (used 14 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
-<!-- /handoff-stats -->
+Guard actions: 163 (used 14 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
+<!-- /serio-stats -->
 
 ## Track A
 
@@ -142,7 +143,7 @@ Guard actions: 149 (used 14 scout, 1 runner). Token counts are file bytes / 4 fr
 - Same corpus, same scoring, any `PreToolUse` guard on stdin:
 
 ```bash
-HANDOFF_EVAL_GUARD="node ../other-guard/hook.mjs" npm run benchmark:eval
+SERIO_EVAL_GUARD="node ../other-guard/hook.mjs" npm run benchmark:eval
 ```
 
 - No third-party guard run here. Self-test with published method.

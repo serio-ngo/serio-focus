@@ -7,7 +7,7 @@ import { SPAWN_TOOLS } from '../../plugins/serio-focus/scripts/guard.mjs';
 import { writeFigures } from './figures.mjs';
 import { PLUGIN, REPO, REPLY_CLOSE, REPLY_OPEN, manifest, markdown, opencodeAgents, pluginVersion, policyFor, readJson, replyBody, walk, writeBlock } from './generate.mjs';
 
-const CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
+const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const BANNED = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
 const RULE_LISTS = ['deny', 'ask', 'allow'];
 const RUNTIME_OWNED = [/^\.in_use[/\\]/, /^\.DS_Store$/, /^\.installed$/];
@@ -17,7 +17,7 @@ const marketplace = readJson('.claude-plugin', 'marketplace.json');
 const PLUGIN_NAME = marketplace.plugins[0].name;
 
 const fail = (message) => {
-  console.error(`handoff: ${message}`);
+  console.error(`serio: ${message}`);
   process.exit(1);
 };
 
@@ -97,7 +97,7 @@ function refuseMeteredAuth(settings) {
 function installation() {
   const repo = originRepo();
   const patch = {
-    env: { HANDOFF_OS_DIR: REPO },
+    env: { SERIO_OS_DIR: REPO },
     enabledPlugins: { [`${PLUGIN_NAME}@${marketplace.name}`]: true },
   };
   if (repo) patch.extraKnownMarketplaces = { [marketplace.name]: { source: { source: 'github', repo } } };
@@ -140,8 +140,9 @@ function sync(args) {
   after = releaseLocks(after, args.unlock ?? []);
   after = retire(after);
   after.env = { ...after.env };
-  if ((args.unlock ?? []).includes('git')) after.env.HANDOFF_GIT_WRITE = '1';
-  else delete after.env.HANDOFF_GIT_WRITE;
+  if ((args.unlock ?? []).includes('git')) after.env.SERIO_GIT_WRITE = '1';
+  else delete after.env.SERIO_GIT_WRITE;
+  for (const key of Object.keys(after.env)) if (key.startsWith('HANDOFF_')) delete after.env[key];
   if (Object.keys(after.env).length === 0) delete after.env;
   refuseMeteredAuth(after);
   if (!args.dryRun) writeJson(target, after);
@@ -283,24 +284,24 @@ function doctor() {
   const installed = check('every installed copy is this checkout', targets.every(current),
     `${targets.length} version(s): ${targets.join(', ')}`);
 
-  const probe = mkdtempSync(path.join(tmpdir(), 'handoff-doctor-'));
+  const probe = mkdtempSync(path.join(tmpdir(), 'serio-doctor-'));
   const at = (dir, script, payload, env) => spawnSync(process.execPath, [path.join(dir, 'scripts', script)], {
     input: JSON.stringify(payload), encoding: 'utf8',
-    env: { ...process.env, HANDOFF_OS_DIR: probe, ...env },
+    env: { ...process.env, SERIO_OS_DIR: probe, ...env },
   });
   const session = () => `doctor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const pre = (tool_name, tool_input) => ({ hook_event_name: 'PreToolUse', session_id: session(), cwd: probe, tool_name, tool_input });
   const fire = (payload, env) => at(cache, 'guard.mjs', payload, env);
   const shell = (command, env) => fire(pre('Bash', { command }), env);
 
-  const open = settings.env?.HANDOFF_GIT_WRITE === '1';
+  const open = settings.env?.SERIO_GIT_WRITE === '1';
   const shut = ['Bash(git commit *)', 'Bash(git push *)']
     .every((rule) => (settings.permissions?.deny ?? []).includes(rule));
   check('the git gate holds commit and push, nothing else git',
     shut === !open
-    && ['git commit -m x', 'git push origin main'].every((c) => held(shell(c, { HANDOFF_GIT_WRITE: '0' })))
-    && ['git status', 'git stash push -m wip', 'git merge main'].every((c) => !held(shell(c, { HANDOFF_GIT_WRITE: '0' }))),
-    'deny rules, HANDOFF_GIT_WRITE and the live guard must agree');
+    && ['git commit -m x', 'git push origin main'].every((c) => held(shell(c, { SERIO_GIT_WRITE: '0' })))
+    && ['git status', 'git stash push -m wip', 'git merge main'].every((c) => !held(shell(c, { SERIO_GIT_WRITE: '0' }))),
+    'deny rules, SERIO_GIT_WRITE and the live guard must agree');
   check('the installed guard blocks recursive deletes and git wipes',
     ['rm -rf docs', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),
     'rm -r, clean -fdx, reset --hard');
@@ -313,7 +314,7 @@ function doctor() {
 
   // Every check above spawns the scripts here. Only the ledger proves Claude Code spawns them.
   const month = new Date().toISOString().slice(0, 7);
-  const ledger = path.join(process.env.HANDOFF_OS_DIR || REPO, 'audit', `${month}.jsonl`);
+  const ledger = path.join(process.env.SERIO_OS_DIR || REPO, 'audit', `${month}.jsonl`);
   const since = existsSync(ledger) ? Date.now() - statSync(ledger).mtimeMs : Infinity;
   check('Claude Code itself fired a hook here within a day',
     since < 24 * 60 * 60 * 1000,

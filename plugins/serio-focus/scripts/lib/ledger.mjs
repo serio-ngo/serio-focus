@@ -1,5 +1,6 @@
 import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { ledgerPath, projectOf, rootOf, stateDir } from './runtime.mjs';
 
 export const COUNTERS = ['agents', 'blocked', 'rereads', 'slices', 'rewrites',
   'bytes', 'deferred', 'trimmed', 'offload', 'read', 'scouts', 'runners',
@@ -11,14 +12,9 @@ export const BYTE_COUNTERS = [...KEPT, 'offload'];
 export const zero = () => Object.fromEntries(COUNTERS.map((key) => [key, 0]));
 const EMPTY = () => ({ reads: {}, saved: zero() });
 
-export const rootOf = (payload = {}) => process.env.HANDOFF_OS_DIR
-  || process.env.CLAUDE_PROJECT_DIR || payload.cwd || process.cwd();
-
-export const projectOf = (payload = {}) => process.env.CLAUDE_PROJECT_DIR || payload.cwd || process.cwd();
+export { projectOf, rootOf };
 
 export const sessionOf = (payload = {}) => String(payload.session_id || 'unknown').replace(/[^A-Za-z0-9_-]/g, '');
-
-const ledgerPath = (root, session) => path.join(root, '.claude', `.session-${session}.json`);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STALE = [[/\.lock$/, 60 * 1000], [/^\.wave-/, DAY_MS], [/^\.session-/, 30 * DAY_MS]];
@@ -43,7 +39,7 @@ function withLock(root, session, fn) {
 }
 
 export function sweep(root) {
-  const dir = path.join(root, '.claude');
+  const dir = stateDir(root);
   let names = [];
   try { names = readdirSync(dir); } catch { return 0; }
   let swept = 0;

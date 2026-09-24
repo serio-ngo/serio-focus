@@ -1,17 +1,15 @@
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { configDir, pluginRoot, stateDir } from './runtime.mjs';
 
-const PLUGIN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MODEL_TIERS = /\b(?:haiku|sonnet|opus|fable)\b/i;
 const FRONTMATTER_MODEL = /^model:\s*['"]?([\w.-]+)/m;
 
 const definitionPaths = (subagent, cwd) => {
-  if (subagent.includes(':')) return [path.join(PLUGIN_ROOT, 'agents', `${subagent.split(':').pop()}.md`)];
+  if (subagent.includes(':')) return [path.join(pluginRoot(), 'agents', `${subagent.split(':').pop()}.md`)];
   return [
-    path.join(cwd, '.claude', 'agents', `${subagent}.md`),
-    path.join(homedir(), '.claude', 'agents', `${subagent}.md`),
+    path.join(stateDir(cwd), 'agents', `${subagent}.md`),
+    path.join(configDir(), 'agents', `${subagent}.md`),
   ];
 };
 

@@ -40,11 +40,11 @@
     }
   },
   "keptPct": 53,
-  "keptTokens": 1664689,
-  "readVolumeTokens": 3129194,
-  "offloadTokens": 932005,
-  "resendRatio": 55.9,
-  "ledgerTurns": 151,
+  "keptTokens": 1669811,
+  "readVolumeTokens": 3176494,
+  "offloadTokens": 1128551,
+  "resendRatio": 55.8,
+  "ledgerTurns": 155,
   "taxTokens": 164,
   "repos": 1,
   "origins": {

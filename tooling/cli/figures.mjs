@@ -15,8 +15,8 @@ const DEMO_AGENTS = 100;
 const DEMO_FILE_BYTES = 35 * 1024;
 const DEMO_LINE_BYTES = 64;
 
-const DEMO_OPEN = '<!-- handoff-demo -->';
-const DEMO_CLOSE = '<!-- /handoff-demo -->';
+const DEMO_OPEN = '<!-- serio-demo -->';
+const DEMO_CLOSE = '<!-- /serio-demo -->';
 
 const FONT = "system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif";
 const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace";
@@ -85,7 +85,7 @@ function wrap(line, max) {
 // every demo verdict is this guard's own deny reason or rewrite reason, captured live —
 // except the last row, which quotes the focus output style verbatim
 function probe() {
-  const root = mkdtempSync(path.join(tmpdir(), 'handoff-figure-'));
+  const root = mkdtempSync(path.join(tmpdir(), 'serio-figure-'));
   const big = path.join(root, 'src', 'big.js');
   mkdirSync(path.dirname(big), { recursive: true });
   writeFileSync(big, `${'x'.repeat(DEMO_LINE_BYTES - 1)}\n`.repeat(DEMO_FILE_BYTES / DEMO_LINE_BYTES), 'utf8');
@@ -94,7 +94,7 @@ function probe() {
     const run = spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'guard.mjs')], {
       input: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: session, cwd: root, tool_name, tool_input, agent_type }),
       encoding: 'utf8',
-      env: { ...process.env, HANDOFF_OS_DIR: root, HANDOFF_GIT_WRITE: '0' },
+      env: { ...process.env, SERIO_OS_DIR: root, SERIO_GIT_WRITE: '0' },
     });
     let decision = '';
     let reason = '';
