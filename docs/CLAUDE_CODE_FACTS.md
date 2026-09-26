@@ -106,5 +106,11 @@
 | Subagent with no `model` | inherits the session model |
 | Usage-limit resume | `autoContinueAtUsageLimit` managed setting, Claude Code 2.1.234+: waits for the reset, then continues the interrupted task |
 | Limit messages | "session limit" / "weekly limit" = plan window, all models; "monthly spend limit" = usage credits cap |
+| Usage percent | only the status line stdin: `rate_limits.five_hour` / `.seven_day` → `used_percentage`, `resets_at` (epoch s); no hook stdin carries it |
+| Plugin `settings` | only `agent` and `subagentStatusLine` take effect — a plugin cannot set `statusLine` |
+| Quota notifications | `Notification` `notification_type`: `quota_auto_resume_fired`, `_stale`, `_disabled`; no event fires before a limit |
+| Limit row in transcript | the `isApiErrorMessage` row (`error: "rate_limit"`, `apiErrorStatus: 429`) carries `quotaLimits: {status: "rejected", rateLimitType: "five_hour" \| "seven_day", resetsAt}` (epoch s); no row carries it before the hit (observed 2026-09-26) |
+| Workflow `agent({agentType})` | looks up the Agent tool's `activeAgents`, plugin agents included; an unknown type throws; with `schema`, the structured-output tool is added to a restricted `tools` list (2.1.281 binary, 2026-09-26) |
+| Subagent first-turn prompt | median `workflow-subagent` 65k tok, `general-purpose` 60k, `serio-focus:scout` 8k — every connector schema loads unless `tools` restricts it (observed 2026-09-26, 857 transcripts) |
 
-- Source: <https://code.claude.com/docs/en/costs.md>, retrieved 2026-09-23
+- Source: <https://code.claude.com/docs/en/costs.md>, retrieved 2026-09-23; <https://code.claude.com/docs/en/statusline.md>, <https://code.claude.com/docs/en/hooks.md>, <https://code.claude.com/docs/en/plugins-reference.md>, retrieved 2026-09-26

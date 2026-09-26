@@ -25,6 +25,7 @@ after(() => {
 });
 
 const box = sandbox('guard-');
+process.env.SERIO_CONFIG_DIR = sandbox('config-');
 const fire = (file, payload, env = { ...process.env, SERIO_OS_DIR: box }) => {
   const run = spawnSync(process.execPath, [file], { input: typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}), encoding: 'utf8', env });
   return /"permissionDecision":"deny"/.test(run.stdout) ? ASK : run.status;
@@ -100,8 +101,11 @@ describe('dispatch budget', () => {
   const routed = (session, tool_input, tool_name = 'Agent') => JSON.parse(spawnSync(process.execPath, [script('guard.mjs')], { encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: box },
     input: JSON.stringify({ cwd: box, session_id: session, tool_name, tool_input }) }).stdout).hookSpecificOutput.updatedInput ?? {};
 
-  it('routes a dispatch with no model or a denied tier from the agent definition to sonnet, and blocks an unknown tier', () => {
-    assert.equal(routed('dp-route', { prompt: 'x' }).model, 'sonnet');
+  it('routes a dispatch with no model or a denied tier from the agent definition to sonnet, one with no type to the worker, and blocks an unknown tier', () => {
+    const bare = routed('dp-route', { prompt: 'x' });
+    assert.deepEqual([bare.model, bare.subagent_type], ['sonnet', 'serio-focus:worker']);
+    assert.match(routed('dp-lean', { script: "await agent('x', { model: 'haiku' })" }, 'Workflow').script ?? '', /agentType: 'serio-focus:worker', model: 'haiku'/);
+    assert.match(readFileSync(path.join(PLUGIN, 'agents', 'worker.md'), 'utf8'), /^name: worker$/m);
     assert.equal(held('dp', { prompt: 'x', model: 'best-available' }), ASK);
     mkdirSync(path.join(box, '.claude', 'agents'), { recursive: true });
     writeFileSync(path.join(box, '.claude', 'agents', 'pricey.md'), '---\nname: pricey\nmodel: opus\n---\n');
@@ -223,10 +227,21 @@ describe('read and query budgets', () => {
     assert.equal(at('fl4', { tool_name: 'Bash', tool_input: { command: `cat ${small}` } }), ALLOWED);
     assert.equal(state('fl4').saved.read, 6);
   });
-  it('blocks a re-read of the same unchanged bytes', () => {
+  it('blocks a re-read of the same unchanged bytes, and only bytes an earlier call delivered', () => {
     writeFileSync(probe, 'small');
     at('bq', { tool_name: 'Read', tool_input: { file_path: probe } });
     assert.equal(ask({ cwd: box, session_id: 'bq', tool_name: 'Read', tool_input: { file_path: probe } }), ASK);
+    const sh = (command) => at('bq', { tool_name: 'Bash', tool_input: { command } });
+    mkdirSync(path.join(box, 'other'), { recursive: true });
+    writeFileSync(path.join(box, 'other', 'probe.txt'), 'other');
+    const wide = [1, 2].map((n) => path.join(box, `wide-${n}.txt`));
+    wide.forEach((file) => writeFileSync(file, 'x'.repeat(20000)));
+    for (const command of ['cd other && cat probe.txt', 'echo x >> probe.txt; cat probe.txt', `cat ${wide.join(' ')} probe.txt`]) assert.equal(sh(command), ALLOWED, command);
+    const log = path.join(sandbox('denied-'), 's.jsonl');
+    writeFileSync(log, `${JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'Permission to use Bash has been denied.', is_error: true, tool_use_id: 'td' }] } })}\n`);
+    const denied = (tool_use_id) => guard({ cwd: box, session_id: 'bq-denied', transcript_path: log, tool_use_id, tool_name: 'Read', tool_input: { file_path: probe } });
+    denied('td');
+    assert.equal(denied('te'), ALLOWED);
     const sub = (agent_id) => ({ agent_type: 'workflow-subagent', agent_id, tool_name: 'Read', tool_input: { file_path: probe } });
     run('bq-sub', sub('a1'));
     assert.equal(run('bq-sub', sub('a2')).stdout, '', 'a sibling subagent never read these bytes');
@@ -310,5 +325,21 @@ describe('session receipt', () => {
     hook(script('rescue.mjs'), { session_id: 'dead', transcript_path: transcript([{ type: 'tool_use', name: 'Write', input: { file_path: draft } }]) });
     assert.equal(readFileSync(path.join(box, '.claude', 'rescue', 'dead', '1-session-draft.md'), 'utf8'), 'plan');
     assert.match(hook(script('card.mjs'), { source: 'startup' }).stdout, /RESCUE 1 session\(s\) ended on an API error/);
+  });
+  it('notes a near usage limit once per window and actor, learned from the last limit hit', () => {
+    const config = sandbox('limit-');
+    const now = Date.now();
+    const reset = Math.floor((now - 36e5) / 1000) * 1000;
+    const row = (at, extra) => JSON.stringify({ type: 'assistant', timestamp: new Date(at).toISOString(), ...extra });
+    mkdirSync(path.join(config, 'projects', 'p'), { recursive: true });
+    writeFileSync(path.join(config, 'projects', 'p', 's.jsonl'), [row(reset - 72e5, { message: { id: 'a', usage: { input_tokens: 1000 } } }),
+      row(reset - 36e5, { isApiErrorMessage: true, quotaLimits: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: reset / 1000 } }),
+      row(now - 6e5, { message: { id: 'b', usage: { input_tokens: 850 } } }), ''].join('\n'));
+    const env = { ...process.env, SERIO_OS_DIR: sandbox('limit-os-'), SERIO_CONFIG_DIR: config };
+    const note = (extra) => spawnSync(process.execPath, [script('guard.mjs')], { encoding: 'utf8', env,
+      input: JSON.stringify({ cwd: box, session_id: 'lim', tool_name: 'Bash', tool_input: { command: 'ls' }, ...extra }) }).stdout;
+    assert.match(note({}), /LIMIT NEAR: 85% of the five_hour usage window.*document all work/);
+    assert.equal(note({}), '');
+    assert.match(note({ agent_id: 'w1', agent_type: 'workflow-subagent' }), /return your findings now/);
   });
 });

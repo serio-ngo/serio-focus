@@ -1,5 +1,7 @@
+import path from 'node:path';
 import { PIPE, pipelines, strip, tokens, unwrap } from './shell-parse.mjs';
 
+const CD_CMD = /^(?:cd|pushd|chdir|set-location|sl)$/i;
 const WHOLE_FILE_CMD = /^(?:cat|bat|more|less|type|gc|get-content)$/i;
 const SLICE_CMD = /^(?:head|tail)$/i;
 const SED_QUIET = /^(?:-[a-z]*n[a-z]*|--quiet|--silent)$/i;
@@ -66,11 +68,16 @@ function readsInSegment(segment) {
 
 export function shellReads(command) {
   const out = [];
+  const dirs = [];
+  let before = '';
   for (const chunk of pipelines(command)) {
     if (chunk.includes('`') || chunk.includes('$(')) continue;
     const piped = PIPE.test(chunk);
     const segment = unwrap(chunk.split('|')[0].trim());
-    for (const read of readsInSegment(segment)) out.push({ ...read, piped });
+    const [cmd, dir] = tokens(segment);
+    if (CD_CMD.test(cmd || '') && dir) dirs.push(strip(dir));
+    for (const read of readsInSegment(segment)) out.push({ ...read, piped, dirs: [...dirs], touched: before.includes(path.basename(read.file || '\0')) });
+    before += `${chunk}\n`;
   }
   return out;
 }

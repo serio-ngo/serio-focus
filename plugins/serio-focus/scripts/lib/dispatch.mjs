@@ -14,8 +14,10 @@ const DYNAMIC_FANOUT = /\.\s*(?:flatMap|map|forEach)\s*\(|\b(?:for|while)\s*\(|\
 const FANOUT_BUDGET = /(?:^|\n)\s*\/\/\s*AGENTS:\s*(\d+(?:\s*\+\s*\d+)*)/;
 const WORKFLOW_AGENT_CALL = /(?<![.\w$])agent\s*\(/g;
 const WORKFLOW_TIER_OPTION = /\b(?:model|agentType)\b/g;
+const TIER_SLOT = /\bmodel\s*:\s*(['"`])(?:haiku|sonnet|opus|fable)\1/gi;
 const SPAWN_TEXT = ['prompt', 'description', 'subagent_type', 'script', 'name', 'title'];
 const MODEL_BEARING = ['Agent', 'Task'];
+export const LEAN = 'serio-focus:worker';
 
 export function deniedSubagentRx(raw = DENY_SUBAGENT_DEFAULT) {
   const names = String(raw ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -44,6 +46,15 @@ export function reroute(raw, input, tool, { alt }) {
   const script = String(input.script ?? '').replace(MODEL_OPTION, (hit, name) => (denied.test(name) ? hit.replace(name, alt) : hit));
   if (script === input.script) return null;
   const { scriptPath, ...rest } = raw;
+  return { ...rest, script };
+}
+
+export function slim(base, loaded, tool) {
+  if (MODEL_BEARING.includes(tool)) return base.subagent_type ? null : { ...base, subagent_type: LEAN };
+  const source = String(base.script ?? loaded.script ?? '');
+  const script = /\bagentType\b/.test(source) ? source : source.replace(TIER_SLOT, `agentType: '${LEAN}', $&`);
+  if (script === source) return null;
+  const { scriptPath, ...rest } = base;
   return { ...rest, script };
 }
 
