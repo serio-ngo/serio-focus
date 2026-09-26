@@ -47,7 +47,7 @@ The hook caps each wave at 3 and queues the rest.
 
 Without a checkout: `/plugin marketplace add serio-ngo/serio-focus`, then `/plugin install serio-focus@serio-ngo` and restart.
 
-New releases arrive through the marketplace on restart. Never copy the checkout into the plugin cache by hand.
+With `npm run setup`, new releases install in the background and load on the next start; without it, see the auto-update rows in [the facts](docs/CLAUDE_CODE_FACTS.md#plugins-skills-subagents). Never copy the checkout into the plugin cache by hand.
 
 ## What it does
 

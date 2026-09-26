@@ -80,12 +80,18 @@
 | Layout | plugin root holds `skills/`, `agents/`, `commands/`, `hooks/hooks.json` |
 | `plugin.json` | inside `.claude-plugin/` only; `marketplace.json` at `<repo>/.claude-plugin/` |
 | Install path | `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`, keyed by `plugin.json` `version` — **content without a `version` bump is a no-op** |
-| Registry pin | marketplace installs carry `gitCommitSha` in `installed_plugins.json`; a pin without it shadows the marketplace and freezes updates (observed 2026-09-26) |
+| Registry entry | `claude plugin install` / `update` write `version` and `gitCommitSha` to `installed_plugins.json`; an update is skipped while the computed `version` equals the recorded one |
+| Auto-update | after the first message plus a random delay up to 10 min; refreshes marketplaces with `autoUpdate`, updates their plugins on disk; the next start loads them |
+| Auto-update gate | `DISABLE_AUTOUPDATER`, `DISABLE_UPDATES` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` switch the whole pass off unless `FORCE_AUTOUPDATE_PLUGINS=1`; the desktop app launches Claude Code with `DISABLE_AUTOUPDATER=1`; settings `env` reaches the gate (observed 2026-09-26, 2.1.281) |
+| `autoUpdate` | settings `extraKnownMarketplaces.<name>.autoUpdate` first, then `known_marketplaces.json`; third-party default off; `claude plugin marketplace add` rewrites the settings entry without it (observed 2026-09-26) |
+| Fresh machine | a marketplace declared only in settings is unknown to `claude plugin` until `claude plugin marketplace add` (observed 2026-09-26) |
 | Skill | `<plugin-root>/skills/<name>/SKILL.md` → `/<plugin>:<skill>` |
 | Skill frontmatter | `name` `description` `license` `compatibility` `metadata` `allowed-tools` — **nothing else**, hard upload error |
 | Skill context | description always in; body on invocation only |
 | Subagent | `<plugin-root>/agents/<name>.md` → `<plugin>:<agent>` |
 | Plugin subagents ignore | `hooks`, `mcpServers`, `permissionMode` — block with `deny: ["Agent(name)"]` |
+
+- Source: <https://code.claude.com/docs/en/plugins/loading.md>, retrieved 2026-09-26; gate and settings `env` filter read in the 2.1.281 binary
 
 ## Auth
 

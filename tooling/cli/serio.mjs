@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { SPAWN_TOOLS } from '../../plugins/serio-focus/scripts/guard.mjs';
 import { writeFigures } from './figures.mjs';
-import { PLUGIN, REPO, REPLY_CLOSE, REPLY_OPEN, manifest, markdown, opencodeAgents, policyFor, readJson, replyBody, walk, writeBlock } from './generate.mjs';
+import { PLUGIN, REPO, REPLY_CLOSE, REPLY_OPEN, manifest, markdown, opencodeAgents, pluginVersion, policyFor, readJson, replyBody, walk, writeBlock } from './generate.mjs';
 
 const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const BANNED = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
@@ -96,10 +96,10 @@ function refuseMeteredAuth(settings) {
 function installation() {
   const repo = originRepo();
   const patch = {
-    env: { SERIO_OS_DIR: REPO },
+    env: { SERIO_OS_DIR: REPO, FORCE_AUTOUPDATE_PLUGINS: '1' },
     enabledPlugins: { [`${PLUGIN_NAME}@${marketplace.name}`]: true },
   };
-  if (repo) patch.extraKnownMarketplaces = { [marketplace.name]: { source: { source: 'github', repo } } };
+  if (repo) patch.extraKnownMarketplaces = { [marketplace.name]: { source: { source: 'github', repo }, autoUpdate: true } };
   return patch;
 }
 
@@ -168,9 +168,12 @@ function install() {
     writeJson(file, registry);
     row('unpinned', `${key} manual entry removed`);
   }
-  const settings = readJsonFile(path.join(CONFIG_DIR, 'settings.json'), {});
-  row('marketplace', settings.extraKnownMarketplaces?.[marketplace.name]?.source?.repo ?? 'missing — run npm run sync');
-  row('plugin', settings.enabledPlugins?.[key] === true ? `${key} enabled` : 'missing — run npm run sync');
+  const claude = (...rest) => spawnSync(process.env.CLAUDE_CODE_EXECPATH || 'claude', ['plugin', ...rest], { encoding: 'utf8' });
+  const known = marketplace.name in readJsonFile(path.join(CONFIG_DIR, 'plugins', 'known_marketplaces.json'), {});
+  claude('marketplace', ...(known ? ['update', marketplace.name] : ['add', originRepo()]));
+  const run = claude(entry?.gitCommitSha ? 'update' : 'install', key, '--scope', 'user');
+  if (run.status !== 0) process.exitCode = 1;
+  row('plugin', `${run.stdout ?? ''}${run.stderr ?? ''}`.trim().split('\n').pop() || 'claude not found');
 }
 
 function syncReply() {
@@ -231,8 +234,11 @@ function doctor() {
   check('the plugin is enabled', settings.enabledPlugins?.[key] === true);
   check('login is restricted to the subscription', settings.forceLoginMethod === 'claudeai');
   check('the marketplace is registered', settings.extraKnownMarketplaces?.[marketplace.name]?.source?.repo === originRepo());
+  check('plugin auto-update survives DISABLE_AUTOUPDATER', settings.env?.FORCE_AUTOUPDATE_PLUGINS === '1'
+    && settings.extraKnownMarketplaces?.[marketplace.name]?.autoUpdate === true);
   const pinned = readJsonFile(registryPath(), {}).plugins?.[key]?.[0];
-  check('no manual pin shadows the marketplace', !pinned || 'gitCommitSha' in pinned);
+  check('the marketplace install is this checkout', Boolean(pinned?.gitCommitSha) && pinned.version === pluginVersion(),
+    `installed ${pinned?.version ?? 'nothing'}, checkout ${pluginVersion()}`);
 
   const probe = mkdtempSync(path.join(tmpdir(), 'serio-doctor-'));
   const at = (dir, script, payload, env) => spawnSync(process.execPath, [path.join(dir, 'scripts', script)], {
@@ -338,10 +344,10 @@ function prove() {
 }
 
 function setup(args) {
+  install();
   sync(args);
   if (args.project) sync({ ...args, scope: 'project', target: args.project });
   upkeep();
-  install();
   syncReply();
   report();
   console.log('Cowork: paste this into Settings > Cowork > Global instructions:');
