@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.19.0 | 2026-09-26 | marketplace-only installs: install drops the manual registry pin instead of copying the checkout into the cache, doctor checks the marketplace wiring |
 | 1.18.0 | 2026-09-26 | a note at 80% of a usage window, learned from the last limit hit: main documents all work, subagents return; a subagent or workflow agent() with no type runs as serio-focus:worker; re-reads pass after a cd, a write in the same command, a truncated shell output or a denied call |
 | 1.17.0 | 2026-09-24 | dispatch with no or a denied tier runs as sonnet instead of being refused; effort high and fixed agent() lists pass; temp and build deletes via variables, cd, .wrangler and dist-* pass, .. held; commands after if, then, do or while are judged; settings lock only commit, push and history rewrites; audit adds version, agent and call ids, a session outcome line and settings denials |
 | 1.16.0 | 2026-09-24 | serio namespace: SERIO_* env, serio CLI, runtime home, no handoff compat |

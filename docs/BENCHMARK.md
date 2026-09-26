@@ -102,13 +102,13 @@ Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed
 ## Live ledger — what the guard did on this machine
 
 <!-- serio-stats -->
-| Measured over 206 ledger lines | Tokens | Share |
+| Measured over 211 ledger lines | Tokens | Share |
 |---|---|---|
-| Read volume the session asked for | ~3.7M | 100% |
+| Read volume the session asked for | ~3.8M | 100% |
 | **Kept out** | **~1.8M** | **47%** |
 | — re-read dedup | ~58.8k | 2% |
 | — whole-file cap | ~184.4k | 5% |
-| — trimmed | ~1.5M | 41% |
+| — trimmed | ~1.5M | 40% |
 | Admitted to the main thread | ~2.0M | 53% |
 | Read by subagents, not counted as kept out | ~1.6M | — |
 
@@ -123,8 +123,8 @@ Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed
 
 | Measured billing | Tokens |
 |---|---|
-| Fresh — input + output + cache write | 53,650,107 |
-| Cache-read | 2,959,831,139 |
+| Fresh — input + output + cache write | 53,706,819 |
+| Cache-read | 2,963,466,707 |
 | **Context re-send ratio** | **55.2×** — cache mechanism, not the guard |
 
 Guard actions: 208 (used 14 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
