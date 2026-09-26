@@ -50,7 +50,7 @@ function judgeSpawn(payload, raw, tool) {
   else if (/runner/i.test(kind)) bump(payload, 'runners', total);
   if (!updatedInput) return null;
   const reason = `DISPATCH BUDGET: ${[moved && `${routed.tier ? `${routed.tier} is denied for subagents` : 'no model named'}, routed to ${routed.alt}`,
-    leaned && `runs as ${LEAN}`].filter(Boolean).join('; ')}`;
+    leaned && `runs as ${LEAN} (general-purpose for connectors)`].filter(Boolean).join('; ')}`;
   append(rootOf(payload), entry(payload, reason));
   return { updatedInput, reason };
 }

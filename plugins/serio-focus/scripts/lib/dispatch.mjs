@@ -52,7 +52,8 @@ export function reroute(raw, input, tool, { alt }) {
 export function slim(base, loaded, tool) {
   if (MODEL_BEARING.includes(tool)) return base.subagent_type ? null : { ...base, subagent_type: LEAN };
   const source = String(base.script ?? loaded.script ?? '');
-  const script = /\bagentType\b/.test(source) ? source : source.replace(TIER_SLOT, `agentType: '${LEAN}', $&`);
+  const script = source.split(new RegExp(`(?=${WORKFLOW_AGENT_CALL.source})`))
+    .map((call) => (/\bagentType\b/.test(call) ? call : call.replace(TIER_SLOT, `agentType: '${LEAN}', $&`))).join('');
   if (script === source) return null;
   const { scriptPath, ...rest } = base;
   return { ...rest, script };

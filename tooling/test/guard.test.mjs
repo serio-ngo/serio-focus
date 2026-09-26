@@ -105,6 +105,9 @@ describe('dispatch budget', () => {
     const bare = routed('dp-route', { prompt: 'x' });
     assert.deepEqual([bare.model, bare.subagent_type], ['sonnet', 'serio-focus:worker']);
     assert.match(routed('dp-lean', { script: "await agent('x', { model: 'haiku' })" }, 'Workflow').script ?? '', /agentType: 'serio-focus:worker', model: 'haiku'/);
+    const mixed = routed('dp-lean2', { script: "await agent('a', { model: 'haiku', agentType: 'general-purpose' }); await agent('b', { model: 'haiku', schema: { type: 'object' } })" }, 'Workflow').script ?? '';
+    assert.equal((mixed.match(/serio-focus:worker/g) || []).length, 1);
+    assert.match(mixed, /agent\('b'[^)]*agentType: 'serio-focus:worker'/);
     assert.match(readFileSync(path.join(PLUGIN, 'agents', 'worker.md'), 'utf8'), /^name: worker$/m);
     assert.equal(held('dp', { prompt: 'x', model: 'best-available' }), ASK);
     mkdirSync(path.join(box, '.claude', 'agents'), { recursive: true });

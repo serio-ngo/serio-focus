@@ -306,11 +306,13 @@ function doctor() {
     ['rm -rf docs', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),
     'rm -r, clean -fdx, reset --hard');
   const routed = (run) => { try { return JSON.parse(run.stdout).hookSpecificOutput.updatedInput.model === 'sonnet'; } catch { return false; } };
+  const lean = (run) => { try { return JSON.parse(run.stdout).hookSpecificOutput.updatedInput.subagent_type === 'serio-focus:worker'; } catch { return false; } };
   check('the installed guard routes dispatch by tier',
     SPAWN_TOOLS.every((tool) => routed(fire(pre(tool, { model: 'opus', prompt: 'review the diff' }))))
     && routed(fire(pre('Agent', { prompt: 'audit the repo' })))
-    && fire(pre('Agent', { model: 'sonnet', prompt: 'review the diff' })).stdout === '',
-    'opus and unnamed routed to sonnet, sonnet passes');
+    && lean(fire(pre('Agent', { prompt: 'audit the repo' })))
+    && lean(fire(pre('Agent', { model: 'sonnet', prompt: 'review the diff' }))),
+    'opus and unnamed routed to sonnet, typeless runs as serio-focus:worker');
   check('the installed card prints', spawnSync(process.execPath, [path.join(cache, 'scripts', 'card.mjs')], { encoding: 'utf8' }).stdout.trim().length > 0);
 
   // Every check above spawns the scripts here. Only the ledger proves Claude Code spawns them.
