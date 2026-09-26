@@ -63,7 +63,7 @@ refusal, into a permanent check.
 | Command | Effect |
 |---|---|
 | `claude --plugin-dir plugins/serio-focus` | run this checkout as the plugin for one session; hooks load once at start |
-| `npm run install:plugin` | copy this checkout into the local plugin cache and register it; restart to load |
+| `npm run install:plugin` | drop the legacy manual pin so the marketplace copy loads; restart to load |
 | `npm run upkeep` | regenerate `docs/MANIFEST.md`, README inventory |
 | `npm run upkeep:check` | upkeep, then fail when the tree differs — the CI gate |
 

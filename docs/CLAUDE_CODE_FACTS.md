@@ -80,6 +80,7 @@
 | Layout | plugin root holds `skills/`, `agents/`, `commands/`, `hooks/hooks.json` |
 | `plugin.json` | inside `.claude-plugin/` only; `marketplace.json` at `<repo>/.claude-plugin/` |
 | Install path | `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`, keyed by `plugin.json` `version` — **content without a `version` bump is a no-op** |
+| Registry pin | marketplace installs carry `gitCommitSha` in `installed_plugins.json`; a pin without it shadows the marketplace and freezes updates (observed 2026-09-26) |
 | Skill | `<plugin-root>/skills/<name>/SKILL.md` → `/<plugin>:<skill>` |
 | Skill frontmatter | `name` `description` `license` `compatibility` `metadata` `allowed-tools` — **nothing else**, hard upload error |
 | Skill context | description always in; body on invocation only |

@@ -47,6 +47,8 @@ The hook caps each wave at 3 and queues the rest.
 
 Without a checkout: `/plugin marketplace add serio-ngo/serio-focus`, then `/plugin install serio-focus@serio-ngo` and restart.
 
+New releases arrive through the marketplace on restart. Never copy the checkout into the plugin cache by hand.
+
 ## What it does
 
 <img src="docs/tiles-stops.svg" width="720" alt="Stops: 3 subagents per wave; 24 KB whole-file read cap; commit · push git writes held to final state; 1.2M tok dispatch held, no repo change">

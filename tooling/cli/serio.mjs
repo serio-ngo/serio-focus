@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { SPAWN_TOOLS } from '../../plugins/serio-focus/scripts/guard.mjs';
 import { writeFigures } from './figures.mjs';
-import { PLUGIN, REPO, REPLY_CLOSE, REPLY_OPEN, manifest, markdown, opencodeAgents, pluginVersion, policyFor, readJson, replyBody, walk, writeBlock } from './generate.mjs';
+import { PLUGIN, REPO, REPLY_CLOSE, REPLY_OPEN, manifest, markdown, opencodeAgents, policyFor, readJson, replyBody, walk, writeBlock } from './generate.mjs';
 
 const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const BANNED = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
 const RULE_LISTS = ['deny', 'ask', 'allow'];
-const RUNTIME_OWNED = [/^\.in_use[/\\]/, /^\.DS_Store$/, /^\.installed$/];
 const TEXT = /\.(md|mjs|json|jsonc|ya?ml|cff)$/;
 
 const marketplace = readJson('.claude-plugin', 'marketplace.json');
@@ -156,65 +155,22 @@ function sync(args) {
   return after;
 }
 
-const cacheRoot = () => path.join(CONFIG_DIR, 'plugins', 'cache', marketplace.name, PLUGIN_NAME);
 const registryPath = () => path.join(CONFIG_DIR, 'plugins', 'installed_plugins.json');
 const registryKey = () => `${PLUGIN_NAME}@${marketplace.name}`;
 
-function registration() {
-  const entries = readJsonFile(registryPath(), {}).plugins?.[registryKey()];
-  return Array.isArray(entries) ? entries[0] : undefined;
-}
-
-function register(version) {
+function install() {
   const file = registryPath();
   const registry = readJsonFile(file, {});
-  const now = new Date().toISOString();
-  const previous = registration() ?? {};
-  const entry = {
-    ...previous,
-    scope: previous.scope || 'user',
-    installPath: path.join(cacheRoot(), version),
-    version,
-    installedAt: previous.installedAt || now,
-    lastUpdated: now,
-  };
-  writeJson(file, { ...registry, version: registry.version ?? 2, plugins: { ...registry.plugins, [registryKey()]: [entry] } });
-  return entry;
-}
-
-function installTargets() {
-  const declared = pluginVersion();
-  const existing = existsSync(cacheRoot())
-    ? readdirSync(cacheRoot(), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
-    : [];
-  return { declared, targets: [declared], stale: existing.filter((version) => version !== declared) };
-}
-
-function install() {
-  const { declared, targets, stale } = installTargets();
-  const wanted = walk(PLUGIN);
-  const memory = path.join(REPO, 'config', 'memory.md');
-  let pruned = 0;
-  for (const version of targets) {
-    const dest = path.join(cacheRoot(), version);
-    for (const rel of wanted) {
-      mkdirSync(path.dirname(path.join(dest, rel)), { recursive: true });
-      copyFileSync(path.join(PLUGIN, rel), path.join(dest, rel));
-    }
-    for (const rel of walk(dest)) {
-      if (wanted.includes(rel) || rel === 'memory.md' || RUNTIME_OWNED.some((rx) => rx.test(rel))) continue;
-      rmSync(path.join(dest, rel), { force: true });
-      pruned += 1;
-    }
-    if (existsSync(memory)) copyFileSync(memory, path.join(dest, 'memory.md'));
+  const key = registryKey();
+  const entry = registry.plugins?.[key]?.[0];
+  if (entry && !('gitCommitSha' in entry)) {
+    delete registry.plugins[key];
+    writeJson(file, registry);
+    row('unpinned', `${key} manual entry removed`);
   }
-  const entry = register(declared);
-  for (const version of stale) {
-    rmSync(path.join(cacheRoot(), version), { recursive: true, force: true });
-  }
-  row('plugin', `${PLUGIN_NAME} ${declared} (${wanted.length} files, ${pruned} file(s) and ${stale.length} old version(s) pruned)`);
-  row('registered', `${entry.installPath}`);
-  return { declared, targets };
+  const settings = readJsonFile(path.join(CONFIG_DIR, 'settings.json'), {});
+  row('marketplace', settings.extraKnownMarketplaces?.[marketplace.name]?.source?.repo ?? 'missing — run npm run sync');
+  row('plugin', settings.enabledPlugins?.[key] === true ? `${key} enabled` : 'missing — run npm run sync');
 }
 
 function syncReply() {
@@ -264,8 +220,7 @@ const held = (run) => run.status === BLOCKED
   || (() => { try { return ['ask', 'deny'].includes(JSON.parse(run.stdout || '').hookSpecificOutput?.permissionDecision); } catch { return false; } })();
 function doctor() {
   const settings = readJsonFile(path.join(CONFIG_DIR, 'settings.json'), {});
-  const { declared, targets } = installTargets();
-  const cache = path.join(cacheRoot(), declared);
+  const key = registryKey();
   const checks = [];
   const check = (question, ok, detail = '') => {
     checks.push(ok);
@@ -273,16 +228,11 @@ function doctor() {
     return ok;
   };
 
-  check('the plugin is enabled', settings.enabledPlugins?.[`${PLUGIN_NAME}@${marketplace.name}`] === true);
+  check('the plugin is enabled', settings.enabledPlugins?.[key] === true);
   check('login is restricted to the subscription', settings.forceLoginMethod === 'claudeai');
-
-  const current = (version) => {
-    const dest = path.join(cacheRoot(), version);
-    return existsSync(dest) && walk(PLUGIN).every((rel) => existsSync(path.join(dest, rel))
-      && readFileSync(path.join(dest, rel), 'utf8') === readFileSync(path.join(PLUGIN, rel), 'utf8'));
-  };
-  const installed = check('every installed copy is this checkout', targets.every(current),
-    `${targets.length} version(s): ${targets.join(', ')}`);
+  check('the marketplace is registered', settings.extraKnownMarketplaces?.[marketplace.name]?.source?.repo === originRepo());
+  const pinned = readJsonFile(registryPath(), {}).plugins?.[key]?.[0];
+  check('no manual pin shadows the marketplace', !pinned || 'gitCommitSha' in pinned);
 
   const probe = mkdtempSync(path.join(tmpdir(), 'serio-doctor-'));
   const at = (dir, script, payload, env) => spawnSync(process.execPath, [path.join(dir, 'scripts', script)], {
@@ -291,7 +241,7 @@ function doctor() {
   });
   const session = () => `doctor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const pre = (tool_name, tool_input) => ({ hook_event_name: 'PreToolUse', session_id: session(), cwd: probe, tool_name, tool_input });
-  const fire = (payload, env) => at(cache, 'guard.mjs', payload, env);
+  const fire = (payload, env) => at(PLUGIN, 'guard.mjs', payload, env);
   const shell = (command, env) => fire(pre('Bash', { command }), env);
 
   const open = settings.env?.SERIO_GIT_WRITE === '1';
@@ -302,18 +252,18 @@ function doctor() {
     && ['git commit -m x', 'git push origin main'].every((c) => held(shell(c, { SERIO_GIT_WRITE: '0' })))
     && ['git status', 'git stash push -m wip', 'git merge main'].every((c) => !held(shell(c, { SERIO_GIT_WRITE: '0' }))),
     'deny rules, SERIO_GIT_WRITE and the live guard must agree');
-  check('the installed guard blocks recursive deletes and git wipes',
+  check('the checkout guard blocks recursive deletes and git wipes',
     ['rm -rf docs', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),
     'rm -r, clean -fdx, reset --hard');
   const routed = (run) => { try { return JSON.parse(run.stdout).hookSpecificOutput.updatedInput.model === 'sonnet'; } catch { return false; } };
   const lean = (run) => { try { return JSON.parse(run.stdout).hookSpecificOutput.updatedInput.subagent_type === 'serio-focus:worker'; } catch { return false; } };
-  check('the installed guard routes dispatch by tier',
+  check('the checkout guard routes dispatch by tier',
     SPAWN_TOOLS.every((tool) => routed(fire(pre(tool, { model: 'opus', prompt: 'review the diff' }))))
     && routed(fire(pre('Agent', { prompt: 'audit the repo' })))
     && lean(fire(pre('Agent', { prompt: 'audit the repo' })))
     && lean(fire(pre('Agent', { model: 'sonnet', prompt: 'review the diff' }))),
     'opus and unnamed routed to sonnet, typeless runs as serio-focus:worker');
-  check('the installed card prints', spawnSync(process.execPath, [path.join(cache, 'scripts', 'card.mjs')], { encoding: 'utf8' }).stdout.trim().length > 0);
+  check('the checkout card prints', spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'card.mjs')], { encoding: 'utf8' }).stdout.trim().length > 0);
 
   // Every check above spawns the scripts here. Only the ledger proves Claude Code spawns them.
   const month = new Date().toISOString().slice(0, 7);
@@ -325,7 +275,7 @@ function doctor() {
 
   const failed = checks.filter((ok) => !ok).length;
   console.log(`  ${checks.length - failed} of ${checks.length} yes`);
-  return { failed, installed };
+  return { failed };
 }
 
 function release(args) {
