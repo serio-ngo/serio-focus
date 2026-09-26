@@ -142,6 +142,7 @@ export const FLOW = [
   'lib/agent-model.mjs',
   'lib/fan-out.mjs',
   'lib/read-budget.mjs',
+  'lib/quota.mjs',
 ];
 
 export function inventory(root = REPO) {

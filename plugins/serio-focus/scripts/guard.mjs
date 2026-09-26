@@ -4,11 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { Blocked } from './lib/blocked.mjs';
 import { append, entry } from './audit.mjs';
 import { bump, rootOf } from './lib/ledger.mjs';
-import { agentsRequested, bookRedirect, costBudget, dispatchBudget, reroute, withScript } from './lib/dispatch.mjs';
+import { LEAN, agentsRequested, bookRedirect, costBudget, dispatchBudget, reroute, slim, withScript } from './lib/dispatch.mjs';
 import { fanOutCap } from './lib/fan-out.mjs';
 import { judgeShell } from './lib/shell-danger.mjs';
 import { kb, readBudget, shellReadBudget, webBudget } from './lib/read-budget.mjs';
 import { stallHold } from './lib/limits.mjs';
+import { nearLimit } from './lib/quota.mjs';
 import { compact } from './lib/stats.mjs';
 import { stall } from './lib/transcript.mjs';
 
@@ -34,8 +35,10 @@ function judgeRead(payload, input) {
 function judgeSpawn(payload, raw, tool) {
   const input = withScript(raw, tool, payload.cwd);
   const routed = dispatchBudget(input, payload.cwd, tool);
-  const updatedInput = routed && reroute(raw, input, tool, routed);
-  const verdicts = [!updatedInput && routed, costBudget(input, tool)].filter(Boolean);
+  const moved = routed && reroute(raw, input, tool, routed);
+  const leaned = slim(moved || raw, input, tool);
+  const updatedInput = leaned || moved;
+  const verdicts = [!moved && routed, costBudget(input, tool)].filter(Boolean);
   if (routed?.tier) bookRedirect(payload, routed.tier);
   if (verdicts.length) deny(verdicts.map((v) => v.reason).join('; '), 'DISPATCH BUDGET');
   const { wave, total } = agentsRequested(input, tool);
@@ -46,7 +49,8 @@ function judgeSpawn(payload, raw, tool) {
   if (/scout/i.test(kind)) bump(payload, 'scouts', total);
   else if (/runner/i.test(kind)) bump(payload, 'runners', total);
   if (!updatedInput) return null;
-  const reason = `DISPATCH BUDGET: ${routed.tier ? `${routed.tier} is denied for subagents` : 'no model named'}, routed to ${routed.alt}`;
+  const reason = `DISPATCH BUDGET: ${[moved && `${routed.tier ? `${routed.tier} is denied for subagents` : 'no model named'}, routed to ${routed.alt}`,
+    leaned && `runs as ${LEAN} (general-purpose for connectors)`].filter(Boolean).join('; ')}`;
   append(rootOf(payload), entry(payload, reason));
   return { updatedInput, reason };
 }
@@ -122,15 +126,15 @@ function main() {
 
   let rewrite = null;
   try { rewrite = judge(payload); } catch (error) { refuse(error); }
+  const note = nearLimit(payload);
 
-  if (rewrite) {
+  if (rewrite || note) {
     process.stdout.write(JSON.stringify({
+      ...(note && { systemMessage: note }),
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
-        permissionDecisionReason: rewrite.reason,
-        updatedInput: rewrite.updatedInput,
-        additionalContext: rewrite.reason,
+        ...(rewrite && { permissionDecision: 'allow', permissionDecisionReason: rewrite.reason, updatedInput: rewrite.updatedInput }),
+        additionalContext: [rewrite?.reason, note].filter(Boolean).join('\n'),
       },
     }));
   }

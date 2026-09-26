@@ -4,6 +4,7 @@ import { BASH_OUTPUT_CAP, BIG_FILE_BYTES, delegateOn, webCap } from './limits.mj
 import { rootOf, sessionOf, update } from './ledger.mjs';
 import { Blocked } from './blocked.mjs';
 import { shellReads } from './shell-reads.mjs';
+import { failed } from './transcript.mjs';
 
 const MEDIA = /\.(?:png|jpe?g|gif|webp|bmp|ico|pdf)$/i;
 const SAMPLE_BYTES = 64 * 1024;
@@ -98,8 +99,8 @@ function judgeRead(state, payload, input, rewritable) {
   };
 
   const seen = String(state.reads[key] ?? '');
-  if (seen === fingerprint || seen.startsWith(`${fingerprint}:`)) {
-    const before = Number(seen.slice(fingerprint.length + 1));
+  if ((seen === fingerprint || seen.startsWith(`${fingerprint}:`)) && !failed(payload.transcript_path, seen.split(':')[3])) {
+    const before = Number(seen.split(':')[2]);
     refuse('rereads', 'bytes', before || Math.min(stats.size, BIG_FILE_BYTES), 'r',
       `${name} is unchanged and already in context${stats.size > BIG_FILE_BYTES ? ` (its first ${kb(BIG_FILE_BYTES)})` : ''}`);
   }
@@ -122,7 +123,7 @@ function judgeRead(state, payload, input, rewritable) {
     }
   }
 
-  state.reads[key] = `${fingerprint}:${bytes}`;
+  state.reads[key] = `${fingerprint}:${bytes}:${payload.tool_use_id || ''}`;
   if (main) state.saved.read += bytes;
   else state.saved.offload += bytes;
   return trim;
@@ -137,8 +138,9 @@ export function shellReadBudget(payload, input) {
     try {
       for (const read of shellReads(command)) {
         if (read.unjudged) continue;
-        const file = path.resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), read.file);
-        if (!read.whole || read.piped) bookSlice(state, payload, file, read.whole ? { whole: true } : read, { shell: true });
+        const file = path.resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), ...read.dirs, read.file);
+        const full = state.saved.read + state.saved.offload - before.read - before.offload >= BASH_OUTPUT_CAP;
+        if (!read.whole || read.piped || read.touched || full) bookSlice(state, payload, file, read.whole ? { whole: true } : read, { shell: true });
         else judgeRead(state, payload, { file_path: file }, false);
       }
     } catch (error) {

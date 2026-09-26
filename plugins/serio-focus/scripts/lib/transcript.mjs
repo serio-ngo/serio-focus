@@ -7,6 +7,10 @@ import { projectOf, rootOf, sessionOf, update } from './ledger.mjs';
 const WRITERS = /^(?:Write|Edit|MultiEdit|NotebookEdit)$/;
 const SETTINGS_DENY = /Permission to use \S+ .*has been denied/;
 
+export function failed(file, call) {
+  try { return Boolean(call) && readFileSync(file, 'utf8').split('\n').some((line) => line.includes(`"tool_use_id":"${call}"`) && line.includes('"is_error":true')); } catch { return false; }
+}
+
 function scan(file) {
   const out = { fresh: 0, cacheRead: 0, turns: 0, context: 0, thinking: 0, effort: {}, writes: [], denied: [] };
   let lines = [];

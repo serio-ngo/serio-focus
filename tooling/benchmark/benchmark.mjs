@@ -73,7 +73,7 @@ function score(cmd, cases) {
     if (run.status === 2) return true;
     try {
       const out = JSON.parse(run.stdout || '').hookSpecificOutput;
-      return ['ask', 'deny'].includes(out?.permissionDecision) || Boolean(out?.updatedInput);
+      return ['ask', 'deny'].includes(out?.permissionDecision) || (Boolean(out?.updatedInput) && !/^DISPATCH BUDGET: runs as /.test(out.permissionDecisionReason));
     }
     catch { return false; }
   };

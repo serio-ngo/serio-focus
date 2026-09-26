@@ -1,6 +1,6 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.17.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.18.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Skills
 
@@ -15,6 +15,7 @@
 |---|---|---|
 | `runner` | haiku | Bash, Read, Grep, Glob |
 | `scout` | haiku | Read, Grep, Glob, WebFetch |
+| `worker` | sonnet | Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch |
 
 ## Hooks
 
@@ -29,11 +30,11 @@
 
 | What ships | Count |
 |---|---|
-| Guard logic, agent-affecting only | **784** lines across 10 flow files |
+| Guard logic, agent-affecting only | **891** lines across 11 flow files |
 | Stats, receipts, adapters (`audit`, `card`, `ledger`, `transcript`) | excluded from the count |
-| Pattern rules | **41** |
+| Pattern rules | **43** |
 | Hooks | **4** handlers on 4 events |
 | Skills | **2** |
-| Subagents | **2** |
+| Subagents | **3** |
 | Third-party packages | **0** |
 | Network calls, API keys, model calls | **0** |
