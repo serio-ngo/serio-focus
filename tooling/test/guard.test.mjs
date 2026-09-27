@@ -158,14 +158,14 @@ describe('dispatch budget', () => {
     assert.match(JSON.parse(wide.stdout).hookSpecificOutput.permissionDecisionReason, /AGENTS: 3\+1/);
     assert.equal(spawn({ prompt: 'the wave a denied workflow claimed is free again', model: 'haiku' }), ALLOWED);
   });
-  it('holds dispatch and web after the stall budget with no repo change', () => {
+  it('leaves dispatch and web open past the old stall budget', () => {
     const repo = sandbox('stall-');
     spawnSync('git', ['init', '-q', repo]);
     const env = { ...process.env, SERIO_OS_DIR: box, CLAUDE_PROJECT_DIR: repo, SERIO_STALL_HOLD: '1000000', SERIO_STALL_WARN: '500000' };
     const payload = { cwd: repo, session_id: 'stall', transcript_path: path.join(sandbox('stall-log-'), 's.jsonl') };
     spawnSync(process.execPath, [script('card.mjs')], { input: JSON.stringify(payload), env });
     writeFileSync(payload.transcript_path, `${JSON.stringify({ type: 'assistant', message: { id: 'm1', usage: { input_tokens: 1100000 } } })}\n`);
-    assert.equal(ask({ ...payload, tool_name: 'WebFetch', tool_input: { url: 'https://example.com' } }, env), ASK);
+    assert.equal(guard({ ...payload, tool_name: 'WebFetch', tool_input: { url: 'https://example.com' } }, env), ALLOWED);
     const receipt = spawnSync(process.execPath, [script('verify.mjs')], { input: JSON.stringify(payload), encoding: 'utf8', env });
     assert.match(receipt.stdout, /1\.1M tok since the last repo change/);
   });

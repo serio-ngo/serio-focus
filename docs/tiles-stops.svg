@@ -1,18 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 92" width="720" height="92" role="img" aria-label="3 subagents per wave; 24 KB whole-file read cap; commit · push git writes held to final state; 1.2M tok dispatch held, no repo change" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">
-<rect x="0.5" y="0.5" width="167" height="91" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 92" width="720" height="92" role="img" aria-label="3 subagents per wave; 24 KB whole-file read cap; commit · push git writes held to final state" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">
+<rect x="0.5" y="0.5" width="228.33333333333334" height="91" rx="8" fill="#ffffff" stroke="#d0d7de"/>
 <rect x="16" y="22" width="3" height="48" rx="1.5" fill="#0969da"/>
 <text x="30" y="50" fill="#24292f" font-size="26" font-weight="700">3</text>
 <text x="30" y="71" fill="#24292f" font-size="12">subagents per wave</text>
-<rect x="184.5" y="0.5" width="167" height="91" rx="8" fill="#ffffff" stroke="#d0d7de"/>
-<rect x="200" y="22" width="3" height="48" rx="1.5" fill="#0969da"/>
-<text x="214" y="50" fill="#24292f" font-size="26" font-weight="700">24 KB</text>
-<text x="214" y="71" fill="#24292f" font-size="12">whole-file read cap</text>
-<rect x="368.5" y="0.5" width="167" height="91" rx="8" fill="#ffffff" stroke="#d0d7de"/>
-<rect x="384" y="22" width="3" height="48" rx="1.5" fill="#0969da"/>
-<text x="398" y="50" fill="#24292f" font-size="26" font-weight="700">commit · push</text>
-<text x="398" y="71" fill="#24292f" font-size="12">git writes held to final state</text>
-<rect x="552.5" y="0.5" width="167" height="91" rx="8" fill="#ffffff" stroke="#d0d7de"/>
-<rect x="568" y="22" width="3" height="48" rx="1.5" fill="#0969da"/>
-<text x="582" y="50" fill="#24292f" font-size="26" font-weight="700">1.2M tok</text>
-<text x="582" y="71" fill="#24292f" font-size="12">dispatch held, no repo change</text>
+<rect x="245.83333333333334" y="0.5" width="228.33333333333334" height="91" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<rect x="261.33333333333337" y="22" width="3" height="48" rx="1.5" fill="#0969da"/>
+<text x="275.33333333333337" y="50" fill="#24292f" font-size="26" font-weight="700">24 KB</text>
+<text x="275.33333333333337" y="71" fill="#24292f" font-size="12">whole-file read cap</text>
+<rect x="491.1666666666667" y="0.5" width="228.33333333333334" height="91" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<rect x="506.6666666666667" y="22" width="3" height="48" rx="1.5" fill="#0969da"/>
+<text x="520.6666666666667" y="50" fill="#24292f" font-size="26" font-weight="700">commit · push</text>
+<text x="520.6666666666667" y="71" fill="#24292f" font-size="12">git writes held to final state</text>
 </svg>
