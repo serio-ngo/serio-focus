@@ -20,7 +20,7 @@ export function card(project) {
   const hold = stallHold();
   return `Serio Focus ${version()} — session card
 CAPS  ${MAX_PER_WAVE} subagents per wave · every workflow agent() names a model · a subagent with no or a denied tier runs as sonnet · a subagent with no type runs as ${LEAN}, core tools only, name general-purpose for connectors · a workflow fanning out through a map or loop states // AGENTS: ${MAX_PER_WAVE} and pools the loop to it, or ${MAX_PER_WAVE}+1 for waves · reads over ${BIG_FILE_BYTES / 1024}KB trimmed or held, main reads over ${SCOUT_BYTES / 1024}KB and repeat web calls noted for a subagent${hold ? ` · dispatch and web held after ${compact(hold)} tok with no repo change` : ''} · git commit and push stay manual
-LIMIT a note to document all work at ${NEAR}% of a usage window, learned from the last limit hit
+ LIMIT a note to document all work at ${NEAR}% of a usage window, learned from the last two limit hits
 SHAPE the focus output style shapes every reply${saved ? `\nRESCUE ${saved} session(s) ended on an API error. Next: read .claude/rescue/` : ''}`;
 }
 
