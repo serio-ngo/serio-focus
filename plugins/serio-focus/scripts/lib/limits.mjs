@@ -1,5 +1,6 @@
 export const BIG_FILE_BYTES = 24 * 1024;
 export const BASH_OUTPUT_CAP = 30000;
+export const SCOUT_BYTES = 8 * 1024;
 export const MAX_PER_WAVE = 3;
 const WAVE_MS = 60 * 1000;
 export const DENY_SUBAGENT_DEFAULT = 'opus,fable';

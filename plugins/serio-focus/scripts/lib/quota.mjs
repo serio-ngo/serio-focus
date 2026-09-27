@@ -2,6 +2,7 @@ import { closeSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { update } from './ledger.mjs';
 import { configDir, rootOf } from './runtime.mjs';
+import { compact } from './stats.mjs';
 
 const WINDOW = { five_hour: 5 * 36e5, seven_day: 7 * 864e5 };
 const SLOT = 6e5;
@@ -63,19 +64,18 @@ function grow(state, now) {
 }
 
 export function nearLimit(payload = {}, now = Date.now()) {
-  const actor = payload.agent_id || 'main';
+  if (payload.agent_id) return '';
   return update(rootOf(payload), 'quota', (state) => {
     for (const key of ['files', 'slots', 'reset', 'caps', 'noted']) state[key] ||= {};
     state.hits ||= [];
     if (!(now - state.at < RESCAN)) grow(state, now);
     for (const type of Object.keys(state.caps)) {
       const start = windowStart(state, type, now);
-      const pct = Math.round((100 * spent(state.slots, start, now)) / Math.max(1, Math.min(...state.caps[type])));
-      if (pct < NEAR || state.noted[`${actor}|${type}`] === start) continue;
-      state.noted = Object.fromEntries(Object.entries(state.noted).filter(([, at]) => at > now - WINDOW.seven_day));
-      state.noted[`${actor}|${type}`] = start;
-      return `LIMIT NEAR: ${pct}% of the ${type} usage window spent, estimated from the last limit hit. Next: ${actor === 'main'
-        ? 'document all work now as the environment and project instructions require' : 'return your findings now'}`;
+      const cap = Math.min(...state.caps[type]);
+      const pct = Math.round((100 * spent(state.slots, start, now)) / Math.max(1, cap));
+      if (pct < NEAR || state.caps[type].length < 2 || state.noted[type] === start) continue;
+      state.noted[type] = start;
+      return `LIMIT NEAR: ${pct}% of the ${type} usage window spent, cap ${compact(cap)} tok from the last limit hits. Next: document all work now as the environment and project instructions require`;
     }
     return '';
   });
