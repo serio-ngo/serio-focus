@@ -1,5 +1,5 @@
 import { gitWriteAllowed } from './limits.mjs';
-import { segments, strip, unwrap } from './shell-parse.mjs';
+import { bodiless, segments, strip, unwrap } from './shell-parse.mjs';
 
 const GIT = String.raw`^git\b(?:\s+(?:-[Cc]\s+\S+|--\S+(?:[=\s]\S+)?))*\s+`;
 const git = (tail) => new RegExp(GIT + tail, 'i');
@@ -17,20 +17,21 @@ const GIT_WIPE = [
 const RM_RECURSIVE = /^(?:rm)\b[^\n]*\s-[A-Za-z]*[rR]/;
 const REMOVE_ITEM_RECURSE = /^(?:Remove-Item\b[^\n]*-(?:Recurse|R)(?:\b|$)|(?:ri|rd)\b)/i;
 
-const DISPOSABLE = /(?:^|[/\\]|\$\{?|\$env:|%)(?:node_modules|dist(?:-[\w.-]+)?|build|out|coverage|target|vendor|tmp|temp|tmpdir|scratchpad|\.next|\.nuxt|\.turbo|\.cache|\.wrangler|\.venv|\.pytest_cache|__pycache__)(?:[/\\}%]|$)|\.(?:log|tmp|pyc|o|class|tsbuildinfo)$|GetTempPath\(\)/i;
+const DISPOSABLE = /(?:^|[/\\]|\$\{?|\$env:|%)(?:node_modules|dist(?:-[\w.-]+)?|build|out|coverage|target|vendor|tmp|temp|tmpdir|scratchpad|\.next|\.nuxt|\.turbo|\.cache|\.wrangler|\.venv|\.pytest_cache|__pycache__)(?:[/\\}%]|$)|\.(?:log|tmp|pyc|o|class|tsbuildinfo)$|GetTempPath\(\)|^\$\(mktemp\b/i;
 const ABSOLUTE = /^(?:[/\\~$%]|[A-Za-z]:)/;
 const CD = /^(?:cd|pushd|Set-Location)\s+(\S.*)$/i;
-const ASSIGNED = /(?:^|[;\n]\s*)(?:\$([A-Za-z_]\w*)\s*=\s*([^;\n]+)|(?:export\s+)?([A-Za-z_]\w*)=("[^"]*"|'[^']*'|[^\s;&|]*)(?=\s*(?:[;&|\n]|$)))|\$\{?([A-Za-z_]\w*)\}?/g;
+const ASSIGNED = /(?:^|[;\n]\s*)(?:\$([A-Za-z_]\w*)\s*=\s*([^;\n]+)|(?:export\s+)?([A-Za-z_]\w*)=("[^"]*"|'[^']*'|\$\(mktemp\b[^()]*\)|[^\s;&|]*)(?=\s*(?:[;&|\n]|$)))|\$\{?([A-Za-z_]\w*)\}?/g;
 const REBOUND = /\b(?:for|foreach|read|select)\s+(?:-\w+\s+)*\(?\$?([A-Za-z_]\w*)/gi;
 
 function expand(command) {
   const vars = {};
   const rebound = new Set([...command.matchAll(REBOUND)].map((hit) => hit[1]));
-  return command.replace(ASSIGNED, (hit, ps, psValue, name, value, ref) => {
-    if (ps || name) { vars[ps || name] = strip(String(psValue ?? value).trim()); return hit; }
+  return command.replace(ASSIGNED, (hit, ps, psValue, name, value, ref, at) => {
+    if (ps || name) { vars[ps || name] = { value: strip(String(psValue ?? value).trim()), whole: Boolean(ps) }; return hit; }
     const known = rebound.has(ref) ? undefined : vars[ref];
     if (known === undefined) return hit;
-    return DISPOSABLE.test(known) ? known.replace(/\s+/g, '') : known;
+    const whole = known.whole || command.slice(0, at).split('"').length % 2 === 0;
+    return whole && DISPOSABLE.test(known.value) ? known.value.replace(/\s+/g, '') : known.value;
   });
 }
 
@@ -56,7 +57,7 @@ function innerCommand(segment) {
 export function judgeShell(command, depth = 0) {
   if (gitWriteAllowed()) return null;
   let dir = '';
-  for (const segment of segments(expand(command)).map(unwrap)) {
+  for (const segment of segments(expand(bodiless(command))).map(unwrap)) {
     const cd = strip((CD.exec(segment) || [])[1] || '');
     if (cd) dir = ABSOLUTE.test(cd) || !dir ? cd : `${dir}/${cd}`;
     if (NO_OP_FLAG.test(segment.replace(/'[^']*'|"[^"]*"/g, ' '))) continue;

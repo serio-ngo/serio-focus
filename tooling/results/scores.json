@@ -1,21 +1,21 @@
 {
   "generated": "2026-09-27",
-  "version": "1.19.1",
-  "cases": 43,
+  "version": "1.20.0",
+  "cases": 48,
   "recall": 100,
   "precision": 100,
   "fpRate": 0,
   "f1": 1,
   "confusion": {
-    "tp": 20,
+    "tp": 23,
     "fn": 0,
     "fp": 0,
-    "tn": 23
+    "tn": 25
   },
   "bypassesOpen": 0,
   "bypassesTotal": 0,
-  "contextTokens": 287,
-  "logicLines": 901,
+  "contextTokens": 272,
+  "logicLines": 908,
   "dependencies": 0,
   "baselines": {
     "none": {
@@ -24,41 +24,41 @@
       "f1": 0
     },
     "policy": {
-      "recall": 10,
+      "recall": 9,
       "fpRate": 4,
-      "f1": 0.17
+      "f1": 0.15
     },
     "keyword": {
-      "recall": 25,
-      "fpRate": 13,
-      "f1": 0.36
+      "recall": 26,
+      "fpRate": 20,
+      "f1": 0.35
     },
     "denyall": {
       "recall": 100,
       "fpRate": 100,
-      "f1": 0.63
+      "f1": 0.65
     }
   },
-  "keptPct": 45,
-  "keptTokens": 1770573,
-  "readVolumeTokens": 3927297,
-  "offloadTokens": 1891122,
-  "resendRatio": 54.4,
-  "ledgerTurns": 243,
-  "taxTokens": 287,
+  "keptPct": 44,
+  "keptTokens": 1778924,
+  "readVolumeTokens": 4053368,
+  "offloadTokens": 1936858,
+  "resendRatio": 53.6,
+  "ledgerTurns": 259,
+  "taxTokens": 272,
   "repos": 1,
   "origins": {
     "spec": 26,
-    "probe": 5,
-    "regression": 12
+    "probe": 8,
+    "regression": 14
   },
   "recallCI": [
-    83,
+    85,
     100
   ],
   "fpRateCI": [
     0,
-    15
+    14
   ],
   "originRecall": {
     "spec": 100,

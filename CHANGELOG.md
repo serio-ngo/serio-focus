@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.20.0 | 2026-09-27 | Disable stall hold |
 | 1.19.1 | 2026-09-27 | limit note main-only after two hits; delegate nudges for reads, web and journal polls; per-call review routing; marketplace install via claude plugin |
 | 1.19.0 | 2026-09-26 | marketplace-only installs: install drops the manual registry pin instead of copying the checkout into the cache, doctor checks the marketplace wiring |
 | 1.18.0 | 2026-09-26 | a note at 80% of a usage window, learned from the last limit hit: main documents all work, subagents return; a subagent or workflow agent() with no type runs as serio-focus:worker; re-reads pass after a cd, a write in the same command, a truncated shell output or a denied call |

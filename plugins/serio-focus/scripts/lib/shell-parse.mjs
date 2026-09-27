@@ -5,8 +5,13 @@ const REDIRECT = /^&?\d*[<>]{1,2}&?\d*$/;
 const REDIRECTED = /^&?\d*[<>]{1,2}/;
 const TO_FILE = /^(?:&|1?)>{1,2}(?![&])/;
 const FD_DUP = /[<>]&/;
+const HEREDOC = /^([^\n]*?)(?<!<)<<(?!<)-?[ \t]*(['"]?)\\?([\w.-]+)\2([^\n]*)\n(?:([\s\S]*?)\n)??[ \t]*\3[ \t]*$/gm;
+const RUNS_BODY = /\b(?:bash|sh|zsh|dash|ksh|pwsh|powershell|cmd|ssh|eval|source)\b/i;
 
 export const PIPE = /(?<!\|)\|(?!\|)/;
+
+export const bodiless = (command) => command.replace(HEREDOC, (hit, head, quote, word, tail, body = '') =>
+  `${head}<<${word}${tail}\n${RUNS_BODY.test(head + tail) ? body.replace(/['"]/g, '') : `: ${body.replace(/[\s;&|'"`$]+/g, ' ')}`}`);
 
 function split(command, breakers, subshell) {
   const out = [];

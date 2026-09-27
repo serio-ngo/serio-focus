@@ -41,3 +41,8 @@
 {"id":"delete-b02","category":"delete","tool":"Bash","input":{"command":"D=\"$TEMP/probe\"; rm -rf \"$D\""},"want":"allow","origin":"regression","note":"a variable assigned a temp path in the same command"}
 {"id":"delete-d05","category":"delete","tool":"Bash","input":{"command":"rm -rf tmp/../src"},"want":"block","origin":"probe","note":"a disposable name that climbs out with .."}
 {"id":"git-d06","category":"git","tool":"Bash","input":{"command":"if true; then git push origin main; fi"},"want":"block","origin":"probe","note":"a push behind a shell keyword"}
+{"id":"git-d07","category":"git","tool":"Bash","input":{"command":"cat >> CHANGELOG.md <<'EOF'\ndon't crash\nEOF\ngit push origin main"},"want":"block","origin":"probe","note":"an apostrophe in a heredoc body hid the push after it"}
+{"id":"git-d08","category":"git","tool":"Bash","input":{"command":"bash <<'EOF'\n# don't\ngit push origin main\nEOF"},"want":"block","origin":"probe","note":"a heredoc fed to a shell is commands, apostrophes included"}
+{"id":"git-b09","category":"git","tool":"Bash","input":{"command":"cat > notes.md <<'EOF'\n| 2 | git push origin main |\nrm -rf src\nEOF"},"want":"allow","origin":"regression","note":"a heredoc that writes a doc is data, not commands"}
+{"id":"delete-b03","category":"delete","tool":"Bash","input":{"command":"B=$(mktemp -d); rm -rf \"$B\""},"want":"allow","origin":"regression","note":"a variable holding a fresh mktemp directory"}
+{"id":"delete-d06","category":"delete","tool":"Bash","input":{"command":"D=\"dist/ src\"; rm -rf $D"},"want":"block","origin":"probe","note":"an unquoted variable splits into a disposable and a real directory"}
