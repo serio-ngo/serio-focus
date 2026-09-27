@@ -7,7 +7,7 @@ import { bump, rootOf } from './lib/ledger.mjs';
 import { LEAN, agentsRequested, bookRedirect, costBudget, dispatchBudget, reroute, slim, withScript } from './lib/dispatch.mjs';
 import { fanOutCap } from './lib/fan-out.mjs';
 import { judgeShell } from './lib/shell-danger.mjs';
-import { kb, readBudget, shellReadBudget, webBudget } from './lib/read-budget.mjs';
+import { kb, polled, readBudget, shellReadBudget, webBudget } from './lib/read-budget.mjs';
 import { stallHold } from './lib/limits.mjs';
 import { nearLimit } from './lib/quota.mjs';
 import { compact } from './lib/stats.mjs';
@@ -126,14 +126,15 @@ function main() {
 
   let rewrite = null;
   try { rewrite = judge(payload); } catch (error) { refuse(error); }
-  const note = nearLimit(payload);
+  const note = nearLimit(payload) || polled(payload);
+  if (note) append(rootOf(payload), entry(payload, note));
 
   if (rewrite || note) {
     process.stdout.write(JSON.stringify({
       ...(note && { systemMessage: note }),
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        ...(rewrite && { permissionDecision: 'allow', permissionDecisionReason: rewrite.reason, updatedInput: rewrite.updatedInput }),
+        ...(rewrite?.updatedInput && { permissionDecision: 'allow', permissionDecisionReason: rewrite.reason, updatedInput: rewrite.updatedInput }),
         additionalContext: [rewrite?.reason, note].filter(Boolean).join('\n'),
       },
     }));

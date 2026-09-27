@@ -1,7 +1,7 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -130,6 +130,7 @@ describe('dispatch budget', () => {
     assert.equal(state.saved.redirects, 1);
     assert.equal(state.tiers.opus, 1);
     assert.match(routed('dp-wf', { script: "await agent('x', { model: 'opus' })" }, 'Workflow').script ?? '', /model: 'sonnet'/);
+    assert.match(routed('dp-mix', { script: "await agent('QUALITY: writing a draft', { model: 'opus' }); await agent('review the draft', { model: 'opus' })" }, 'Workflow').script ?? '', /draft',[^;]*opus[^;]*;.*review the draft',[^;]*sonnet/);
     assert.equal(at('dp-high', { tool_name: 'Workflow', tool_input: { script: "await agent('x', { model: 'sonnet', effort: 'high' })" } }), ALLOWED);
     assert.equal(held('dp', { prompt: 'ultrathink about the schema', model: 'sonnet' }), ASK);
     assert.equal(held('dp', { script: "await agent('x', { model: 'sonnet', effort: 'xhigh' })" }, 'Workflow'), ASK);
@@ -240,6 +241,9 @@ describe('read and query budgets', () => {
     const wide = [1, 2].map((n) => path.join(box, `wide-${n}.txt`));
     wide.forEach((file) => writeFileSync(file, 'x'.repeat(20000)));
     for (const command of ['cd other && cat probe.txt', 'echo x >> probe.txt; cat probe.txt', `cat ${wide.join(' ')} probe.txt`]) assert.equal(sh(command), ALLOWED, command);
+    const scout = run('bq-scout', bash(`cat ${wide[0]}`)).stdout;
+    assert.match(scout, /^(?!.*permissionDecision).*"additionalContext":"DELEGATE: this call puts 20KB/);
+    assert.equal(run('bq-scout', bash(`cat ${wide[1]} | grep x`)).stdout, '');
     const log = path.join(sandbox('denied-'), 's.jsonl');
     writeFileSync(log, `${JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'Permission to use Bash has been denied.', is_error: true, tool_use_id: 'td' }] } })}\n`);
     const denied = (tool_use_id) => guard({ cwd: box, session_id: 'bq-denied', transcript_path: log, tool_use_id, tool_name: 'Read', tool_input: { file_path: probe } });
@@ -266,10 +270,13 @@ describe('read and query budgets', () => {
     assert.equal(run('img', { tool_name: 'Read', tool_input: { file_path: png } }).stdout, '');
     assert.equal(at('img-sh', { tool_name: 'Bash', tool_input: { command: `cat ${png}` } }), ALLOWED);
   });
-  it('holds a runaway subagent past its web call cap', () => {
+  it('holds a runaway subagent past its web call cap, and notes main at its second web call and journal poll', () => {
     const web = { agent_type: 'workflow-subagent', agent_id: 'w1', tool_name: 'WebSearch', tool_input: { query: 'q' } };
     for (let n = 0; n < 2; n += 1) run('web', web);
     assert.equal(ask({ cwd: box, session_id: 'web', ...web }, { ...process.env, SERIO_OS_DIR: box, SERIO_WEB_CAP: '2' }), ASK);
+    const twice = (payload) => [run('web-main', payload), run('web-main', payload)].map((r) => r.stdout);
+    assert.deepEqual(twice({ tool_name: 'WebSearch', tool_input: { query: 'q' } }).map((out) => /DELEGATE: WebSearch call 2/.test(out)), [false, true]);
+    assert.deepEqual(twice(bash('tail -3 C:\\tmp\\wf_1\\journal.jsonl')).map((out) => /WAIT: wf_1/.test(out)), [false, true]);
   });
 });
 
@@ -329,7 +336,7 @@ describe('session receipt', () => {
     assert.equal(readFileSync(path.join(box, '.claude', 'rescue', 'dead', '1-session-draft.md'), 'utf8'), 'plan');
     assert.match(hook(script('card.mjs'), { source: 'startup' }).stdout, /RESCUE 1 session\(s\) ended on an API error/);
   });
-  it('notes a near usage limit once per window and actor, learned from the last limit hit', () => {
+  it('notes a near usage limit to main once per window, learned from two limit hits, and audits it', () => {
     const config = sandbox('limit-');
     const now = Date.now();
     const reset = Math.floor((now - 36e5) / 1000) * 1000;
@@ -338,11 +345,15 @@ describe('session receipt', () => {
     writeFileSync(path.join(config, 'projects', 'p', 's.jsonl'), [row(reset - 72e5, { message: { id: 'a', usage: { input_tokens: 1000 } } }),
       row(reset - 36e5, { isApiErrorMessage: true, quotaLimits: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: reset / 1000 } }),
       row(now - 6e5, { message: { id: 'b', usage: { input_tokens: 850 } } }), ''].join('\n'));
-    const env = { ...process.env, SERIO_OS_DIR: sandbox('limit-os-'), SERIO_CONFIG_DIR: config };
-    const note = (extra) => spawnSync(process.execPath, [script('guard.mjs')], { encoding: 'utf8', env,
+    const os = sandbox('limit-os-');
+    const note = (extra, dir = os) => spawnSync(process.execPath, [script('guard.mjs')], { encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: dir, SERIO_CONFIG_DIR: config },
       input: JSON.stringify({ cwd: box, session_id: 'lim', tool_name: 'Bash', tool_input: { command: 'ls' }, ...extra }) }).stdout;
-    assert.match(note({}), /LIMIT NEAR: 85% of the five_hour usage window.*document all work/);
+    assert.equal(note({}, sandbox('limit-one-')), '');
+    appendFileSync(path.join(config, 'projects', 'p', 's.jsonl'), [row(reset - 288e5, { message: { id: 'c', usage: { input_tokens: 1000 } } }),
+      row(reset - 216e5, { isApiErrorMessage: true, quotaLimits: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: (reset - 18e6) / 1000 } }), ''].join('\n'));
+    assert.match(note({}), /LIMIT NEAR: 85% of the five_hour usage window spent, cap 1,000 tok.*document all work/);
     assert.equal(note({}), '');
-    assert.match(note({ agent_id: 'w1', agent_type: 'workflow-subagent' }), /return your findings now/);
+    assert.equal(note({ agent_id: 'w1', agent_type: 'workflow-subagent' }, sandbox('limit-sub-')), '');
+    assert.match(readFileSync(path.join(os, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8'), /"rule":"LIMIT NEAR","result":"85% of the five_hour/);
   });
 });

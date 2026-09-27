@@ -13,6 +13,7 @@ Next: only when the user must act manually what AI cannot do; one `Next: <verb +
 `Step N of M` on every turn. Never Continue/Proceed/Manage.
 Before changing a choice the owner made — wording, style, a house rule — ask one question naming the assumption and its default.
 A task list over 3 steps starts from a plan file with numbered AI tasks.
+Exploration reads across files or the web go to a subagent; main reads only what it edits.
 
 ## Format for scanning
 

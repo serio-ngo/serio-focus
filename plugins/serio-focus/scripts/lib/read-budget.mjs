@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { BASH_OUTPUT_CAP, BIG_FILE_BYTES, delegateOn, webCap } from './limits.mjs';
+import { BASH_OUTPUT_CAP, BIG_FILE_BYTES, SCOUT_BYTES, delegateOn, webCap } from './limits.mjs';
 import { rootOf, sessionOf, update } from './ledger.mjs';
 import { Blocked } from './blocked.mjs';
 import { shellReads } from './shell-reads.mjs';
@@ -16,11 +16,11 @@ const actorOf = (payload = {}) => [payload.agent_type || 'main', payload.agent_i
 
 export function webBudget(payload, tool) {
   const actor = actorOf(payload);
-  if (actor === 'main') return null;
   const used = transact(payload, (state) => {
     state.reads[`${actor}|web`] = Number(state.reads[`${actor}|web`] || 0) + 1;
     return state.reads[`${actor}|web`];
   });
+  if (actor === 'main') return used > 1 && delegateOn() ? { reason: `DELEGATE: ${tool} call ${used} from main. Next: send web research to a serio-focus:worker subagent` } : null;
   if (used > webCap()) throw new Blocked(`WEB BUDGET: ${tool} call ${used} is over the ${webCap()}-call subagent cap. Next: return what you have\n`);
   return null;
 }
@@ -129,14 +129,21 @@ function judgeRead(state, payload, input, rewritable) {
   return trim;
 }
 
+export function polled(payload) {
+  const run = !payload.agent_id && (JSON.stringify(payload.tool_input || {}).match(/[\w-]+(?=[\\/]+journal\.jsonl)/) || [])[0];
+  return run && transact(payload, (state) => (state.reads[`main|poll:${run}`] = (state.reads[`main|poll:${run}`] || 0) + 1)) > 1
+    ? `WAIT: ${run} sends its completion notice on its own. Next: end the turn; do not poll its journal or re-arm Monitor` : '';
+}
+
 export const readBudget = (payload, input, rewritable = false) => transact(payload, (state) => judgeRead(state, payload, input, rewritable));
 
 export function shellReadBudget(payload, input) {
   const command = typeof input.command === 'string' ? input.command : '';
   return transact(payload, (state) => {
     const before = { reads: { ...state.reads }, read: state.saved.read, offload: state.saved.offload };
+    const reads = shellReads(command);
     try {
-      for (const read of shellReads(command)) {
+      for (const read of reads) {
         if (read.unjudged) continue;
         const file = path.resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), ...read.dirs, read.file);
         const full = state.saved.read + state.saved.offload - before.read - before.offload >= BASH_OUTPUT_CAP;
@@ -150,6 +157,8 @@ export function shellReadBudget(payload, input) {
       }
       throw error;
     }
-    return null;
+    const read = state.saved.read - before.read;
+    return actorOf(payload) === 'main' && read > SCOUT_BYTES && delegateOn() && !reads.some((r) => r.piped)
+      ? { reason: `DELEGATE: this call puts ${kb(read)} of file reads into main context for every later turn. Next: send exploration reads to serio-focus:scout; read here only what you edit` } : null;
   });
 }

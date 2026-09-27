@@ -29,6 +29,9 @@ export function deniedSubagentRx(raw = DENY_SUBAGENT_DEFAULT) {
 const spawnText = (input) => SPAWN_TEXT.map((key) => input[key]).filter((value) => typeof value === 'string').join(' ');
 const selectedTiers = (text) => [...String(text).matchAll(MODEL_OPTION)].map((hit) => hit[1].toLowerCase());
 const deniedNow = () => deniedSubagentRx(process.env.SERIO_DENY_SUBAGENT_MODELS ?? DENY_SUBAGENT_DEFAULT);
+const calls = (script) => String(script ?? '').split(new RegExp(`(?=${WORKFLOW_AGENT_CALL.source})`));
+const keeps = (call, text) => QUALITY.test(text) && !REVIEW.test(call.split(/\}\s*\)/)[0]);
+const inline = ({ scriptPath, ...rest }, script) => ({ ...rest, script });
 const altOf = (denied) => ['sonnet', 'haiku'].find((tier) => !denied.test(tier));
 
 function deniedVerdict(text, hit, denied) {
@@ -43,20 +46,16 @@ export function reroute(raw, input, tool, { alt }) {
   if (!alt) return null;
   if (MODEL_BEARING.includes(tool) || raw.model) return { ...raw, model: alt };
   const denied = deniedNow();
-  const script = String(input.script ?? '').replace(MODEL_OPTION, (hit, name) => (denied.test(name) ? hit.replace(name, alt) : hit));
-  if (script === input.script) return null;
-  const { scriptPath, ...rest } = raw;
-  return { ...rest, script };
+  const script = calls(input.script).map((call) => (keeps(call, spawnText(input)) ? call
+    : call.replace(MODEL_OPTION, (hit, name) => (denied.test(name) ? hit.replace(name, alt) : hit)))).join('');
+  return script === input.script ? null : inline(raw, script);
 }
 
 export function slim(base, loaded, tool) {
   if (MODEL_BEARING.includes(tool)) return base.subagent_type ? null : { ...base, subagent_type: LEAN };
   const source = String(base.script ?? loaded.script ?? '');
-  const script = source.split(new RegExp(`(?=${WORKFLOW_AGENT_CALL.source})`))
-    .map((call) => (/\bagentType\b/.test(call) ? call : call.replace(TIER_SLOT, `agentType: '${LEAN}', $&`))).join('');
-  if (script === source) return null;
-  const { scriptPath, ...rest } = base;
-  return { ...rest, script };
+  const script = calls(source).map((call) => (/\bagentType\b/.test(call) ? call : call.replace(TIER_SLOT, `agentType: '${LEAN}', $&`))).join('');
+  return script === source ? null : inline(base, script);
 }
 
 export function withScript(input, tool, cwd = '.') {
@@ -71,8 +70,8 @@ export function dispatchBudget(input, cwd, tool = 'Agent', denied = deniedNow())
   const text = spawnText(input);
   if (!named) {
     if (!MODEL_BEARING.includes(tool)) {
-      const selected = selectedTiers(text).find((tier) => denied.test(tier));
-      if (selected) return deniedVerdict(text, selected, denied);
+      const selected = calls(text).filter((call) => !keeps(call, text)).flatMap(selectedTiers).find((tier) => denied.test(tier));
+      if (selected) return deniedVerdict('', selected, denied);
       if (input.unreadable) return { reason: 'blocked a workflow whose scriptPath could not be read. Next: pass the script inline' };
       if (tool !== 'Workflow' || count(input.script, WORKFLOW_AGENT_CALL) <= count(input.script, WORKFLOW_TIER_OPTION)) return null;
       return { reason: "blocked a workflow agent() call naming no model — it inherits the session tier. Next: pass { model: 'haiku' } or { model: 'sonnet' } in every call" };
