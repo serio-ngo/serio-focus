@@ -26,6 +26,7 @@ after(() => {
 
 const box = sandbox('guard-');
 process.env.SERIO_CONFIG_DIR = sandbox('config-');
+process.env.SERIO_WAVE_MS = String(864e5);
 const fire = (file, payload, env = { ...process.env, SERIO_OS_DIR: box }) => {
   const run = spawnSync(process.execPath, [file], { input: typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}), encoding: 'utf8', env });
   return /"permissionDecision":"deny"/.test(run.stdout) ? ASK : run.status;
@@ -55,6 +56,8 @@ blocks('blocks git commit and push', [
   'bash -c "git push origin main"',
   'powershell -Command "git commit -m x"',
   'if true; then git push origin main; fi',
+  "cat >> CHANGELOG.md <<'EOF'\ndon't crash\nEOF\ngit push origin main",
+  "bash <<'EOF'\n# don't\ngit push origin main\nEOF",
 ], bash);
 
 it('reopens commit and push while SERIO_GIT_WRITE is 1', () => {
@@ -73,7 +76,8 @@ it('allows git reads, local branch work and scratch deletes, in the guard and in
     'git checkout main', 'git stash push -m wip', 'git branch feat/x', 'git merge main',
     'git push --dry-run origin main', 'git branch -a', 'git branch --show-current', 'git tag -l', 'git stash list',
     'git checkout -- src/a.ts', 'D="$TEMP/probe"; rm -rf "$D"', 'rm -rf "$TMPDIR/probe"', 'cd /tmp && rm -rf probe', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null',
-    '$b = Join-Path ([System.IO.Path]::GetTempPath()) "x"; Remove-Item -Recurse -Force $b']) {
+    '$b = Join-Path ([System.IO.Path]::GetTempPath()) "x"; Remove-Item -Recurse -Force $b', 'B=$(mktemp -d); rm -rf "$B"',
+    "cat > notes.md <<'EOF'\n| 2 | git push origin main |\nrm -rf src\nEOF"]) {
     assert.equal(at('git-ok', { tool_name: 'Bash', tool_input: { command } }), ALLOWED, command);
     if (/^git (?!merge|push)/.test(command)) assert(!denied.some((rx) => rx.test(command)), `settings deny ${command}`);
   }
@@ -93,6 +97,7 @@ blocks('blocks recursive deletes and git wipes', [
   'test $D = /tmp || rm -rf $D',
   'D=/tmp; for D in /home; do rm -rf "$D"; done',
   'for d in a; do rm -rf docs; done',
+  'D="dist/ src"; rm -rf $D',
 ], bash);
 
 describe('dispatch budget', () => {
@@ -240,7 +245,9 @@ describe('read and query budgets', () => {
     writeFileSync(path.join(box, 'other', 'probe.txt'), 'other');
     const wide = [1, 2].map((n) => path.join(box, `wide-${n}.txt`));
     wide.forEach((file) => writeFileSync(file, 'x'.repeat(20000)));
-    for (const command of ['cd other && cat probe.txt', 'echo x >> probe.txt; cat probe.txt', `cat ${wide.join(' ')} probe.txt`]) assert.equal(sh(command), ALLOWED, command);
+    for (const command of ['cd other && cat probe.txt', 'echo x >> probe.txt; cat probe.txt', `cat ${wide.join(' ')} probe.txt`,
+      "python - <<'PY'\nopen('probe.txt', 'a').write('x')\nPY\ncat probe.txt"]) assert.equal(sh(command), ALLOWED, command);
+    assert.equal(ask({ cwd: box, session_id: 'bq', ...bash(`cd ${box.replace(/^(\w):/, (hit, drive) => `/${drive.toLowerCase()}`).replace(/\\/g, '/')} && cat wide-1.txt`) }), ASK);
     const scout = run('bq-scout', bash(`cat ${wide[0]}`)).stdout;
     assert.match(scout, /^(?!.*permissionDecision).*"additionalContext":"DELEGATE: this call puts 20KB/);
     assert.equal(run('bq-scout', bash(`cat ${wide[1]} | grep x`)).stdout, '');

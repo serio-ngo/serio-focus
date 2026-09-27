@@ -11,6 +11,7 @@ const SAMPLE_BYTES = 64 * 1024;
 const SAMPLE_LINES = 200;
 
 export const kb = (bytes) => `${Math.round(bytes / 1024)}KB`;
+const native = (part) => (process.platform === 'win32' ? part.replace(/^\/([a-z])(?=\/|$)/i, (hit, drive) => `${drive.toUpperCase()}:/`) : part);
 const transact = (payload, fn) => update(rootOf(payload), sessionOf(payload), fn);
 const actorOf = (payload = {}) => [payload.agent_type || 'main', payload.agent_id].filter(Boolean).join('#').replace(/[:|]/g, '');
 
@@ -145,7 +146,7 @@ export function shellReadBudget(payload, input) {
     try {
       for (const read of reads) {
         if (read.unjudged) continue;
-        const file = path.resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), ...read.dirs, read.file);
+        const file = path.resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), ...[...read.dirs, read.file].map(native));
         const full = state.saved.read + state.saved.offload - before.read - before.offload >= BASH_OUTPUT_CAP;
         if (!read.whole || read.piped || read.touched || full) bookSlice(state, payload, file, read.whole ? { whole: true } : read, { shell: true });
         else judgeRead(state, payload, { file_path: file }, false);

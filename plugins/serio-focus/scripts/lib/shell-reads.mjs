@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { PIPE, pipelines, strip, tokens, unwrap } from './shell-parse.mjs';
+import { PIPE, bodiless, pipelines, strip, tokens, unwrap } from './shell-parse.mjs';
 
 const CD_CMD = /^(?:cd|pushd|chdir|set-location|sl)$/i;
 const WHOLE_FILE_CMD = /^(?:cat|bat|more|less|type|gc|get-content)$/i;
@@ -70,7 +70,7 @@ export function shellReads(command) {
   const out = [];
   const dirs = [];
   let before = '';
-  for (const chunk of pipelines(command)) {
+  for (const chunk of pipelines(bodiless(command))) {
     if (chunk.includes('`') || chunk.includes('$(')) continue;
     const piped = PIPE.test(chunk);
     const segment = unwrap(chunk.split('|')[0].trim());
