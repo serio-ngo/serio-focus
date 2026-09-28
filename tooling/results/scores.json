@@ -1,6 +1,6 @@
 {
   "generated": "2026-09-27",
-  "version": "1.20.0",
+  "version": "1.20.1",
   "cases": 48,
   "recall": 100,
   "precision": 100,
@@ -15,7 +15,7 @@
   "bypassesOpen": 0,
   "bypassesTotal": 0,
   "contextTokens": 272,
-  "logicLines": 908,
+  "logicLines": 910,
   "dependencies": 0,
   "baselines": {
     "none": {
@@ -40,11 +40,11 @@
     }
   },
   "keptPct": 44,
-  "keptTokens": 1778924,
-  "readVolumeTokens": 4053368,
-  "offloadTokens": 1936858,
-  "resendRatio": 53.6,
-  "ledgerTurns": 259,
+  "keptTokens": 1794353,
+  "readVolumeTokens": 4107361,
+  "offloadTokens": 1998576,
+  "resendRatio": 53,
+  "ledgerTurns": 273,
   "taxTokens": 272,
   "repos": 1,
   "origins": {

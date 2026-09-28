@@ -343,7 +343,7 @@ describe('session receipt', () => {
     assert.equal(readFileSync(path.join(box, '.claude', 'rescue', 'dead', '1-session-draft.md'), 'utf8'), 'plan');
     assert.match(hook(script('card.mjs'), { source: 'startup' }).stdout, /RESCUE 1 session\(s\) ended on an API error/);
   });
-  it('notes a near usage limit to main once per window, learned from two limit hits, and audits it', () => {
+  it('notes a near usage limit to each main session once per window, learned from two limit hits, and audits it', () => {
     const config = sandbox('limit-');
     const now = Date.now();
     const reset = Math.floor((now - 36e5) / 1000) * 1000;
@@ -360,6 +360,7 @@ describe('session receipt', () => {
       row(reset - 216e5, { isApiErrorMessage: true, quotaLimits: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: (reset - 18e6) / 1000 } }), ''].join('\n'));
     assert.match(note({}), /LIMIT NEAR: 85% of the five_hour usage window spent, cap 1,000 tok.*document all work/);
     assert.equal(note({}), '');
+    assert.match(note({ session_id: 'lim2' }), /LIMIT NEAR: 85%/, 'a parallel session gets its own note');
     assert.equal(note({ agent_id: 'w1', agent_type: 'workflow-subagent' }, sandbox('limit-sub-')), '');
     assert.match(readFileSync(path.join(os, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8'), /"rule":"LIMIT NEAR","result":"85% of the five_hour/);
   });

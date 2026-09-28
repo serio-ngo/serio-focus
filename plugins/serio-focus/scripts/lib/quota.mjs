@@ -59,6 +59,7 @@ function grow(state, now) {
     state.caps[type] = [...(state.caps[type] || []), spent(state.slots, reset - WINDOW[type], at)].slice(-3);
   }
   state.hits = [];
+  state.noted = Object.fromEntries(Object.entries(state.noted).filter(([, start]) => start > now - WINDOW.seven_day));
   state.slots = Object.fromEntries(Object.entries(state.slots).filter(([slot]) => slot * SLOT > now - WINDOW.seven_day));
   state.at = now;
 }
@@ -73,8 +74,9 @@ export function nearLimit(payload = {}, now = Date.now()) {
       const start = windowStart(state, type, now);
       const cap = Math.min(...state.caps[type]);
       const pct = Math.round((100 * spent(state.slots, start, now)) / Math.max(1, cap));
-      if (pct < NEAR || state.caps[type].length < 2 || state.noted[type] === start) continue;
-      state.noted[type] = start;
+      const key = `${payload.session_id}|${type}`;
+      if (pct < NEAR || state.caps[type].length < 2 || state.noted[key] === start) continue;
+      state.noted[key] = start;
       return `LIMIT NEAR: ${pct}% of the ${type} usage window spent, cap ${compact(cap)} tok from the last limit hits. Next: document all work now as the environment and project instructions require`;
     }
     return '';

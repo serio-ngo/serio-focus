@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.20.1 | 2026-09-27 | Send the 80% usage note to each parallel session |
 | 1.20.0 | 2026-09-27 | Disable stall hold |
 | 1.19.1 | 2026-09-27 | limit note main-only after two hits; delegate nudges for reads, web and journal polls; per-call review routing; marketplace install via claude plugin |
 | 1.19.0 | 2026-09-26 | marketplace-only installs: install drops the manual registry pin instead of copying the checkout into the cache, doctor checks the marketplace wiring |
