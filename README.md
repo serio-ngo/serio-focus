@@ -1,7 +1,13 @@
 # serio-focus
 
-Optional deterministic guards for local Claude Code and Codex workflows. Repository instructions,
-native roles and upstream Ponytail remain in control. No runtime dependencies, model calls or API keys.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+  <img src="docs/logo.svg" width="240" alt="Serio">
+</picture>
+
+<!-- serio-description -->
+Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: optional read, direct-agent and shell guards. No model calls, API keys or runtime dependencies.
+<!-- /serio-description -->
 
 <!-- serio-demo -->
 <img src="docs/demo.svg" width="872" alt="serio-focus session: Agent · fourth direct call → FAN-OUT CAP: subagent 4 held. Next: wait one wave · Read src/big.js · 35 KB → READ CAP: big.js 35KB. Kept first 384 lines · Bash · git commit → GIT WRITE: &quot;git commit -m wip&quot; commit and push stays manual — draft the exact command and list it in the final state, do not run it · SERIO FOCUS · 2,816 tok kept out · 3 guard actions">
@@ -20,7 +26,8 @@ In Codex, open `/hooks` and review the three Serio hooks before trusting them. S
 Installation, trust and successful invocation are separate checks. Setup uses the native plugin
 commands and this local marketplace; it does not change authentication, model choices or permissions.
 
-For Claude Code, select `--host claude`. The native CLI must be installed and signed in for a runtime
+Setup and doctor default to Codex. For Claude Code, select `--host claude` explicitly.
+The native CLI must be installed and signed in for a runtime
 smoke test. The local marketplace reads this checkout; `folderVersion` can differ from cached registry metadata.
 Install upstream Ponytail through its own marketplace and keep Full mode as your coding workflow.
 

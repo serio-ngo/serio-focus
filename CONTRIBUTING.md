@@ -43,6 +43,7 @@
 | Local rules | that codebase's own `AGENTS.md` or `CLAUDE.md`, never here |
 | Reuse | check Claude Code built-ins and public plugins first |
 | New skill | on second occurrence of the pattern only |
+| Product description | Edit `plugins/serio-focus/.claude-plugin/plugin.json`; `npm run upkeep` generates package, marketplace, Codex metadata and the README introduction |
 
 ## Code
 

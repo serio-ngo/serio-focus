@@ -3,7 +3,7 @@
   "name": "serio-focus",
   "displayName": "Serio Focus",
   "version": "1.21.0",
-  "description": "Optional deterministic shell, read and direct-agent guards. Native roles and repository instructions remain in control. No model calls or runtime dependencies.",
+  "description": "Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: optional read, direct-agent and shell guards. No model calls, API keys or runtime dependencies.",
   "author": {
     "name": "Serio NGO",
     "url": "https://serio.org.pl"

@@ -1,11 +1,12 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SPAWN_TOOLS } from '../../plugins/serio-focus/scripts/guard.mjs';
+import { inventory } from '../cli/generate.mjs';
 
 const ALLOWED = 0;
 const ASK = 'deny';
@@ -49,6 +50,40 @@ const ask = (payload, env) => {
 };
 const blocks = (label, cases, payload) => it(label, () => {
   for (const c of cases) assert.equal(ask(payload(c)), ASK, c);
+});
+
+it('rejects stale generated figures and product descriptions', () => {
+  const repo = sandbox('generation-');
+  cpSync(path.resolve(PLUGIN, '..', '..'), repo, {
+    recursive: true, filter: (file) => !/(?:^|[/\\])(?:\.git|\.claude|node_modules|audit)(?:[/\\]|$)/.test(file),
+  });
+  const cli = path.join(repo, 'tooling', 'cli', 'serio.mjs');
+  const before = spawnSync(process.execPath, [cli, 'upkeep'], { encoding: 'utf8' });
+  if (before.status !== 0) throw new Error(before.stderr || 'fixture generation failed');
+  const description = JSON.parse(readFileSync(path.join(repo, 'plugins', 'serio-focus', '.claude-plugin', 'plugin.json'), 'utf8')).description;
+  for (const file of ['docs/tiles-cost.svg', 'package.json', '.claude-plugin/marketplace.json', 'README.md', 'plugins/serio-focus/.codex-plugin/plugin.json']) {
+    const target = path.join(repo, file);
+    const text = readFileSync(target, 'utf8');
+    writeFileSync(target, file.endsWith('.svg') ? `${text}\nstale\n` : text.replaceAll(description, 'stale description'));
+    const result = spawnSync(process.execPath, [cli, 'upkeep', '--check'], { encoding: 'utf8' });
+    assert.notEqual(result.status, ALLOWED, file);
+    assert.match(result.stderr, /generated artefacts are stale:/);
+    assert(result.stderr.includes(file), result.stderr);
+  }
+});
+
+it('rejects zero inventory counts when skill and agent files exist', () => {
+  const repo = sandbox('inventory-');
+  cpSync(PLUGIN, path.join(repo, 'plugins', 'serio-focus'), { recursive: true });
+  writeFileSync(path.join(repo, 'package.json'), '{}');
+  const plugin = path.join(repo, 'plugins', 'serio-focus');
+  mkdirSync(path.join(plugin, 'skills', 'probe'), { recursive: true });
+  mkdirSync(path.join(plugin, 'agents'), { recursive: true });
+  writeFileSync(path.join(plugin, 'skills', 'probe', 'SKILL.md'), '---\nname: probe\n---\n');
+  writeFileSync(path.join(plugin, 'agents', 'probe.md'), '---\nname: probe\n---\n');
+  const result = inventory(repo);
+  assert.notEqual(result.skills, 0);
+  assert.notEqual(result.agents, 0);
 });
 
 blocks('blocks git commit and push', [

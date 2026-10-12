@@ -127,8 +127,8 @@ export function inventory(root = REPO) {
     lines += text === '' ? 0 : text.split(/\r?\n/).length;
   }
 
-  const skills = [];
-  const agents = [];
+  const skills = walk(path.join(plugin, 'skills')).filter((file) => /(?:^|\/)SKILL\.md$/.test(file));
+  const agents = walk(path.join(plugin, 'agents')).filter((file) => file.endsWith('.md'));
 
   const events = Object.entries(JSON.parse(readFileSync(path.join(plugin, 'hooks', 'hooks.json'), 'utf8')).hooks);
   const handlers = events.reduce((sum, [, group]) => sum

@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { writeFigures } from './figures.mjs';
-import { PLUGIN, REPO, manifest, markdown, pluginVersion, policyFor, readJson, walk } from './generate.mjs';
+import { PLUGIN, REPO, manifest, markdown, pluginVersion, policyFor, readJson, walk, writeBlock } from './generate.mjs';
 
 const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const RULE_LISTS = ['deny', 'ask', 'allow'];
@@ -149,8 +149,8 @@ function install(args = {}, remove = false) {
   row('plugin', host + (remove ? ' removed' : ' installed') + ' through native plugin commands');
 }
 
-const sources = () => walk(REPO)
-    .filter((file) => TEXT.test(file))
+const sources = (figures = false) => walk(REPO)
+    .filter((file) => TEXT.test(file) || (figures && file.endsWith('.svg')))
     .filter((file) => !/(?:^|\/)(?:\.git|\.claude|node_modules|audit)\//.test(file));
 
 function normalise() {
@@ -172,6 +172,10 @@ function upkeep() {
   const touched = normalise();
   const plugin = readJson('plugins', 'serio-focus', '.claude-plugin', 'plugin.json');
   const hooks = readJson('plugins', 'serio-focus', 'hooks', 'hooks.json').hooks;
+  writeJson(path.join(REPO, 'package.json'), { ...readJson('package.json'), description: plugin.description });
+  writeJson(path.join(REPO, '.claude-plugin', 'marketplace.json'), { ...marketplace, description: plugin.description,
+    plugins: marketplace.plugins.map((entry) => entry.name === plugin.name ? { ...entry, description: plugin.description } : entry) });
+  writeBlock(path.join(REPO, 'README.md'), '<!-- serio-description -->', '<!-- /serio-description -->', [plugin.description]);
   writeJson(path.join(PLUGIN, '.codex-plugin', 'plugin.json'), {
     name: plugin.name, version: plugin.version, description: plugin.description,
     hooks: { hooks: Object.fromEntries(Object.entries(hooks).filter(([event]) => event !== 'StopFailure')) },
@@ -188,7 +192,7 @@ function upkeep() {
 }
 
 function check(before) {
-  const changed = sources().filter((file) => before.get(file) !== readFileSync(path.join(REPO, file), 'utf8'));
+  const changed = sources(true).filter((file) => before.get(file) !== readFileSync(path.join(REPO, file), 'utf8'));
   if (changed.length) fail(`generated artefacts are stale: ${changed.join(', ')}`);
 }
 
@@ -322,7 +326,7 @@ else if (command === 'sync') { sync(args); report(); }
 else if (command === 'install') { install(args); report(); }
 else if (command === 'uninstall') { install(args, true); report(); }
 else if (command === 'upkeep') {
-  const before = args.check ? new Map(sources().map((file) => [file, readFileSync(path.join(REPO, file), 'utf8')])) : null;
+  const before = args.check ? new Map(sources(true).map((file) => [file, readFileSync(path.join(REPO, file), 'utf8')])) : null;
   upkeep();
   if (args.install) install(args);
   report();

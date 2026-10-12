@@ -5,14 +5,20 @@
     "name": "Serio NGO",
     "url": "https://serio.org.pl"
   },
-  "description": "Optional deterministic guards for native coding hosts. No runtime dependencies.",
+  "description": "Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: optional read, direct-agent and shell guards. No model calls, API keys or runtime dependencies.",
   "plugins": [
     {
       "name": "serio-focus",
       "source": "./plugins/serio-focus",
-      "description": "Optional shell, read and direct-agent guards. No forced style, model routing, API key or model call.",
+      "description": "Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: optional read, direct-agent and shell guards. No model calls, API keys or runtime dependencies.",
       "category": "workflow",
-      "keywords": ["adhd", "focus", "guardrails", "human-in-the-loop", "audit"]
+      "keywords": [
+        "adhd",
+        "focus",
+        "guardrails",
+        "human-in-the-loop",
+        "audit"
+      ]
     }
   ]
 }
