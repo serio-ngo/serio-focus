@@ -1,7 +1,7 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -139,11 +139,13 @@ it('allows git reads, local branch work and scratch deletes, in the guard and in
   const denied = [...policy.deny, ...Object.values(policy.unlock).flat()].map((rule) => /^Bash\((.*)\)$/.exec(rule)?.[1]).filter(Boolean)
     .map((glob) => new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
   const shellTemp = tmpdir().replace(/^([A-Za-z]):/, (hit, drive) => `/${drive.toLowerCase()}`).replace(/\\/g, '/');
+  const shellTempReal = realpathSync(tmpdir()).replace(/^([A-Za-z]):/, (hit, drive) => `/${drive.toLowerCase()}`).replace(/\\/g, '/');
   for (const command of ['git status', 'git log --oneline', 'git diff --stat', 'git fetch origin',
     'git checkout main', 'git stash push -m wip', 'git branch feat/x', 'git merge main',
     'git push --dry-run origin main', 'git branch -a', 'git branch --show-current', 'git tag -l', 'git stash list',
     'git checkout -- src/a.ts', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null', 'rm -rf drafts/stills/x',
     `rm -rf ${shellTemp}/serio-probe-x`,
+    `rm -rf ${shellTempReal}/serio-probe-x`,
     "cat > notes.md <<'EOF'\n| 2 | git push origin main |\nrm -rf src\nEOF"]) {
     assert.equal(at('git-ok', { tool_name: 'Bash', tool_input: { command } }), ALLOWED, command);
     if (/^git (?!merge|push)/.test(command)) assert(!denied.some((rx) => rx.test(command)), `settings deny ${command}`);
@@ -178,11 +180,24 @@ blocks('blocks recursive deletes and git wipes', [
   'D="dist/ src"; rm -rf "$D"',
 ], (command) => ({ cwd: box, ...bash(command) }));
 
+it('blocks in-box deletes through a symlinked cwd', () => {
+  const outer = sandbox('outer-');
+  const inner = path.join(outer, 'inner');
+  mkdirSync(inner, { recursive: true });
+  const link = path.join(outer, 'link');
+  symlinkSync(inner, link, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.equal(guard({ cwd: link, session_id: 'link-cwd', tool_name: 'Bash', tool_input: { command: 'rm -rf docs' } },
+    { ...process.env, SERIO_OS_DIR: outer }), ASK);
+});
+
 it('gives the OpenCode bridge the same shell verdict', async () => {
   const { verdictFor } = await import('../../.opencode/bridge.mjs');
   process.env.SERIO_OS_DIR = box;
   assert.match(verdictFor('bash', { command: 'git push origin main' }, 'oc', box), /^GIT WRITE: /);
+  assert.match(verdictFor('powershell', { command: 'git push origin main' }, 'oc', box), /^GIT WRITE: /);
+  assert.match(verdictFor('PowerShell', { command: 'git commit -m x' }, 'oc', box), /^GIT WRITE: /);
   assert.equal(verdictFor('bash', { command: 'git status' }, 'oc', box), null);
+  assert.equal(verdictFor('BASH', { command: 'git status' }, 'oc', box), null);
 });
 
 describe('fan-out cap', () => {

@@ -42,9 +42,13 @@ function safeTarget(token, cwd) {
   const root = physical(cwd);
   const temp = physical(tmpdir());
   if (!real || !root || /(?:^|[/\\])\.git(?:[/\\]|$)/.test(target)) return false;
-  if (temp && inside(tmpdir(), target) && inside(temp, real) && !inside(root, target)) return true;
-  if (!inside(root, target) || !inside(root, real)) return false;
-  const relative = path.relative(root, target);
+  if (!inside(root, real)) {
+    if (!temp || !inside(temp, real)) return false;
+    const lexical = path.relative(cwd, target);
+    if (!lexical.startsWith('..') && !path.isAbsolute(lexical)) return false;
+    return true;
+  }
+  const relative = path.relative(root, real);
   const tracked = spawnSync('git', ['-C', cwd, 'ls-files', '-z', '--', relative], { encoding: 'utf8' });
   if (tracked.status !== 0 || tracked.stdout) return false;
   const scratch = process.env.SERIO_SCRATCH_DIR && path.resolve(cwd, process.env.SERIO_SCRATCH_DIR);
