@@ -146,6 +146,7 @@ it('allows git reads, local branch work and scratch deletes, in the guard and in
     'git checkout -- src/a.ts', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null', 'rm -rf drafts/stills/x',
     `rm -rf ${shellTemp}/serio-probe-x`,
     `rm -rf ${shellTempReal}/serio-probe-x`,
+    `rm -rf ${shellTemp}/wave~1-still`,
     "cat > notes.md <<'EOF'\n| 2 | git push origin main |\nrm -rf src\nEOF"]) {
     assert.equal(at('git-ok', { tool_name: 'Bash', tool_input: { command } }), ALLOWED, command);
     if (/^git (?!merge|push)/.test(command)) assert(!denied.some((rx) => rx.test(command)), `settings deny ${command}`);
@@ -159,6 +160,7 @@ symlinkSync(sandbox('outside-'), path.join(box, 'dist', 'escape'), process.platf
 
 blocks('blocks recursive deletes and git wipes', [
   'rm -rf docs',
+  'rm -rf ~/docs',
   'rm -rf docs # --dry-run',
   'D="$TEMP/probe"; rm -rf "$D"',
   'B=$(mktemp -d); rm -rf "$B"',
@@ -188,6 +190,16 @@ it('blocks in-box deletes through a symlinked cwd', () => {
   symlinkSync(inner, link, process.platform === 'win32' ? 'junction' : 'dir');
   assert.equal(guard({ cwd: link, session_id: 'link-cwd', tool_name: 'Bash', tool_input: { command: 'rm -rf docs' } },
     { ...process.env, SERIO_OS_DIR: outer }), ASK);
+});
+
+it('allows scratch deletes through a symlinked cwd', () => {
+  const inner = path.join(box, 'inner');
+  mkdirSync(inner, { recursive: true });
+  const link = path.join(box, 'link');
+  try { rmSync(link, { recursive: true, force: true }); } catch { }
+  symlinkSync(inner, link, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.equal(guard({ cwd: link, session_id: 'link-scratch', tool_name: 'Bash', tool_input: { command: 'rm -rf drafts/out/x' } },
+    { ...process.env, SERIO_OS_DIR: box, SERIO_SCRATCH_DIR: path.join(link, 'drafts') }), ALLOWED);
 });
 
 it('gives the OpenCode bridge the same shell verdict', async () => {

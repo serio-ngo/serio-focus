@@ -32,11 +32,14 @@ const inside = (root, file) => {
 function physical(file) {
   let ancestor = file;
   while (!existsSync(ancestor) && path.dirname(ancestor) !== ancestor) ancestor = path.dirname(ancestor);
-  try { return path.resolve(realpathSync(ancestor), path.relative(ancestor, file)); } catch { return null; }
+  try {
+    const resolved = realpathSync(ancestor).replace(/^\\\\\?\\(UNC\\)?/, (hit, unc) => (unc ? '\\\\' : ''));
+    return path.resolve(resolved, path.relative(ancestor, file));
+  } catch { return null; }
 }
 
 function safeTarget(token, cwd) {
-  if (/[\$%~*?`]/.test(token) || token.includes('..')) return false;
+  if (/[$%*?`]/.test(token) || /(?:^|[/\\])~(?:[/\\]|$)/.test(token) || token.includes('..')) return false;
   const target = path.resolve(cwd, drive(token));
   const real = physical(target);
   const root = physical(cwd);
@@ -51,8 +54,9 @@ function safeTarget(token, cwd) {
   const relative = path.relative(root, real);
   const tracked = spawnSync('git', ['-C', cwd, 'ls-files', '-z', '--', relative], { encoding: 'utf8' });
   if (tracked.status !== 0 || tracked.stdout) return false;
-  const scratch = process.env.SERIO_SCRATCH_DIR && path.resolve(cwd, process.env.SERIO_SCRATCH_DIR);
-  if (scratch && inside(root, scratch) && (target === scratch || inside(scratch, target)) && (real === physical(scratch) || inside(physical(scratch), real))) return true;
+  const scratchRaw = process.env.SERIO_SCRATCH_DIR && path.resolve(cwd, process.env.SERIO_SCRATCH_DIR);
+  const scratch = scratchRaw && physical(scratchRaw);
+  if (scratch && (scratch === root || inside(root, scratch)) && (real === scratch || inside(scratch, real))) return true;
   return DISPOSABLE.test(token) && spawnSync('git', ['-C', cwd, 'check-ignore', '-q', '--', `${relative}/`]).status === 0;
 }
 
