@@ -10,7 +10,7 @@
 | 2. Prove the suite is green first | `npm test` |
 | 3. Add one case | a line in `tooling/corpus/guard-corpus.jsonl`: `id`, `category`, `tool`, `input`, `want`, `origin`, `note` |
 | 4. Add the same call to the suite | the matching list in `tooling/test/guard.test.mjs`, one entry, never a new `describe` |
-| 5. Score it | `npm run benchmark:eval` — exits 1 on a miss |
+| 5. Score it | `npm run eval` — exits 1 on a miss |
 | 6. Open the PR | the checklist in `.github/PULL_REQUEST_TEMPLATE.md` |
 
 | Corpus field | Value |
@@ -57,9 +57,8 @@
 | `.agents/plugins/marketplace.json` | Generated native Codex marketplace; canonical source in `.claude-plugin/marketplace.json` |
 | `.opencode/` | Existing adapter calling shared guards; native runtime and subagent parity unverified |
 | `tooling/` | never ships; [tooling/README.md](tooling/README.md) |
-| `docs/` | generated manifest and SVG figures, Claude Code reference, benchmark method; `flood.svg` is static, sourced in `BENCHMARK.md` |
+| `docs/` | generated manifest and SVG figures, host facts, workflow, plan, benchmark method; `flood.svg` is static, sourced in `BENCHMARK.md` |
 | `audit/` | `YYYY-MM.jsonl`, fields in `scripts/audit.mjs` as `FIELDS`; gitignored, append-only |
-| `config/memory.md` | user memory, gitignored |
 
 | Command | Effect |
 |---|---|
@@ -67,7 +66,7 @@
 | `npm run setup -- --host codex` | Register the local marketplace and install through native Codex commands; review hook trust |
 | `npm run setup -- --host claude` | Register the local marketplace and install through native Claude commands |
 | `npm run install:plugin -- --host codex` | Install this checkout through the native host CLI; restart to load |
-| `npm run upkeep` | regenerate `docs/MANIFEST.md`, README inventory |
+| `npm run upkeep` | regenerate `docs/MANIFEST.md`, manifests and README blocks |
 | `npm run upkeep:check` | Fail when generation changes saved artifacts; allow unrelated existing diffs |
 
 ## Tests
@@ -75,6 +74,7 @@
 | Suite | Runner |
 |---|---|
 | One file, `tooling/test/guard.test.mjs` | `npm test`, Node built-in runner |
+| Corpus case only | `npm run eval` |
 
 ## Releases
 
@@ -86,7 +86,7 @@ npm run release patch "one-line note"
 |---|---|
 | Suite | runs |
 | Version | bumps |
-| Manifest | regenerates |
+| Manifests and README blocks | regenerate |
 | Changelog | updates |
 
 | Bump | Earns it |

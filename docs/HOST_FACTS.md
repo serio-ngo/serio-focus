@@ -1,6 +1,6 @@
-# Reference — Claude Code identifiers
+# Reference — host identifiers
 
-<sub><b>Answers</b> · which hook, permission, plugin and auth identifiers Claude Code accepts · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · which hook, permission, plugin, skill and review identifiers Claude Code and Codex accept · <a href="../README.md">README</a></sub>
 
 <!-- verified against `code.claude.com/docs` on 2026-09-04, hooks re-verified 2026-09-23; source per section -->
 
@@ -87,11 +87,11 @@
 | Fresh machine | a marketplace declared only in settings is unknown to `claude plugin` until `claude plugin marketplace add` (observed 2026-09-26) |
 | Skill | `<plugin-root>/skills/<name>/SKILL.md` → `/<plugin>:<skill>` |
 | Portable skill frontmatter | `name` `description` `license` `compatibility` `metadata` `allowed-tools`; host extensions are separate |
-| Claude skill extensions | Native Claude supports invocation controls, `context`, `agent` and other fields; validate against the current host schema, not only the portable upload schema |
+| Claude skill extensions | `disable-model-invocation: true` keeps the description out of context and allows `/` use only; `context: fork` with `agent: <type>` runs the skill in that subagent; `background` defaults to true with `fork` |
 | Local marketplace version | Native `plugin list --json` reports `readFromFolder` and `folderVersion` when a local source supplies current content; cached registry metadata may retain an older version (observed 2026-10-12) |
-| Skill context | description always in; body on invocation only |
+| Skill context | name and description at start, cut at 1,536 chars each; body on invocation only |
 | Subagent | `<plugin-root>/agents/<name>.md` → `<plugin>:<agent>` |
-| Plugin subagents ignore | `hooks`, `mcpServers`, `permissionMode` — block with `deny: ["Agent(name)"]` |
+| Plugin subagents ignore | `hooks`, `mcpServers`, `permissionMode`, `initialPrompt` — block with `deny: ["Agent(name)"]` |
 
 - Source: <https://code.claude.com/docs/en/plugins/loading.md>, retrieved 2026-09-26; gate and settings `env` filter read in the 2.1.281 binary
 - Skill extensions: <https://code.claude.com/docs/en/skills>; portable fields: <https://agentskills.io/specification>; retrieved 2026-10-12
@@ -109,18 +109,47 @@
 
 - Source: <https://code.claude.com/docs/en/authentication.md>
 
-## Subagent tier and usage limits
+## Subagents and limits
 
 | Fact | Value |
 |---|---|
+| Built-in read-only subagents | `Plan` and `Explore` have no Edit, Write or Agent tool; `Explore` skips `CLAUDE.md` |
 | Subagent with no `model` | inherits the session model |
 | Usage-limit resume | `autoContinueAtUsageLimit` managed setting, Claude Code 2.1.234+: waits for the reset, then continues the interrupted task |
-| Limit messages | "session limit" / "weekly limit" = plan window, all models; "monthly spend limit" = usage credits cap |
 | Usage percent | only the status line stdin: `rate_limits.five_hour` / `.seven_day` → `used_percentage`, `resets_at` (epoch s); no hook stdin carries it |
 | Plugin `settings` | only `agent` and `subagentStatusLine` take effect — a plugin cannot set `statusLine` |
-| Quota notifications | `Notification` `notification_type`: `quota_auto_resume_fired`, `_stale`, `_disabled`; no event fires before a limit |
-| Limit row in transcript | the `isApiErrorMessage` row (`error: "rate_limit"`, `apiErrorStatus: 429`) carries `quotaLimits: {status: "rejected", rateLimitType: "five_hour" \| "seven_day", resetsAt}` (epoch s); no row carries it before the hit (observed 2026-09-26) |
-| Workflow `agent({agentType})` | looks up the Agent tool's `activeAgents`, plugin agents included; an unknown type throws; with `schema`, the structured-output tool is added to a restricted `tools` list (2.1.281 binary, 2026-09-26) |
-| Subagent first-turn prompt | median `workflow-subagent` 65k tok, `general-purpose` 60k, `serio-focus:scout` 8k — every connector schema loads unless `tools` restricts it (observed 2026-09-26, 857 transcripts) |
+| Read dedup | an unchanged re-read returns "File unchanged since last read"; `CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS` caps one read (2.1.296 binary, 2026-10-12) |
 
-- Source: <https://code.claude.com/docs/en/costs.md>, retrieved 2026-09-23; <https://code.claude.com/docs/en/statusline.md>, <https://code.claude.com/docs/en/hooks.md>, <https://code.claude.com/docs/en/plugins-reference.md>, retrieved 2026-09-26
+- Source: <https://code.claude.com/docs/en/sub-agents>, <https://code.claude.com/docs/en/statusline.md>, <https://code.claude.com/docs/en/plugins-reference.md>, retrieved 2026-10-12
+
+## PR automation
+
+| Fact | Value |
+|---|---|
+| Claude desktop | after a PR opens, the CI status bar offers "Auto-fix CI & address comments" (wakes the local session on CI failures and on review comments from collaborators or GitHub Apps) and "Auto-merge when ready"; needs an authenticated `gh` |
+| Claude on the web | `/autofix-pr` subscribes a cloud session to PR events and pushes clear fixes; needs the Claude GitHub App |
+| `anthropics/claude-code-action@v1` | pushes to same-repo PR branches; auth `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`; commits made with `GITHUB_TOKEN` start no new workflow runs |
+| Codex review triggers | PR opened, draft marked ready, `@codex review` comment; the repo "Review trigger" setting is not in the docs (UNVERIFIED) |
+| Codex review rules | the closest `AGENTS.md` section `## Code Review Rules`; findings carry P0, P1 or P2 |
+| Codex fix | any other `@codex` PR comment starts a cloud task that "can push a fix back to the branch" (UNVERIFIED in practice) |
+| `openai/codex-action@v1` | OpenAI API key only; no push input; official autofix opens a new PR |
+| `openai/codex-plugin-cc` | `/codex:review`, `/codex:adversarial-review`, `/codex:rescue` inside Claude Code through the local Codex CLI and ChatGPT sign-in |
+
+- Source: <https://code.claude.com/docs/en/desktop>, <https://code.claude.com/docs/en/claude-code-on-the-web>, <https://code.claude.com/docs/en/github-actions>, <https://learn.chatgpt.com/docs/third-party/github>, <https://github.com/openai/codex-action>, <https://github.com/openai/codex-plugin-cc>, retrieved 2026-10-12
+
+## Codex
+
+| Fact | Value |
+|---|---|
+| Plugin manifest | `.codex-plugin/plugin.json`: `name`, `version`, `description`, `skills`, `hooks`, `mcpServers`, `apps`, `interface`; paths start `./` |
+| Marketplace | `<repo>/.agents/plugins/marketplace.json`; `codex plugin marketplace add <path>`, `codex plugin add <name>@<marketplace>` |
+| Agents | a plugin cannot ship agents; roles live in `~/.codex/agents/*.toml` or `<repo>/.codex/agents/*.toml` with `name`, `description`, `developer_instructions` |
+| Skills | parser keeps `name`, `description`, `metadata` and ignores other keys; `agents/openai.yaml` `policy.allow_implicit_invocation: false` allows explicit `$skill` use only |
+| Hook events | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`, `SessionEnd` |
+| `PreToolUse` coverage | shell (matches `Bash`), `apply_patch`, MCP tools, `spawn_agent` (also matches `Agent`); not hosted web search |
+| Deny | `permissionDecision: "deny"` or exit 2; `ask` unsupported |
+| Trust | non-managed hooks need per-hash trust in `/hooks`; a changed hook asks again |
+| Env | `PLUGIN_ROOT` and `CLAUDE_PLUGIN_ROOT` |
+| Local review | `codex review --base <branch>` or `/review`; reports only |
+
+- Source: <https://developers.openai.com/plugins/build/plugins>, <https://learn.chatgpt.com/docs/hooks>, <https://learn.chatgpt.com/docs/build-skills>, <https://learn.chatgpt.com/docs/agent-configuration/subagents>, <https://github.com/openai/codex/blob/main/codex-rs/core-plugins/src/manifest.rs>, retrieved 2026-10-12

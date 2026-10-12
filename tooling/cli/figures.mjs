@@ -1,19 +1,14 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { load } from '../../plugins/serio-focus/scripts/lib/ledger.mjs';
-import { sessionLine } from '../../plugins/serio-focus/scripts/lib/stats.mjs';
-import { BIG_FILE_BYTES, MAX_PER_WAVE } from '../../plugins/serio-focus/scripts/lib/limits.mjs';
-import { PLUGIN, REPO, readJson, writeBlock } from './generate.mjs';
+import { waveCap } from '../../plugins/serio-focus/scripts/lib/fan-out.mjs';
+import { PLUGIN, REPO, writeBlock } from './generate.mjs';
 
 const INK = '#24292f';
 const MUTED = '#57606a';
 const HUE = { without: '#cf222e', with: '#0969da' };
 const WASH = { without: '#ffebe9', with: '#ddf4ff' };
-const DEMO_AGENTS = 100;
-const DEMO_FILE_BYTES = 35 * 1024;
-const DEMO_LINE_BYTES = 64;
 
 const DEMO_OPEN = '<!-- serio-demo -->';
 const DEMO_CLOSE = '<!-- /serio-demo -->';
@@ -23,7 +18,6 @@ const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monos
 const DOCS = (name) => path.join(REPO, 'docs', name);
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const width = (s, size) => s.length * size * 0.7;
 
 const text = (x, y, s, o = {}) => `<text x="${x}" y="${y}" fill="${o.fill ?? INK}" font-size="${o.size ?? 12}"`
   + `${o.weight ? ` font-weight="${o.weight}"` : ''}${o.anchor ? ` text-anchor="${o.anchor}"` : ''}${o.family ? ` font-family="${o.family}"` : ''}`
@@ -31,22 +25,21 @@ const text = (x, y, s, o = {}) => `<text x="${x}" y="${y}" fill="${o.fill ?? INK
 const open = (w, h, label, family = FONT) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)}" font-family="${family}">`;
 const file = (lines) => `${lines.join('\n')}\n`;
 
-
-function tiles(scores = readJson('tooling', 'results', 'scores.json')) {
+function tiles(scores) {
   return {
     stops: [
-      [String(MAX_PER_WAVE), 'subagents per wave'],
-      [`${Math.round(BIG_FILE_BYTES / 1024)} KB`, 'whole-file read cap'],
-      ['commit · push', 'git writes held to final state'],
+      [String(waveCap()), 'subagents per wave'],
+      ['commit · push', 'held for the owner'],
+      ['rm -r · reset --hard', 'held unless disposable'],
     ],
     wins: [
-      [`${scores.keptPct}%`, 'read volume kept out'],
       [`${scores.recall}%`, 'corpus recall'],
-      [`${scores.fpRate}%`, 'false positives'],
+      [`${scores.fpRate}%`, 'false blocks'],
+      [String(scores.cases), 'labelled cases'],
     ],
     cost: [
-      [`${scores.contextTokens} tok`, 'context footprint'],
-      ['Cowork', 'hooks do not fire'],
+      [`${scores.contextTokens} tok`, 'startup context'],
+      ['Cloud sessions', 'hooks do not fire'],
       ['OpenCode', 'subagents bypass the guard'],
     ],
   };
@@ -83,15 +76,13 @@ function wrap(line, max) {
 
 function probe() {
   const root = mkdtempSync(path.join(tmpdir(), 'serio-figure-'));
-  const big = path.join(root, 'src', 'big.js');
-  mkdirSync(path.dirname(big), { recursive: true });
-  writeFileSync(big, `${'x'.repeat(DEMO_LINE_BYTES - 1)}\n`.repeat(DEMO_FILE_BYTES / DEMO_LINE_BYTES), 'utf8');
+  spawnSync('git', ['init', '-q', root]);
 
   const fire = (tool_name, tool_input, { session = 'demo', agent_type } = {}) => {
     const run = spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'guard.mjs')], {
       input: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: session, cwd: root, tool_name, tool_input, agent_type }),
       encoding: 'utf8',
-      env: { ...process.env, SERIO_OS_DIR: root, SERIO_GIT_WRITE: '0' },
+      env: { ...process.env, SERIO_OS_DIR: root, SERIO_GIT_WRITE: '0', SERIO_MAX_PER_WAVE: '', SERIO_WAVE_MS: String(864e5) },
     });
     let decision = '';
     let reason = '';
@@ -99,7 +90,7 @@ function probe() {
       const out = JSON.parse(run.stdout || '').hookSpecificOutput || {};
       decision = out.permissionDecision || '';
       reason = out.permissionDecisionReason || '';
-    } catch { /* a plain allow carries no stdout */ }
+    } catch { }
     if (run.status === 2 || decision === 'deny' || decision === 'ask') return { blocked: true, verdict: reason || run.stderr.trim() };
     if (run.status !== 0) throw new Error(`guard exited ${run.status}: ${run.stderr}`);
     return { blocked: false, verdict: reason };
@@ -107,13 +98,14 @@ function probe() {
 
   for (let n = 0; n < 3; n += 1) fire('Agent', { prompt: 'bounded task' });
   const steps = [
+    ['Bash · git status', 'Bash', { command: 'git status' }],
     ['Agent · fourth direct call', 'Agent', { prompt: 'fourth task' }],
-    ['Read src/big.js · 35 KB', 'Read', { file_path: big }],
-    ['Bash · git commit', 'Bash', { command: 'git commit -m wip' }],
+    ['Bash · git push origin main', 'Bash', { command: 'git push origin main' }],
+    ['Bash · rm -rf src', 'Bash', { command: 'rm -rf src' }],
   ].map(([label, tool, input]) => ({ label, ...fire(tool, input) }));
   const answer = [];
-
-  const receipt = sessionLine(load(root, 'demo'));
+  const holds = readdirSync(path.join(root, 'audit')).reduce((n, name) => n + readFileSync(path.join(root, 'audit', name), 'utf8').trim().split('\n').length, 0);
+  const receipt = `SERIO FOCUS · ${holds} holds written to the audit log`;
   rmSync(root, { recursive: true, force: true });
   return { steps, answer, receipt };
 }
@@ -122,7 +114,7 @@ function demoSvg({ steps, answer, receipt } = probe()) {
   const WRAP = 100; const CH = 8.2;
   const FADE_IN = 0.3; const HOLD = 5; const FADE_OUT = 1; const BLANK = 0.5;
   const TYPE_AT = 0.8; const TYPE_LEN = 1.4;
-  const prompt = '> audit docs and hold the commit.';
+  const prompt = '> tidy the repo and push it.';
   const rows = [{ text: '$ claude', fill: MUTED }, { text: prompt, typed: true, weight: 600, fill: INK }];
   for (const step of steps) {
     rows.push({ text: `⏺  ${step.label}`, fill: INK, weight: 600 });
@@ -163,9 +155,6 @@ function demoSvg({ steps, answer, receipt } = probe()) {
     } else body.push(text(22, y, row.text, { weight: row.weight, fill: row.fill, cls }));
   });
   const last = rows.length - 1;
-  // one shared loop: every row fades in on its cue, all rows fade out together,
-  // the screen rests blank, then the loop restarts — a delay alone would not
-  // resync, since CSS animation-delay applies only before the first iteration
   const loop = Math.ceil(at + HOLD + FADE_OUT + BLANK);
   const pct = (s) => Math.round((Math.min(Math.max(s, 0), loop) / loop) * 1000) / 10;
   const keys = rows.map((row, i) => {
@@ -198,9 +187,9 @@ function demoSvg({ steps, answer, receipt } = probe()) {
   ]) };
 }
 
-export function writeFigures() {
+export function writeFigures(scores) {
   const out = [];
-  for (const [name, items] of Object.entries(tiles())) {
+  for (const [name, items] of Object.entries(tiles(scores))) {
     writeFileSync(DOCS(`tiles-${name}.svg`), tileRow(items), 'utf8');
     out.push(`wrote docs/tiles-${name}.svg`);
   }

@@ -1,32 +1,26 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { projectOf, rootOf, sessionOf, sweep, update } from './lib/ledger.mjs';
-import { BIG_FILE_BYTES, waveCap } from './lib/limits.mjs';
-import { NEAR } from './lib/quota.mjs';
-import { version } from './lib/runtime.mjs';
-import { stall } from './lib/transcript.mjs';
-import { rescued } from './rescue.mjs';
+import { waveCap } from './lib/fan-out.mjs';
+import { rootOf, stateDir, version } from './lib/runtime.mjs';
 
-const FREEING = new Set(['compact', 'clear']);
-function forgetReads(payload) {
-  if (FREEING.has(String(payload.source || ''))) update(rootOf(payload), sessionOf(payload), (state) => { state.reads = {}; });
-}
+const STALE = [[/^\.wave-/, 864e5], [/^\.session-/, 30 * 864e5]];
 
-export function card(project) {
-  const saved = project ? rescued(project).length : 0;
-  return `Serio Focus ${version()} — session card
-CAPS ${waveCap()} direct agent calls per wave; ${BIG_FILE_BYTES / 1024}KB read budget; instruction files exempt; commit, push and unsafe deletes held.
-${process.env.PLUGIN_ROOT ? 'SCOPE local native hooks; Claude quota inference and API-failure recovery are not supported here.' : `LIMIT usage note at ${NEAR}% after two observed limit hits; repository rules and native roles govern work.`}${saved && !process.env.PLUGIN_ROOT ? ` RESCUE ${saved} session(s) ended on an API error. Next: read .claude/rescue/` : ''}`;
+export const card = () => `Serio Focus ${version()}: commit, push, git wipes and unsafe recursive deletes are held for the owner; at most ${waveCap()} direct subagents start per wave.`;
+
+function sweep(dir) {
+  let names = [];
+  try { names = readdirSync(dir); } catch { return; }
+  for (const name of names) {
+    const age = (STALE.find(([rx]) => rx.test(name)) || [])[1];
+    try { if (age && Date.now() - statSync(path.join(dir, name)).mtimeMs > age) rmSync(path.join(dir, name), { recursive: true, force: true }); } catch { }
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let payload = {};
-  try { payload = JSON.parse(readFileSync(0, 'utf8')); } catch { }
-
-  forgetReads(payload);
-  stall(payload);
-  sweep(rootOf(payload));
-  process.stdout.write(`${card(projectOf(payload))}\n`);
-  process.exit(0);
+  try { payload = JSON.parse(readFileSync(0, 'utf8')) || {}; } catch { }
+  sweep(stateDir(rootOf(payload)));
+  process.stdout.write(`${card()}\n`);
 }

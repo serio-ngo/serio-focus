@@ -5,12 +5,12 @@
     "name": "Serio NGO",
     "url": "https://serio.org.pl"
   },
-  "description": "Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: optional read, direct-agent and shell guards. No model calls, API keys or runtime dependencies.",
+  "description": "Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: shell and subagent guards plus architect, coder and reviewer agents with a PR review loop. No model calls, API keys or runtime dependencies.",
   "plugins": [
     {
       "name": "serio-focus",
       "source": "./plugins/serio-focus",
-      "description": "Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: optional read, direct-agent and shell guards. No model calls, API keys or runtime dependencies.",
+      "description": "Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: shell and subagent guards plus architect, coder and reviewer agents with a PR review loop. No model calls, API keys or runtime dependencies.",
       "category": "workflow",
       "keywords": [
         "adhd",

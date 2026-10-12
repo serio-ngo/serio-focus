@@ -1,68 +1,8 @@
 {
-  "generated": "2026-10-12",
-  "version": "1.21.0",
-  "cases": 48,
+  "version": "1.22.0",
+  "cases": 33,
   "recall": 100,
-  "precision": 100,
   "fpRate": 0,
-  "f1": 1,
-  "confusion": {
-    "tp": 16,
-    "fn": 0,
-    "fp": 0,
-    "tn": 32
-  },
-  "bypassesOpen": 0,
-  "bypassesTotal": 0,
-  "contextTokens": 63,
-  "logicLines": 718,
-  "dependencies": 0,
-  "baselines": {
-    "none": {
-      "recall": 0,
-      "fpRate": 0,
-      "f1": 0
-    },
-    "policy": {
-      "recall": 13,
-      "fpRate": 3,
-      "f1": 0.21
-    },
-    "keyword": {
-      "recall": 50,
-      "fpRate": 9,
-      "f1": 0.59
-    },
-    "denyall": {
-      "recall": 100,
-      "fpRate": 100,
-      "f1": 0.5
-    }
-  },
-  "keptPct": 44,
-  "keptTokens": 1794353,
-  "readVolumeTokens": 4107361,
-  "offloadTokens": 1998576,
-  "resendRatio": 53,
-  "ledgerTurns": 273,
-  "taxTokens": 63,
-  "repos": 1,
-  "origins": {
-    "spec": 26,
-    "probe": 8,
-    "regression": 14
-  },
-  "recallCI": [
-    80,
-    100
-  ],
-  "fpRateCI": [
-    0,
-    11
-  ],
-  "originRecall": {
-    "spec": 100,
-    "probe": 100,
-    "regression": 100
-  }
+  "contextTokens": 270,
+  "dependencies": 0
 }

@@ -4,9 +4,10 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { writeFigures } from './figures.mjs';
-import { PLUGIN, REPO, manifest, markdown, pluginVersion, policyFor, readJson, walk, writeBlock } from './generate.mjs';
+import { PLUGIN, REPO, codexRoles, inventory, manifest, markdown, pluginVersion, policyFor, readJson, score, table, walk, writeBlock } from './generate.mjs';
 
 const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
+const CODEX_AGENTS = path.join(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'agents');
 const RULE_LISTS = ['deny', 'ask', 'allow'];
 const TEXT = /\.(md|mjs|json|jsonc|ya?ml|cff)$/;
 
@@ -146,6 +147,13 @@ function install(args = {}, remove = false) {
     const run = spawnSync(executable, command, { encoding: 'utf8' });
     if (run.error || run.status !== 0) fail(run.error?.message || run.stderr || run.stdout || 'plugin installation failed');
   }
+  if (host === 'codex') {
+    mkdirSync(CODEX_AGENTS, { recursive: true });
+    for (const role of codexRoles()) {
+      if (remove) rmSync(path.join(CODEX_AGENTS, role.file), { force: true });
+      else writeFileSync(path.join(CODEX_AGENTS, role.file), role.text, 'utf8');
+    }
+  }
   row('plugin', host + (remove ? ' removed' : ' installed') + ' through native plugin commands');
 }
 
@@ -168,17 +176,20 @@ function normalise() {
 }
 
 function upkeep() {
-  const figures = writeFigures();
-  const touched = normalise();
   const plugin = readJson('plugins', 'serio-focus', '.claude-plugin', 'plugin.json');
-  const hooks = readJson('plugins', 'serio-focus', 'hooks', 'hooks.json').hooks;
   writeJson(path.join(REPO, 'package.json'), { ...readJson('package.json'), description: plugin.description });
   writeJson(path.join(REPO, '.claude-plugin', 'marketplace.json'), { ...marketplace, description: plugin.description,
     plugins: marketplace.plugins.map((entry) => entry.name === plugin.name ? { ...entry, description: plugin.description } : entry) });
-  writeBlock(path.join(REPO, 'README.md'), '<!-- serio-description -->', '<!-- /serio-description -->', [plugin.description]);
+  const { cases, recall, fpRate } = score();
+  const { contextTokens, dependencies } = inventory();
+  writeJson(path.join(REPO, 'tooling', 'results', 'scores.json'), { version: plugin.version, cases, recall, fpRate, contextTokens, dependencies });
+  writeBlock(path.join(REPO, 'docs', 'BENCHMARK.md'), '<!-- serio-scores -->', '<!-- /serio-scores -->', table(['Measure', 'Value'], [
+    `| Labelled cases | ${cases} |`, `| Recall: blocks held | ${recall}% |`, `| False blocks: allows held | ${fpRate}% |`, `| Startup context | ~${contextTokens} tokens |`,
+  ]).split('\n'));
+  row('figures', `${writeFigures({ cases, recall, fpRate, contextTokens }).length} file(s)`);
   writeJson(path.join(PLUGIN, '.codex-plugin', 'plugin.json'), {
-    name: plugin.name, version: plugin.version, description: plugin.description,
-    hooks: { hooks: Object.fromEntries(Object.entries(hooks).filter(([event]) => event !== 'StopFailure')) },
+    name: plugin.name, version: plugin.version, description: plugin.description, skills: './skills/', hooks: './hooks/hooks.json',
+    interface: { displayName: plugin.displayName, developerName: plugin.author.name, category: 'Productivity' },
   });
   writeJson(path.join(REPO, '.agents', 'plugins', 'marketplace.json'), {
     name: marketplace.name, interface: { displayName: 'Serio Focus' },
@@ -187,8 +198,7 @@ function upkeep() {
       category: 'Productivity' })),
   });
   writeFileSync(path.join(REPO, 'docs', 'MANIFEST.md'), manifest(), 'utf8');
-  row('figures', `${figures.length} file(s)`);
-  row('formatted', `${touched} file(s)`);
+  row('formatted', `${normalise()} file(s)`);
 }
 
 function check(before) {
@@ -220,6 +230,7 @@ function doctor(args = {}) {
     let installed = [];
     try { installed = JSON.parse(run.stdout).installed; } catch { }
     check('native Codex installation is current and enabled', installed.some((plugin) => plugin.pluginId === key && plugin.enabled && plugin.version === pluginVersion()));
+    check('Codex role agents are current', codexRoles().every((role) => existsSync(path.join(CODEX_AGENTS, role.file)) && readFileSync(path.join(CODEX_AGENTS, role.file), 'utf8') === role.text));
   }
 
   const probe = mkdtempSync(path.join(tmpdir(), 'serio-doctor-'));
@@ -278,12 +289,8 @@ function release(args) {
   const date = args.date || new Date().toISOString().slice(0, 10);
   rows.unshift(`| ${plugin.version} | ${date} | ${note.replaceAll('|', '\\|')} |`);
   writeFileSync(changelog, `${head}${rows.join('\n')}\n`, 'utf8');
-  writeFileSync(path.join(REPO, 'docs', 'MANIFEST.md'), manifest(), 'utf8');
-  const bench = (...args) => spawnSync(process.execPath, [path.join(REPO, 'tooling', 'benchmark', 'benchmark.mjs'), REPO, ...args], { stdio: 'inherit' });
-  bench('--eval', '--compare', '--write');
-  bench('--write');
+  upkeep();
   row('released', plugin.version);
-  row('figures', `${writeFigures().length} file(s)`);
   report();
 }
 

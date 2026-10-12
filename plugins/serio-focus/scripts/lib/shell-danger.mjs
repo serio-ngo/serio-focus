@@ -2,7 +2,6 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { gitWriteAllowed } from './limits.mjs';
 import { bodiless, segments, strip, tokens, unwrap } from './shell-parse.mjs';
 
 const GIT = String.raw`^git\b(?:\s+(?:-[Cc]\s+\S+|--\S+(?:[=\s]\S+)?))*\s+`;
@@ -24,6 +23,7 @@ const REMOVE_ITEM_RECURSE = /^(?:Remove-Item\b[^\n]*-(?:Recurse|R)(?:\b|$)|(?:ri
 const DISPOSABLE = /(?:^|[/\\]|\$\{?|\$env:|%)(?:node_modules|dist(?:-[\w.-]+)?|build|out|coverage|target|vendor|tmp|temp|tmpdir|scratchpad|\.next|\.nuxt|\.turbo|\.cache|\.wrangler|\.venv|\.pytest_cache|__pycache__)(?:[/\\}%]|$)|\.(?:log|tmp|pyc|o|class|tsbuildinfo)$|GetTempPath\(\)|^\$\(mktemp\b/i;
 const ABSOLUTE = /^(?:[/\\~$%]|[A-Za-z]:)/;
 const CD = /^(?:cd|pushd|Set-Location)\s+(\S.*)$/i;
+const drive = (token) => (process.platform === 'win32' ? token.replace(/^\/([a-z])(?=\/|$)/i, (hit, letter) => `${letter.toUpperCase()}:`) : token);
 const inside = (root, file) => {
   const relative = path.relative(root, file);
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
@@ -37,7 +37,7 @@ function physical(file) {
 
 function safeTarget(token, cwd) {
   if (/[\$%~*?`]/.test(token) || token.includes('..')) return false;
-  const target = path.resolve(cwd, token);
+  const target = path.resolve(cwd, drive(token));
   const real = physical(target);
   const root = physical(cwd);
   const temp = physical(tmpdir());
@@ -78,13 +78,13 @@ export function judgeShell(command, depth = 0, cwd = process.cwd()) {
     if (cd) dir = ABSOLUTE.test(cd) || !dir ? cd : `${dir}/${cd}`;
     if (NO_OP_FLAG.test(segment.replace(/'[^']*'|"[^"]*"/g, ' ').replace(/(?:^|\s)#.*$/, ''))) continue;
     for (const rx of COMMIT_OR_PUSH) {
-      if (!gitWriteAllowed() && rx.test(segment)) return `"${segment.slice(0, 80)}" commit and push stays manual — draft the exact command and list it in the final state, do not run it`;
+      if (process.env.SERIO_GIT_WRITE !== '1' && rx.test(segment)) return `"${segment.slice(0, 80)}" commit and push stays manual — draft the exact command and list it in the final state, do not run it`;
     }
     for (const rx of GIT_WIPE) {
       if (rx.test(segment)) return `"${segment.slice(0, 80)}" git wipe stays manual — draft the exact command and list it in the final state, do not run it`;
     }
     if ((RM_RECURSIVE.test(segment) || REMOVE_ITEM_RECURSE.test(segment)) && !onlyDisposable(segment, dir, cwd)) {
-      return `"${segment.slice(0, 80)}" recursive delete stays manual — draft the exact command and list it in the final state, do not run it`;
+      return `"${segment.slice(0, 80)}" recursive delete stays manual — use literal paths inside the temp dir or an ignored build dir, or list the exact command for the owner`;
     }
     if (depth < 2 && SHELLS.test(segment)) {
       const inner = innerCommand(segment);

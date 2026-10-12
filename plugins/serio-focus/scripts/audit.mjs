@@ -1,6 +1,5 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
-import { sessionOf } from './lib/ledger.mjs';
-import { version } from './lib/runtime.mjs';
+import { sessionOf, version } from './lib/runtime.mjs';
 
 const FIELDS = ['ts', 'v', 'session', 'actor', 'agent', 'call', 'action', 'target', 'rule', 'result'];
 
@@ -15,9 +14,7 @@ export function entry(payload, reason) {
     agent: payload.agent_id || '',
     call: payload.tool_use_id || '',
     action: tool,
-    target: String(input.file_path || input.notebook_path || input.path
-      || (typeof input.command === 'string' ? input.command : '') || input.description || input.scriptPath
-      || (String(input.script ?? '').match(/\bname:\s*['"`]([^'"`]+)/) || [])[1] || '').slice(0, 120),
+    target: String((typeof input.command === 'string' && input.command) || input.description || '').slice(0, 120),
     rule,
     result: rest.join(': '),
   };
@@ -26,12 +23,11 @@ export function entry(payload, reason) {
 export function append(root, values) {
   if (!values) return;
   const now = new Date();
-  const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
   const record = Object.fromEntries(FIELDS.map((key) => [key, values[key] ?? '']));
-  record.ts = values.ts || now.toISOString();
+  record.ts = now.toISOString();
   try {
     record.v = version();
     mkdirSync(`${root}/audit`, { recursive: true });
-    appendFileSync(`${root}/audit/${month}.jsonl`, `${JSON.stringify(record)}\n`, 'utf8');
+    appendFileSync(`${root}/audit/${record.ts.slice(0, 7)}.jsonl`, `${JSON.stringify(record)}\n`, 'utf8');
   } catch { }
 }
