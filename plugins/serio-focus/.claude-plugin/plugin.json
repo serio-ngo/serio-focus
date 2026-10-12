@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin.json",
   "name": "serio-focus",
   "displayName": "Serio Focus",
-  "version": "1.20.1",
-  "description": "An ADHD quality-of-life tool for Claude Code: short scannable answers, capped subagent floods, trimmed big reads, human-held git writes. No model call, no API key, no telemetry.",
+  "version": "1.22.0",
+  "description": "Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: shell and subagent guards plus architect, coder and reviewer agents with a PR review loop. No model calls, API keys or runtime dependencies.",
   "author": {
     "name": "Serio NGO",
     "url": "https://serio.org.pl"
@@ -16,6 +16,7 @@
     "focus",
     "guardrails",
     "human-in-the-loop",
-    "audit"
+    "audit",
+    "code-review"
   ]
 }

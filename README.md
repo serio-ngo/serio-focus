@@ -7,10 +7,10 @@
 
 # serio-focus
 
-**An ADHD quality-of-life tool for Claude Code: less noise, more done.**
+**An ADHD quality-of-life tool for Claude Code and Codex: less noise, more done.**
 
-Every reply starts with the action and ends with one next step.<br>
-Subagent floods capped · big reads trimmed · destructive commands held to the final state.
+Three agents take a change from plan to pull request.<br>
+Subagent floods capped · destructive commands held for the owner · every hold audited.
 
 [![version](https://img.shields.io/github/package-json/v/serio-ngo/serio-focus?label=version&color=1f6feb)](plugins/serio-focus/.claude-plugin/plugin.json)
 [![verify](https://github.com/serio-ngo/serio-focus/actions/workflows/verify.yml/badge.svg)](https://github.com/serio-ngo/serio-focus/actions/workflows/verify.yml)
@@ -21,16 +21,16 @@ Subagent floods capped · big reads trimmed · destructive commands held to the 
 [![dependencies](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fserio-ngo%2Fserio-focus%2Fmain%2Ftooling%2Fresults%2Fscores.json&query=%24.dependencies&label=dependencies&color=57606a)](package.json)
 
 <!-- serio-demo -->
-<img src="docs/demo.svg" width="864" alt="serio-focus session: Workflow · 100 agents → FAN-OUT CAP: 100 asked, 3 run. Next: run them as waves, // AGENTS: 3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+3+1 · Read src/big.js · 35 KB → READ CAP: big.js 35KB. Kept first 384 lines · Bash · `git commit -m &quot;wip&quot;` → GIT WRITE: &quot;git commit -m &quot;wip&quot;&quot; commit and push stays manual — draft the exact command and list it in the final state, do not run it · SERIO FOCUS · 2,816 tok kept out · 102 guard actions">
+<img src="docs/demo.svg" width="872" alt="serio-focus session: Bash · git status, allowed · Agent · fourth direct call → FAN-OUT CAP: subagent 4 held. Next: wait one wave · Bash · git push origin main → GIT WRITE: &quot;git push origin main&quot; commit and push stays manual — draft the exact command and list it in the final state, do not run it · Bash · rm -rf src → DELETE LOCK: &quot;rm -rf src&quot; recursive delete stays manual — use literal paths inside the temp dir or an ignored build dir, or list the exact command for the owner · SERIO FOCUS · 3 holds written to the audit log">
 <!-- /serio-demo -->
 
-<sub>[Start here](#start-here) · [What it does](#what-it-does) · [Proof](#proof) · [Method](docs/BENCHMARK.md) · [Contributing](CONTRIBUTING.md)</sub>
+<sub>[Start here](#start-here) · [What it does](#what-it-does) · [Workflow](docs/WORKFLOW.md) · [Proof](#proof) · [Method](docs/BENCHMARK.md) · [Contributing](CONTRIBUTING.md)</sub>
 
 </div>
 
 ## Example
 
-Claude Code can launch 20 subagents in one turn. A 5-hour window goes in seconds.
+Claude Code and Codex can launch 20 subagents in one turn. A 5-hour window goes in seconds.
 
 The hook caps each wave at 3 and queues the rest.
 
@@ -40,44 +40,49 @@ The hook caps each wave at 3 and queues the rest.
 
 1. `git clone https://github.com/serio-ngo/serio-focus.git && cd serio-focus`
    You should see `Cloning into 'serio-focus'`.
-2. `npm run setup`
-   You should see `Ready. Restart Claude Code so the session card loads.`
-3. Restart Claude Code, then `npm run doctor`
+2. `npm run setup -- --host claude`, or `--host codex`
+   You should see `Installed. Review and trust the hooks in the native host, then start a fresh session.`
+3. Restart the host, then `npm run doctor -- --host claude`, or `--host codex`
    You should see every check answer `yes`.
 
-Without a checkout: `/plugin marketplace add serio-ngo/serio-focus`, then `/plugin install serio-focus@serio-ngo` and restart.
+Without a checkout, in Claude Code: `/plugin marketplace add serio-ngo/serio-focus`, then `/plugin install serio-focus@serio-ngo` and restart.
 
-With `npm run setup`, new releases install in the background and load on the next start; without it, see the auto-update rows in [the facts](docs/CLAUDE_CODE_FACTS.md#plugins-skills-subagents). Never copy the checkout into the plugin cache by hand.
+In Codex, setup also writes the three agents to `~/.codex/agents/`; open `/hooks` and trust the two Serio hooks after every update. After `git pull`, `claude plugin update serio-focus@serio-ngo` loads the new version in Claude Code. Never copy the checkout into the plugin cache by hand.
 
 ## What it does
 
-<img src="docs/tiles-stops.svg" width="720" alt="Stops: 3 subagents per wave; 24 KB whole-file read cap; commit · push git writes held to final state; 1.2M tok dispatch held, no repo change">
+<img src="docs/tiles-stops.svg" width="720" alt="Stops: subagents per wave; commit and push held for the owner; recursive deletes and hard resets held unless disposable">
 
 | Guard | Notes |
 |---|---|
-| Fan-out cap | `SERIO_MAX_PER_WAVE=3`, `SERIO_WAVE_MS=60000` — excess waits for the next wave. A workflow fanning out through a map or loop states `// AGENTS: 3`, or `// AGENTS: 3+1` for waves run one after another; a fixed list of `agent()` calls is counted as written. |
-| Read budget | A `Read` over 24 KB arrives trimmed; the same read in a shell is held instead; an unchanged file is never re-sent unless the earlier call never delivered it: another `cd`, written first in the same command, past the shell output cap, or denied. |
-| Dispatch budget | A subagent with no tier, or a tier in `SERIO_DENY_SUBAGENT_MODELS=opus,fable`, runs as sonnet; every workflow `agent()` names a tier. A subagent or `agent()` with no type runs as `serio-focus:worker`: core tools, no connector schemas, so it starts small; name `general-purpose` for connectors. Effort above `high` is held unless the brief says `QUALITY:`. |
-| Stall hold | Disabled (`STALL_HOLD=0`). Dispatch and web stay open regardless of repo change. |
-| Limit note | At 80% of a five-hour or weekly usage window, the main session is told to document all work as the environment and project instructions require. The window size is learned from the last two limit hits in local transcripts, so the note arms after the second hit. Subagents get no note. |
-| Git lock | `git commit` and `git push` are held to the final state; the card lists the exact command. Recursive deletes and `clean -fdx` / `reset --hard` too, except temp, build output and a variable or `cd` pointing there. Reads, branches, stashes and merges run. `SERIO_GIT_WRITE=1` reopens commit and push. |
-| Focus style | `output-styles/focus.md` ships forced for the plugin: action first, Done ≤5, one next step. |
-| Session receipt | One line at Stop: tokens kept out and guard actions, plus tokens since the last repo change past `SERIO_STALL_WARN=500000`. Silent otherwise. `audit/` gets a `session` line with effort mix, thinking tokens, repo edits and settings denials; each settings denial also gets a `SETTINGS DENY` line. |
+| Fan-out cap | `SERIO_MAX_PER_WAVE=3`, `SERIO_WAVE_MS=60000`: the fourth direct `Agent`, `Task` or `spawn_agent` call in a wave waits for the next one. Workflow scripts are not parsed. |
+| Git lock | `git commit` and `git push` are held for the owner, nested shells included; the reason names the exact command. Reads, branches, stashes and merges run. `SERIO_GIT_WRITE=1` reopens commit and push. |
+| Delete lock | Recursive deletes, `git clean -f` and `git reset --hard` are held unless every target is a literal path inside the temp dir, `SERIO_SCRATCH_DIR` or an ignored build folder. Tracked files and symlink escapes stay held. |
+| Audit | Every hold appends one line to `audit/YYYY-MM.jsonl`: session, agent, tool, target, rule. |
+| Session card | One startup line names the holds. |
+
+| Agent | Notes |
+|---|---|
+| `architect` | Read-only planner: one approach, tasks with paths and checks. |
+| `coder` | Builds one planned task in a fresh context, runs the checks, never commits. |
+| `reviewer` | Read-only review of a diff: P0–P2 findings at `file:line`, verdict `ready` or `changes needed`. Applies Ponytail review when installed. |
+| `tester` | Draft, disabled: failing test first. Move `plugins/serio-focus/drafts/tester.md` to `agents/` to enable. |
+| `deliver`, `pr-loop` | Skills that run the agents from plan to pull request, then clear failing checks and review threads, Codex findings included. |
 
 Every guard blocks first and suggests second. No block is a refusal — each names the override above
 or the command to run yourself, and the owner decides.
 
-<img src="docs/tiles-wins.svg" width="720" alt="Wins: subagents held back; read volume kept out; billed on subagent fan-out">
+<img src="docs/tiles-wins.svg" width="720" alt="Wins: corpus recall; false blocks; labelled cases">
 
 ## Proof
 
-Every case is labelled in `tooling/corpus/guard-corpus.jsonl` and re-scored on each run against four
-comparators. Cost, limits and full method: [docs/BENCHMARK.md](docs/BENCHMARK.md).
+Every case is labelled in `tooling/corpus/guard-corpus.jsonl` and re-scored by every `npm test` and in CI.
+Method, last result and limits: [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 <div align="center">
 <sub>
 
-[CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [docs/BENCHMARK.md](docs/BENCHMARK.md) · [docs/MANIFEST.md](docs/MANIFEST.md) · [docs/CLAUDE_CODE_FACTS.md](docs/CLAUDE_CODE_FACTS.md) · [Apache-2.0](LICENSE) · Built by [Serio NGO](https://serio.org.pl)
+[CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [docs/WORKFLOW.md](docs/WORKFLOW.md) · [docs/BENCHMARK.md](docs/BENCHMARK.md) · [docs/MANIFEST.md](docs/MANIFEST.md) · [docs/HOST_FACTS.md](docs/HOST_FACTS.md) · [Apache-2.0](LICENSE) · Built by [Serio NGO](https://serio.org.pl)
 
 </sub>
 </div>

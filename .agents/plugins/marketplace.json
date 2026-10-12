@@ -1,0 +1,20 @@
+{
+  "name": "serio-ngo",
+  "interface": {
+    "displayName": "Serio Focus"
+  },
+  "plugins": [
+    {
+      "name": "serio-focus",
+      "source": {
+        "source": "local",
+        "path": "./plugins/serio-focus"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

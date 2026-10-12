@@ -2,8 +2,7 @@
 
 ## First PR in 20 minutes
 
-A labelled corpus line is the cheapest real contribution: it is what turns a refusal, or a missed
-refusal, into a permanent check.
+- Add a labelled corpus line for a refusal or missed refusal; preserve it as a permanent check.
 
 | Step | Command or file |
 |---|---|
@@ -11,7 +10,7 @@ refusal, into a permanent check.
 | 2. Prove the suite is green first | `npm test` |
 | 3. Add one case | a line in `tooling/corpus/guard-corpus.jsonl`: `id`, `category`, `tool`, `input`, `want`, `origin`, `note` |
 | 4. Add the same call to the suite | the matching list in `tooling/test/guard.test.mjs`, one entry, never a new `describe` |
-| 5. Score it | `npm run benchmark:eval` — exits 1 on a miss |
+| 5. Score it | `npm run eval` — exits 1 on a miss |
 | 6. Open the PR | the checklist in `.github/PULL_REQUEST_TEMPLATE.md` |
 
 | Corpus field | Value |
@@ -44,6 +43,7 @@ refusal, into a permanent check.
 | Local rules | that codebase's own `AGENTS.md` or `CLAUDE.md`, never here |
 | Reuse | check Claude Code built-ins and public plugins first |
 | New skill | on second occurrence of the pattern only |
+| Product description | Edit `plugins/serio-focus/.claude-plugin/plugin.json`; `npm run upkeep` generates package, marketplace, Codex metadata and the README introduction |
 
 ## Code
 
@@ -54,24 +54,27 @@ refusal, into a permanent check.
 | Path | Contents |
 |---|---|
 | `plugins/serio-focus/` | the plugin, the only shipped tree; inventory in `docs/MANIFEST.md` |
-| `.opencode/` | `bridge.mjs` + `plugin/serio-focus.ts`, the opencode adapter, calling the same `scripts/lib/` guards |
+| `.agents/plugins/marketplace.json` | Generated native Codex marketplace; canonical source in `.claude-plugin/marketplace.json` |
+| `.opencode/` | Existing adapter calling shared guards; native runtime and subagent parity unverified |
 | `tooling/` | never ships; [tooling/README.md](tooling/README.md) |
-| `docs/` | generated manifest and SVG figures, Claude Code reference, benchmark method; `flood.svg` is static, sourced in `BENCHMARK.md` |
+| `docs/` | generated manifest and SVG figures, host facts, workflow, plan, benchmark method; `flood.svg` is static, sourced in `BENCHMARK.md` |
 | `audit/` | `YYYY-MM.jsonl`, fields in `scripts/audit.mjs` as `FIELDS`; gitignored, append-only |
-| `config/memory.md` | user memory, gitignored |
 
 | Command | Effect |
 |---|---|
 | `claude --plugin-dir plugins/serio-focus` | run this checkout as the plugin for one session; hooks load once at start |
-| `npm run install:plugin` | install the latest marketplace release through `claude plugin`; restart to load |
-| `npm run upkeep` | regenerate `docs/MANIFEST.md`, README inventory |
-| `npm run upkeep:check` | upkeep, then fail when the tree differs — the CI gate |
+| `npm run setup -- --host codex` | Register the local marketplace and install through native Codex commands; review hook trust |
+| `npm run setup -- --host claude` | Register the local marketplace and install through native Claude commands |
+| `npm run install:plugin -- --host codex` | Install this checkout through the native host CLI; restart to load |
+| `npm run upkeep` | regenerate `docs/MANIFEST.md`, manifests and README blocks |
+| `npm run upkeep:check` | Fail when generation changes saved artifacts; allow unrelated existing diffs |
 
 ## Tests
 
 | Suite | Runner |
 |---|---|
 | One file, `tooling/test/guard.test.mjs` | `npm test`, Node built-in runner |
+| Corpus case only | `npm run eval` |
 
 ## Releases
 
@@ -83,7 +86,7 @@ npm run release patch "one-line note"
 |---|---|
 | Suite | runs |
 | Version | bumps |
-| Manifest | regenerates |
+| Manifests and README blocks | regenerate |
 | Changelog | updates |
 
 | Bump | Earns it |
@@ -98,8 +101,8 @@ npm run release patch "one-line note"
 
 | Rule | Value |
 |---|---|
-| Setup | personalise with `npm run setup` |
+| Setup | Select the native host; apply Claude permissions separately with `npm run sync` only when requested |
 | Reports | [SECURITY.md](SECURITY.md) |
-| Git | merge and delete stay denied in both modes |
+| Git | Commit/push remain manual unless explicitly unlocked; git wipes and unsafe recursive deletes stay held |
 | `--without` token | matches `Bash`, `Read`, `Edit` rules only |
 | Connectors | no connector rule ships; a connector token matches nothing |

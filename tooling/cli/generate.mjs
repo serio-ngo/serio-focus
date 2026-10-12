@@ -1,29 +1,12 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { card } from '../../plugins/serio-focus/scripts/card.mjs';
 
 export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const PLUGIN = path.join(REPO, 'plugins', 'serio-focus');
-
-const frontmatter = (text, key) => {
-  const hit = new RegExp(`^${key}:\\s*([\\s\\S]*?)(?=^[a-z_]+:|^---)`, 'm').exec(text);
-  return (hit ? hit[1] : '').trim().replace(/^["']|["']$/g, '');
-};
-
-function descriptionChars(dir, pick) {
-  try {
-    return readdirSync(dir).flatMap(pick).reduce((sum, file) => sum + frontmatter(readFileSync(file, 'utf8'), 'description').length, 0);
-  } catch { return 0; }
-}
-
-function footprint() {
-  const cardChars = card().length;
-  const skillChars = descriptionChars(path.join(PLUGIN, 'skills'), (name) => [path.join(PLUGIN, 'skills', name, 'SKILL.md')]);
-  const agentChars = descriptionChars(path.join(PLUGIN, 'agents'), (name) => (name.endsWith('.md') ? [path.join(PLUGIN, 'agents', name)] : []));
-  return { cardChars, skillChars, agentChars, contextChars: cardChars + skillChars + agentChars };
-}
 
 export const read = (...parts) => readFileSync(path.join(REPO, ...parts), 'utf8');
 export const readJson = (...parts) => JSON.parse(read(...parts));
@@ -35,18 +18,8 @@ export const walk = (dir, base = '') => (existsSync(dir) ? readdirSync(dir, { wi
     return entry.isDirectory() ? walk(path.join(dir, entry.name), rel) : [rel];
   });
 
-export const REPLY_OPEN = '<!-- serio-focus-reply -->';
-export const REPLY_CLOSE = '<!-- /serio-focus-reply -->';
-export const opencodeAgents = () => path.join(homedir(), '.config', 'opencode', 'AGENTS.md');
-
-export function replyBody() {
-  const text = readFileSync(path.join(PLUGIN, 'output-styles', 'focus.md'), 'utf8');
-  return text.replace(/^---[\s\S]*?---\s*/, '').trim();
-}
-
 const SCOPES = {
   user: ({ deny, ask }) => ({
-    forceLoginMethod: 'claudeai',
     permissions: { defaultMode: 'default', deny, ask },
   }),
   project: ({ deny }) => ({ permissions: { deny } }),
@@ -61,11 +34,13 @@ export function policyFor(scope, without = [], policy = readJson('tooling', 'set
   return SCOPES[scope]({ deny: drop([...policy.deny, ...shut]), ask: drop(policy.ask) });
 }
 
-const table = (header, rows) => [
+export const table = (header, rows) => [
   `| ${header.join(' | ')} |`,
   `|${header.map(() => '---').join('|')}|`,
   ...rows,
 ].join('\n');
+
+const cell = (value) => String(value).replace(/\|/g, '\\|');
 
 const HEADING = /^#{1,6}\s/;
 const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s/;
@@ -131,113 +106,94 @@ export function writeBlock(file, open, close, lines) {
   return `refreshed ${path.basename(file)}`;
 }
 
-export const FLOW = [
-  'guard.mjs',
-  'verify.mjs',
-  'lib/limits.mjs',
-  'lib/shell-parse.mjs',
-  'lib/shell-danger.mjs',
-  'lib/shell-reads.mjs',
-  'lib/dispatch.mjs',
-  'lib/agent-model.mjs',
-  'lib/fan-out.mjs',
-  'lib/read-budget.mjs',
-  'lib/quota.mjs',
-];
+const documents = (root, folder, pattern) => {
+  const dir = path.join(root, 'plugins', 'serio-focus', folder);
+  return walk(dir).filter((file) => pattern.test(file)).map((file) => {
+    const [, head = '', body = ''] = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(readFileSync(path.join(dir, file), 'utf8').replace(/\r\n/g, '\n')) || [];
+    const field = (key) => (new RegExp(`^${key}:\\s*(.*)$`, 'm').exec(head) || [])[1] || '';
+    return { dir: path.dirname(file), name: field('name'), description: field('description'), tools: field('tools'), manual: field('disable-model-invocation') === 'true', body: body.trim() };
+  }).sort((a, b) => (a.name < b.name ? -1 : 1));
+};
 
-export function inventory(root = REPO) {
-  const plugin = path.join(root, 'plugins', 'serio-focus');
-  let lines = 0;
-  for (const file of FLOW) {
-    const text = readFileSync(path.join(plugin, 'scripts', file), 'utf8').replace(/\r?\n$/, '');
-    lines += text === '' ? 0 : text.split(/\r?\n/).length;
-  }
+export const skills = (root = REPO) => documents(root, 'skills', /(?:^|\/)SKILL\.md$/);
+export const agents = (root = REPO) => documents(root, 'agents', /\.md$/);
 
-  const skills = readdirSync(path.join(plugin, 'skills'));
-  const agents = readdirSync(path.join(plugin, 'agents')).filter((f) => f.endsWith('.md'));
+export const startupChars = (root = REPO) => card().length
+  + [...skills(root).filter((skill) => !skill.manual), ...agents(root)].reduce((n, doc) => n + doc.name.length + doc.description.length, 0);
 
-  const events = Object.entries(JSON.parse(readFileSync(path.join(plugin, 'hooks', 'hooks.json'), 'utf8')).hooks);
-  const handlers = events.reduce((sum, [, group]) => sum
-    + group.reduce((n, entry) => n + entry.hooks.length, 0), 0);
+export const codexRoles = (root = REPO) => agents(root).map((agent) => ({
+  file: `serio-${agent.name}.toml`,
+  text: [`name = "serio-${agent.name}"`, `description = ${JSON.stringify(agent.description)}`,
+    ...(/\b(?:Edit|Write)\b/.test(agent.tools) ? [] : ['sandbox_mode = "read-only"']),
+    `developer_instructions = '''\n${agent.body}\n'''`, ''].join('\n'),
+}));
 
-  const patterns = FLOW.reduce((n, file) => n
-    + (readFileSync(path.join(plugin, 'scripts', file), 'utf8').match(/^const [A-Z_]+ = \/|^const [A-Z_]+ = \[/gm) || []).length, 0);
-  const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
-  const { cardChars, skillChars, agentChars, contextChars } = footprint();
-
+export function score() {
+  const box = mkdtempSync(path.join(tmpdir(), 'serio-score-'));
+  spawnSync('git', ['init', '-q', box]);
+  writeFileSync(path.join(box, '.gitignore'), 'node_modules/\n');
+  const rows = read('tooling', 'corpus', 'guard-corpus.jsonl').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
+    .filter((c) => !c.known_gap).map((c) => ({ id: c.id, block: c.want === 'block', held: /"permissionDecision":"deny"/.test(spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'guard.mjs')], {
+      input: JSON.stringify({ session_id: `corpus-${c.id}`, cwd: box, tool_name: c.tool, tool_input: c.input || {} }), encoding: 'utf8',
+      env: { ...process.env, SERIO_OS_DIR: box, SERIO_GIT_WRITE: '', SERIO_SCRATCH_DIR: '' },
+    }).stdout) }));
+  rmSync(box, { recursive: true, force: true });
+  const n = (block, held) => rows.filter((row) => row.block === block && row.held === held).length;
+  const pct = (part, whole) => (whole ? Math.round((100 * part) / whole) : 0);
   return {
-    skills: skills.length,
-    agents: agents.length,
-    hookEvents: events.length,
-    hookHandlers: handlers,
-    scripts: FLOW.length,
-    logicLines: lines,
-    patterns,
-    dependencies: Object.keys(pkg.dependencies || {}).length,
-    cardChars,
-    skillChars,
-    agentChars,
-    contextChars,
-    contextTokens: Math.round(contextChars / 4),
+    cases: rows.length,
+    recall: pct(n(true, true), n(true, true) + n(true, false)),
+    fpRate: pct(n(false, true), n(false, true) + n(false, false)),
+    misses: rows.filter((row) => row.block !== row.held).map((row) => row.id),
   };
 }
 
-function inventoryBlock(inv = inventory()) {
-  return [
-    table(['What ships', 'Count'], [
-      `| Guard logic, agent-affecting only | **${inv.logicLines}** lines across ${inv.scripts} flow files |`,
-      '| Stats, receipts, adapters (`audit`, `card`, `ledger`, `transcript`) | excluded from the count |',
-      `| Pattern rules | **${inv.patterns}** |`,
-      `| Hooks | **${inv.hookHandlers}** handlers on ${inv.hookEvents} events |`,
-      `| Skills | **${inv.skills}** |`,
-      `| Subagents | **${inv.agents}** |`,
-      `| Third-party packages | **${inv.dependencies}** |`,
-      `| Network calls, API keys, model calls | **0** |`,
-    ]),
-  ].join('\n').split('\n');
+export function inventory(root = REPO) {
+  const plugin = path.join(root, 'plugins', 'serio-focus');
+  const scripts = walk(path.join(plugin, 'scripts')).filter((file) => file.endsWith('.mjs'));
+  const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+  return {
+    skills: skills(root).length,
+    agents: walk(path.join(plugin, 'agents')).filter((file) => file.endsWith('.md')).length,
+    hookEvents: Object.keys(JSON.parse(readFileSync(path.join(plugin, 'hooks', 'hooks.json'), 'utf8')).hooks).length,
+    scripts: scripts.length,
+    lines: scripts.reduce((n, file) => n + readFileSync(path.join(plugin, 'scripts', file), 'utf8').trimEnd().split('\n').length, 0),
+    dependencies: Object.keys(pkg.dependencies || {}).length,
+    contextTokens: Math.round(startupChars(root) / 4),
+  };
 }
-
-function skillRows() {
-  const dir = path.join(PLUGIN, 'skills');
-  return readdirSync(dir).sort().map((name) => {
-    const text = readFileSync(path.join(dir, name, 'SKILL.md'), 'utf8');
-    return `| \`${name}\` | ${frontmatter(text, 'description').length} | ${text.split('\n').length} |`;
-  });
-}
-
-function agentRows() {
-  const dir = path.join(PLUGIN, 'agents');
-  return readdirSync(dir).sort().map((name) => {
-    const text = readFileSync(path.join(dir, name), 'utf8');
-    return `| \`${name.replace('.md', '')}\` | ${frontmatter(text, 'model')} | ${cell(frontmatter(text, 'tools'))} |`;
-  });
-}
-
-const cell = (value) => String(value).replace(/\|/g, '\\|');
 
 function hookRows() {
   return Object.entries(readJson('plugins', 'serio-focus', 'hooks', 'hooks.json').hooks)
     .flatMap(([event, entries]) => entries.flatMap((entry) => entry.hooks.map((handler) => {
       const script = (/scripts\/[a-z-]+\.mjs/.exec(handler.command) || [])[0];
-      return `| \`${event}\` | \`${cell(entry.matcher || '*')}\` | \`${script}\` |`;
+      return `| \`${event}\` | \`${cell(entry.matcher || '*')}\` | \`${script}\` | Claude, Codex |`;
     })))
     .sort();
 }
 
 export function manifest() {
-  const version = pluginVersion();
+  const inv = inventory();
   return [
     '# Manifest',
     '',
-    `<sub><b>Answers</b> · everything the plugin loads at version ${version} · generated, \`npm run upkeep\` rewrites it · <a href="../README.md">README</a></sub>`,
+    `<sub><b>Answers</b> · everything the plugin loads at version ${pluginVersion()} · generated, \`npm run upkeep\` rewrites it · <a href="../README.md">README</a></sub>`,
     '',
-    '## Skills', '',
-    table(['Skill', 'Description chars, always in context', 'Body lines, on use'], skillRows()), '',
-    '## Agents', '',
-    table(['Agent', 'model', 'Tools'], agentRows()), '',
     '## Hooks', '',
-    table(['Event', 'Matcher', 'Script'], hookRows()), '',
+    table(['Event', 'Matcher', 'Script', 'Native host'], hookRows()), '',
+    '## Agents', '',
+    table(['Agent', 'Tools', 'Description'], agents().map((agent) => `| \`${agent.name}\` | ${agent.tools} | ${cell(agent.description)} |`)), '',
+    '## Skills', '',
+    table(['Skill', 'Description'], skills().map((skill) => `| \`${skill.name}\` | ${cell(skill.description)} |`)), '',
     '## Inventory', '',
-    ...inventoryBlock(), '',
+    table(['What ships', 'Count'], [
+      `| Script lines | **${inv.lines}** across ${inv.scripts} files |`,
+      `| Hook events | **${inv.hookEvents}** |`,
+      `| Skills | **${inv.skills}** |`,
+      `| Subagents | **${inv.agents}** |`,
+      `| Startup context: card, agent and skill descriptions | **~${inv.contextTokens}** tokens |`,
+      `| Third-party packages | **${inv.dependencies}** |`,
+      '| Network calls, API keys, model calls | **0** |',
+    ]), '',
   ].join('\n');
 }

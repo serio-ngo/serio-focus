@@ -1,202 +1,44 @@
 # Benchmark
 
-<sub><b>Answers</b> · what the guard refused, would refuse and blocks — ledger · replay · track A · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · how the guard is scored and its last result · <a href="../README.md">README</a></sub>
 
-<!-- ledger · replay · track A -->
+<img src="tiles-wins.svg" width="720" alt="Wins: corpus recall; false blocks; labelled cases">
 
-| Track | Question | Status |
-|---|---|---|
-| Ledger | what the guard refused in live sessions | runs on every Stop hook |
-| Replay | what the guard would refuse on recorded real traffic | `npm run benchmark:replay` |
-| Track A | does the guard block what it claims to | `npm run benchmark:eval`, gated in CI |
+## Method
+
+| Step | Rule |
+|---|---|
+| Corpus | `tooling/corpus/guard-corpus.jsonl`: one labelled call per line; `want` is `block` or `allow`; `origin` is `spec`, `probe` or `regression` |
+| Run | Each case goes through `plugins/serio-focus/scripts/guard.mjs` in a fresh git repository |
+| Score | Recall = held blocks ÷ all blocks; false blocks = held allows ÷ all allows |
+| Gate | `npm test` and the CI job `guard eval` fail on any miss |
+| Publish | `npm run upkeep` writes `tooling/results/scores.json`, which the README badges read |
+
+## Result
+
+<!-- serio-scores -->
+| Measure | Value |
+|---|---|
+| Labelled cases | 33 |
+| Recall: blocks held | 100% |
+| False blocks: allows held | 0% |
+| Startup context | ~270 tokens |
+<!-- /serio-scores -->
 
 ## Static figures
 
 | Figure | Source |
 |---|---|
-| `docs/flood.svg` | Guard replay 2026-09-23, plugin 1.15.0 working tree: 20 `Agent` dispatches in one wave, 3 start, 17 held for the next wave. Without the hook nothing is held, so all 20 start. Static, not regenerated. |
+| `docs/flood.svg` | Guard replay 2026-09-23, plugin 1.15.0: 20 `Agent` dispatches in one wave, 3 start, 17 held for the next wave. The cap is unchanged since. Static, not regenerated. |
 
 ## Cost and limits
 
+<img src="tiles-cost.svg" width="720" alt="Cost: startup context; cloud sessions; OpenCode subagents">
+
 | Limit | Detail |
 |---|---|
-| Ordinary tasks | cost more tokens, not fewer — the guard buys a ceiling on the tail, not an average saving |
-| Cowork | hooks do not fire there |
-| OpenCode | its subagents bypass the guard |
-| Known bypasses | four, listed open in [Track A](#track-a) |
-
-## Context savings — what `npm run benchmark` prints
-
-| Figure | Definition |
-|---|---|
-| `read volume` | every byte the session asked to put in the main thread |
-| `kept out` | the part refused before entry |
-| Share | `kept / read volume` |
-
-| Line | Counter | Credited |
-|---|---|---|
-| re-read dedup | `bytes` | full file size — already in context, byte-identical |
-| whole-file cap | `deferred` | full file size at refusal |
-| trimmed | `trimmed` | bytes cut from a read over 24KB |
-| read by subagents | `offload` | bytes read under a non-`main` actor; shown, never counted as kept out |
-| admitted | `read` | bytes let into the main thread |
-| dispatched scout / runner | `scouts`, `runners` | counted only |
-| plugin footprint | — | session card + skill and agent descriptions, chars / 4, always in context |
-
-| Share rule | Why |
-|---|---|
-| `net` is kept-out tokens minus footprint | the window cost in tokens; negative when the window did no whole-file reads |
-| a retried refusal credits once | first refusal stamps `actor + path + mtime:size + rule`; repeats skip the byte credit |
-| the follow-up read lands in the denominator | a slice read after a cap counts as `admitted` |
-| session receipt | `kept out` as a share of the main thread's context: last request's input + cache write + cache read tokens |
-
-- Only the current ledger format parses; older lines skip, never guessed.
-- Bytes / 4 estimates tokens; never billing.
-
-| Denominator | Scope |
-|---|---|
-| Counts | unsliced main-thread `Read` calls; shell-spotted whole-file reads |
-| Misses | slices, `Grep` output, `Bash` output, subagent returns |
-| Read as | share of whole-file read volume, not of the window |
-
-## Billing — measured, not estimated
-
-| Field | Source |
-|---|---|
-| `fresh` | `input_tokens` + `output_tokens` + `cache_creation_input_tokens`, from transcript `usage` |
-| `cache-read` | `cache_read_input_tokens`, from transcript `usage` |
-| Fallback | every transcript under `~/.claude/projects/<slug>/` when no ledger line carries billing |
-| `context re-send ratio` | `cache-read / fresh`; the mechanism exploited, not the plugin |
-
-## Replay — the guard against recorded traffic
-
-```bash
-npm run benchmark:replay
-```
-
-- Input: this project's transcripts under `~/.claude/projects/<slug>/`; every `Read` and `Bash` call, in order, one sandbox ledger per session.
-
-| Property | Value |
-|---|---|
-| Input | real tool calls from real sessions, not fixtures |
-| Isolation | one temp `SERIO_OS_DIR` per session, matching that session's dedup state |
-| Loop | open — a refusal cannot change what the agent did next |
-| Misses | shell pipelines and `$(...)`, which the read budget cannot size |
-| Bias | guarded sessions produce fewer hits, so the count is a floor |
-
-- Answers what the guard catches on this stream.
-
-<!-- serio-replay -->
-| The maintainer's 7 sessions — run it on yours | Count | Share of judged |
-|---|---|---|
-| Tool calls recorded | 742 | — |
-| Judged by the guard | 553 | 100% |
-| **Refused** | **10** | **2%** |
-| — git and delete lock | 7 | 1% |
-| — re-read dedup | 2 | 0% |
-| — whole-file cap | 1 | 0% |
-
-Every `Read` and `Bash` call from this machine's Claude Code transcripts, re-fed to the guard in order, one sandbox per session. Open-loop: a refusal cannot change what the agent did next, so this is what the guard catches on that exact stream, not a counterfactual. Reproduce with `npm run benchmark:replay`.
-<!-- /serio-replay -->
-
-## Live ledger — what the guard did on this machine
-
-<!-- serio-stats -->
-| Measured over 273 ledger lines | Tokens | Share |
-|---|---|---|
-| Read volume the session asked for | ~4.1M | 100% |
-| **Kept out** | **~1.8M** | **44%** |
-| — re-read dedup | ~66.9k | 2% |
-| — whole-file cap | ~184.4k | 4% |
-| — trimmed | ~1.5M | 38% |
-| Admitted to the main thread | ~2.3M | 56% |
-| Read by subagents, not counted as kept out | ~2.0M | — |
-
-| Context tax — the plugin's own footprint | Tokens |
-|---|---|
-| Session card, always in context | ~162 |
-| Skill descriptions, always in context | ~42 |
-| Agent descriptions, always in context | ~68 |
-| **Total footprint** | **~272** |
-| Per turn, on top of that | **0** |
-| **Net kept out minus footprint** | **~1.8M** |
-
-| Measured billing | Tokens |
-|---|---|
-| Fresh — input + output + cache write | 62,241,626 |
-| Cache-read | 3,296,801,423 |
-| **Context re-send ratio** | **53.0×** — cache mechanism, not the guard |
-
-Guard actions: 222 (used 17 scout, 1 runner). Token counts are file bytes / 4 from this repo's own local ledger, an estimate; the billing figures are measured. Method: [Billing](#billing--measured-not-estimated).
-<!-- /serio-stats -->
-
-## Track A
-
-| Item | Value |
-|---|---|
-| Corpus | `tooling/corpus/guard-corpus.jsonl`, labelled; case counts in the `<!-- eval-results -->` block below |
-| Runner | `npm run benchmark:eval`, exits 1 on a miss, gated in CI |
-| Verdict | ask = held (exit 2 counts too) |
-| `origin` field | `spec` = derived from the rule table, self-confirming · `probe` = found by adversarial probing · `regression` = reproduces a shipped bug |
-| Scoring | recall never without false-positive rate; `known_gap` cases scored apart |
-
-- Same corpus, same scoring, any `PreToolUse` guard on stdin:
-
-```bash
-SERIO_EVAL_GUARD="node ../other-guard/hook.mjs" npm run benchmark:eval
-```
-
-- No third-party guard run here. Self-test with published method.
-
-## Comparison
-
-```bash
-npm run benchmark:compare
-```
-
-| Comparator | What it models | Fair to it |
-|---|---|---|
-| `none` | no guard, permission prompts only | The floor. Shows the corpus is not satisfiable by doing nothing. |
-| `policy` | Claude Code `permissions.deny` globs, read from `tooling/settings/policy.json` | The real built-in alternative. Loses on connector and file-content cases because a glob cannot express them. |
-| `keyword` | a pattern-list `PreToolUse` hook, ~35 dangerous-pattern regexes | The shape most published guard hooks ship. Graded on the same cases, including the safe ones. |
-| `denyall` | block every tool call | The ceiling. Perfect recall, useless in practice — this is why recall is never reported alone. |
-
-<!-- guard-scores -->
-| Guard | Caught | Wrongly blocked | F1 |
-|---|---|---|---|
-| no guard, permission prompts only | 0% | 0% | 0.00 |
-| Claude Code permissions.deny globs | 9% | 4% | 0.15 |
-| a pattern-list PreToolUse hook | 26% | 20% | 0.35 |
-| block every tool call | 100% | 100% | 0.65 |
-| **serio-focus** | 100% | 0% | 1.00 |
-
-48 cases, 2026-09-27; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
-
-26 of 48 scored cases are `spec` (rule-derived), 8 `probe`, 14 `regression`; recall here is a regression check, not a detection rate.
-<!-- /guard-scores -->
-
-- Mechanism baselines from published rule shapes, not vendor code; no product named.
-- Same case list, same scoring; `tooling/benchmark/baselines.mjs` committed for repeat or dispute.
-- `tooling/results/scores.json` written by the same run; feeds the README badges.
-- Cost is context tax: the plugin's own footprint against the rot it keeps out, per window, in the ledger report.
-- Spawn milliseconds print on `--latency` runs only; machine-specific, never published, never in `scores.json`.
-- Multiple roots aggregate: `node tooling/benchmark/benchmark.mjs <repo…> [--write]`; combined totals print, outputs land in the first root.
-
-<!-- eval-results -->
-Run 2026-09-27 · 48 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
-
-| Metric | Value |
-|---|---|
-| Recall | 23/23 (100%) |
-| Precision | 23/23 (100%) |
-| False-positive rate | 0/25 (0%) |
-| F1 | 1.00 |
-| Recall 95% CI (Wilson) | 85–100% — n=23 |
-| FP-rate 95% CI (Wilson) | 0–14% — n=25 |
-| Recall by origin | spec 14/14 (100%) · probe 6/6 (100%) · regression 3/3 (100%) |
-| Known bypasses caught | n/a |
-
-Confusion: TP 23 · FN 0 · FP 0 · TN 25. Bypasses scored apart.
-
-26 of 48 scored cases are `spec` (rule-derived), 8 `probe`, 14 `regression`; recall here is a regression check, not a detection rate.
-<!-- /eval-results -->
+| Corpus | Proves the listed calls only; not a claim of complete coverage |
+| Cloud sessions | Plugin hooks do not run there |
+| OpenCode | The bridge judges shell calls; its subagents bypass the guard |
+| Codex | Hook trust is per hash; review it in `/hooks` after every update |
+| Known gaps | [SECURITY.md](../SECURITY.md) |

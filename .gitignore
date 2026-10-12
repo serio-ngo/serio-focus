@@ -1,8 +1,6 @@
 .claude/.session-*
 audit/*
 .claude/.wave-*
-plugins/serio-focus/memory.md
-config/memory.md
 node_modules/
 .DS_Store
 *.log

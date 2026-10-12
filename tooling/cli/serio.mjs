@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
-import { SPAWN_TOOLS } from '../../plugins/serio-focus/scripts/guard.mjs';
 import { writeFigures } from './figures.mjs';
-import { PLUGIN, REPO, REPLY_CLOSE, REPLY_OPEN, manifest, markdown, opencodeAgents, pluginVersion, policyFor, readJson, replyBody, walk, writeBlock } from './generate.mjs';
+import { PLUGIN, REPO, codexRoles, inventory, manifest, markdown, pluginVersion, policyFor, readJson, score, table, walk, writeBlock } from './generate.mjs';
 
 const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
-const BANNED = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
+const CODEX_AGENTS = path.join(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'agents');
 const RULE_LISTS = ['deny', 'ask', 'allow'];
 const TEXT = /\.(md|mjs|json|jsonc|ya?ml|cff)$/;
 
@@ -64,11 +63,6 @@ const writeJson = (file, value) => {
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 };
 
-const originRepo = () => {
-  const url = spawnSync('git', ['-C', REPO, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).stdout || '';
-  return (/[:/]([^/:]+\/[^/]+?)(?:\.git)?\s*$/.exec(url) || [])[1];
-};
-
 function merge(target, patch) {
   const merged = { ...target, ...patch };
   if (patch.permissions) {
@@ -83,24 +77,6 @@ function merge(target, patch) {
     if (patch[key]) merged[key] = { ...target[key], ...patch[key] };
   }
   return merged;
-}
-
-function refuseMeteredAuth(settings) {
-  const offenders = [
-    ...BANNED.filter((key) => key in (settings.env ?? {})).map((key) => `env.${key}`),
-    ...('apiKeyHelper' in settings ? ['apiKeyHelper'] : []),
-  ];
-  if (offenders.length) fail(`refusing to write — ${offenders.join(', ')} outranks subscription login. Nothing was written.`);
-}
-
-function installation() {
-  const repo = originRepo();
-  const patch = {
-    env: { SERIO_OS_DIR: REPO, FORCE_AUTOUPDATE_PLUGINS: '1' },
-    enabledPlugins: { [`${PLUGIN_NAME}@${marketplace.name}`]: true },
-  };
-  if (repo) patch.extraKnownMarketplaces = { [marketplace.name]: { source: { source: 'github', repo }, autoUpdate: true } };
-  return patch;
 }
 
 function releaseLocks(settings, requested) {
@@ -135,7 +111,6 @@ function sync(args) {
     || (scope === 'project' ? path.join(REPO, '.claude', 'settings.json') : path.join(CONFIG_DIR, 'settings.json')));
   const before = readJsonFile(target, {});
   let after = merge(before, policyFor(scope, args.without, undefined, args.unlock));
-  if (scope === 'user') after = merge(after, installation());
   after = releaseLocks(after, args.unlock ?? []);
   after = retire(after);
   after.env = { ...after.env };
@@ -143,7 +118,6 @@ function sync(args) {
   else delete after.env.SERIO_GIT_WRITE;
   for (const key of Object.keys(after.env)) if (key.startsWith('HANDOFF_')) delete after.env[key];
   if (Object.keys(after.env).length === 0) delete after.env;
-  refuseMeteredAuth(after);
   if (!args.dryRun) writeJson(target, after);
   if (scope === 'project' && !args.dryRun) {
     const dir = path.dirname(path.resolve(target));
@@ -155,44 +129,40 @@ function sync(args) {
   return after;
 }
 
-const registryPath = () => path.join(CONFIG_DIR, 'plugins', 'installed_plugins.json');
 const registryKey = () => `${PLUGIN_NAME}@${marketplace.name}`;
+const hostOf = (args) => {
+  const host = args.host || 'codex';
+  if (!['claude', 'codex'].includes(host)) fail('host must be claude or codex');
+  return host;
+};
 
-function install() {
-  const file = registryPath();
-  const registry = readJsonFile(file, {});
-  const key = registryKey();
-  const entry = registry.plugins?.[key]?.[0];
-  if (entry && !('gitCommitSha' in entry)) {
-    delete registry.plugins[key];
-    writeJson(file, registry);
-    row('unpinned', `${key} manual entry removed`);
+function install(args = {}, remove = false) {
+  const host = hostOf(args);
+  const native = path.join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
+  const executable = host === 'claude' ? process.env.CLAUDE_CODE_EXECPATH || (existsSync(native) ? native : 'claude') : 'codex';
+  const commands = remove ? [[ 'plugin', host === 'claude' ? 'uninstall' : 'remove', registryKey() ]] : host === 'claude'
+    ? [['plugin', 'marketplace', 'add', REPO], ['plugin', 'install', registryKey(), '--scope', 'user']]
+    : [['plugin', 'marketplace', 'add', REPO], ['plugin', 'add', registryKey(), '--json']];
+  for (const command of commands) {
+    const run = spawnSync(executable, command, { encoding: 'utf8' });
+    if (run.error || run.status !== 0) fail(run.error?.message || run.stderr || run.stdout || 'plugin installation failed');
   }
-  const claude = (...rest) => spawnSync(process.env.CLAUDE_CODE_EXECPATH || 'claude', ['plugin', ...rest], { encoding: 'utf8' });
-  const known = marketplace.name in readJsonFile(path.join(CONFIG_DIR, 'plugins', 'known_marketplaces.json'), {});
-  claude('marketplace', ...(known ? ['update', marketplace.name] : ['add', originRepo()]));
-  const run = claude(entry?.gitCommitSha ? 'update' : 'install', key, '--scope', 'user');
-  if (run.status !== 0) process.exitCode = 1;
-  row('plugin', `${run.stdout ?? ''}${run.stderr ?? ''}`.trim().split('\n').pop() || 'claude not found');
+  if (host === 'codex') {
+    mkdirSync(CODEX_AGENTS, { recursive: true });
+    for (const role of codexRoles()) {
+      if (remove) rmSync(path.join(CODEX_AGENTS, role.file), { force: true });
+      else writeFileSync(path.join(CODEX_AGENTS, role.file), role.text, 'utf8');
+    }
+  }
+  row('plugin', host + (remove ? ' removed' : ' installed') + ' through native plugin commands');
 }
 
-function syncReply() {
-  const file = opencodeAgents();
-  if (!existsSync(file)) {
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, `${REPLY_OPEN}\n${REPLY_CLOSE}\n`, 'utf8');
-  }
-  const current = readFileSync(file, 'utf8');
-  if (!current.includes(REPLY_OPEN) || !current.includes(REPLY_CLOSE)) {
-    writeFileSync(file, `${current.replace(/\n+$/, '')}\n\n${REPLY_OPEN}\n${REPLY_CLOSE}\n`, 'utf8');
-  }
-  row('reply', writeBlock(file, REPLY_OPEN, REPLY_CLOSE, replyBody().split('\n')));
-}
+const sources = (figures = false) => walk(REPO)
+    .filter((file) => TEXT.test(file) || (figures && file.endsWith('.svg')))
+    .filter((file) => !/(?:^|\/)(?:\.git|\.claude|node_modules|audit)\//.test(file));
 
 function normalise() {
-  const files = walk(REPO)
-    .filter((file) => TEXT.test(file))
-    .filter((file) => !/(?:^|\/)(?:\.git|\.claude|node_modules|audit)\//.test(file));
+  const files = sources();
   let touched = 0;
   for (const rel of files) {
     const file = path.join(REPO, rel);
@@ -206,23 +176,41 @@ function normalise() {
 }
 
 function upkeep() {
-  const figures = writeFigures();
-  const touched = normalise();
+  const plugin = readJson('plugins', 'serio-focus', '.claude-plugin', 'plugin.json');
+  writeJson(path.join(REPO, 'package.json'), { ...readJson('package.json'), description: plugin.description });
+  writeJson(path.join(REPO, '.claude-plugin', 'marketplace.json'), { ...marketplace, description: plugin.description,
+    plugins: marketplace.plugins.map((entry) => entry.name === plugin.name ? { ...entry, description: plugin.description } : entry) });
+  const { cases, recall, fpRate } = score();
+  const { contextTokens, dependencies } = inventory();
+  writeJson(path.join(REPO, 'tooling', 'results', 'scores.json'), { version: plugin.version, cases, recall, fpRate, contextTokens, dependencies });
+  writeBlock(path.join(REPO, 'docs', 'BENCHMARK.md'), '<!-- serio-scores -->', '<!-- /serio-scores -->', table(['Measure', 'Value'], [
+    `| Labelled cases | ${cases} |`, `| Recall: blocks held | ${recall}% |`, `| False blocks: allows held | ${fpRate}% |`, `| Startup context | ~${contextTokens} tokens |`,
+  ]).split('\n'));
+  row('figures', `${writeFigures({ cases, recall, fpRate, contextTokens }).length} file(s)`);
+  writeJson(path.join(PLUGIN, '.codex-plugin', 'plugin.json'), {
+    name: plugin.name, version: plugin.version, description: plugin.description, skills: './skills/', hooks: './hooks/hooks.json',
+    interface: { displayName: plugin.displayName, developerName: plugin.author.name, category: 'Productivity' },
+  });
+  writeJson(path.join(REPO, '.agents', 'plugins', 'marketplace.json'), {
+    name: marketplace.name, interface: { displayName: 'Serio Focus' },
+    plugins: marketplace.plugins.map((plugin) => ({ name: plugin.name,
+      source: { source: 'local', path: plugin.source }, policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+      category: 'Productivity' })),
+  });
   writeFileSync(path.join(REPO, 'docs', 'MANIFEST.md'), manifest(), 'utf8');
-  row('figures', `${figures.length} file(s)`);
-  row('formatted', `${touched} file(s)`);
+  row('formatted', `${normalise()} file(s)`);
 }
 
-function check() {
-  const diff = spawnSync('git', ['diff', '--exit-code'], { cwd: REPO, stdio: 'inherit' });
-  if (diff.status !== 0) fail('generated artefacts are stale — review the diff, then commit it');
+function check(before) {
+  const changed = sources(true).filter((file) => before.get(file) !== readFileSync(path.join(REPO, file), 'utf8'));
+  if (changed.length) fail(`generated artefacts are stale: ${changed.join(', ')}`);
 }
 
 const BLOCKED = 2;
 const held = (run) => run.status === BLOCKED
   || (() => { try { return ['ask', 'deny'].includes(JSON.parse(run.stdout || '').hookSpecificOutput?.permissionDecision); } catch { return false; } })();
-function doctor() {
-  const settings = readJsonFile(path.join(CONFIG_DIR, 'settings.json'), {});
+function doctor(args = {}) {
+  const host = hostOf(args);
   const key = registryKey();
   const checks = [];
   const check = (question, ok, detail = '') => {
@@ -231,14 +219,19 @@ function doctor() {
     return ok;
   };
 
-  check('the plugin is enabled', settings.enabledPlugins?.[key] === true);
-  check('login is restricted to the subscription', settings.forceLoginMethod === 'claudeai');
-  check('the marketplace is registered', settings.extraKnownMarketplaces?.[marketplace.name]?.source?.repo === originRepo());
-  check('plugin auto-update survives DISABLE_AUTOUPDATER', settings.env?.FORCE_AUTOUPDATE_PLUGINS === '1'
-    && settings.extraKnownMarketplaces?.[marketplace.name]?.autoUpdate === true);
-  const pinned = readJsonFile(registryPath(), {}).plugins?.[key]?.[0];
-  check('the marketplace install is this checkout', Boolean(pinned?.gitCommitSha) && pinned.version === pluginVersion(),
-    `installed ${pinned?.version ?? 'nothing'}, checkout ${pluginVersion()}`);
+  if (host === 'claude') {
+    const native = path.join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
+    const run = spawnSync(process.env.CLAUDE_CODE_EXECPATH || (existsSync(native) ? native : 'claude'), ['plugin', 'list', '--json'], { encoding: 'utf8' });
+    let installed = [];
+    try { installed = JSON.parse(run.stdout); } catch { }
+    check('native Claude installation is current and enabled', installed.some((plugin) => plugin.id === key && plugin.enabled && (plugin.folderVersion || plugin.version) === pluginVersion()));
+  } else {
+    const run = spawnSync('codex', ['plugin', 'list', '--marketplace', marketplace.name, '--json'], { encoding: 'utf8' });
+    let installed = [];
+    try { installed = JSON.parse(run.stdout).installed; } catch { }
+    check('native Codex installation is current and enabled', installed.some((plugin) => plugin.pluginId === key && plugin.enabled && plugin.version === pluginVersion()));
+    check('Codex role agents are current', codexRoles().every((role) => existsSync(path.join(CODEX_AGENTS, role.file)) && readFileSync(path.join(CODEX_AGENTS, role.file), 'utf8') === role.text));
+  }
 
   const probe = mkdtempSync(path.join(tmpdir(), 'serio-doctor-'));
   const at = (dir, script, payload, env) => spawnSync(process.execPath, [path.join(dir, 'scripts', script)], {
@@ -250,34 +243,16 @@ function doctor() {
   const fire = (payload, env) => at(PLUGIN, 'guard.mjs', payload, env);
   const shell = (command, env) => fire(pre('Bash', { command }), env);
 
-  const open = settings.env?.SERIO_GIT_WRITE === '1';
-  const shut = ['Bash(git commit *)', 'Bash(git push *)']
-    .every((rule) => (settings.permissions?.deny ?? []).includes(rule));
   check('the git gate holds commit and push, nothing else git',
-    shut === !open
-    && ['git commit -m x', 'git push origin main'].every((c) => held(shell(c, { SERIO_GIT_WRITE: '0' })))
+    ['git commit -m x', 'git push origin main'].every((c) => held(shell(c, { SERIO_GIT_WRITE: '0' })))
     && ['git status', 'git stash push -m wip', 'git merge main'].every((c) => !held(shell(c, { SERIO_GIT_WRITE: '0' }))),
-    'deny rules, SERIO_GIT_WRITE and the live guard must agree');
+    'deterministic script probe; native hook trust and invocation are separate');
   check('the checkout guard blocks recursive deletes and git wipes',
     ['rm -rf docs', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),
     'rm -r, clean -fdx, reset --hard');
-  const routed = (run) => { try { return JSON.parse(run.stdout).hookSpecificOutput.updatedInput.model === 'sonnet'; } catch { return false; } };
-  const lean = (run) => { try { return JSON.parse(run.stdout).hookSpecificOutput.updatedInput.subagent_type === 'serio-focus:worker'; } catch { return false; } };
-  check('the checkout guard routes dispatch by tier',
-    SPAWN_TOOLS.every((tool) => routed(fire(pre(tool, { model: 'opus', prompt: 'review the diff' }))))
-    && routed(fire(pre('Agent', { prompt: 'audit the repo' })))
-    && lean(fire(pre('Agent', { prompt: 'audit the repo' })))
-    && lean(fire(pre('Agent', { model: 'sonnet', prompt: 'review the diff' }))),
-    'opus and unnamed routed to sonnet, typeless runs as serio-focus:worker');
   check('the checkout card prints', spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'card.mjs')], { encoding: 'utf8' }).stdout.trim().length > 0);
 
-  // Every check above spawns the scripts here. Only the ledger proves Claude Code spawns them.
-  const month = new Date().toISOString().slice(0, 7);
-  const ledger = path.join(process.env.SERIO_OS_DIR || REPO, 'audit', `${month}.jsonl`);
-  const since = existsSync(ledger) ? Date.now() - statSync(ledger).mtimeMs : Infinity;
-  check('Claude Code itself fired a hook here within a day',
-    since < 24 * 60 * 60 * 1000,
-    existsSync(ledger) ? `${Math.round(since / 3600000)}h since the last receipt` : 'no receipt yet — start a session and rerun');
+  rmSync(probe, { recursive: true, force: true });
 
   const failed = checks.filter((ok) => !ok).length;
   console.log(`  ${checks.length - failed} of ${checks.length} yes`);
@@ -314,61 +289,56 @@ function release(args) {
   const date = args.date || new Date().toISOString().slice(0, 10);
   rows.unshift(`| ${plugin.version} | ${date} | ${note.replaceAll('|', '\\|')} |`);
   writeFileSync(changelog, `${head}${rows.join('\n')}\n`, 'utf8');
-  writeFileSync(path.join(REPO, 'docs', 'MANIFEST.md'), manifest(), 'utf8');
-  const bench = (...args) => spawnSync(process.execPath, [path.join(REPO, 'tooling', 'benchmark', 'benchmark.mjs'), REPO, ...args], { stdio: 'inherit' });
-  bench('--eval', '--compare', '--write');
-  bench('--write');
+  upkeep();
   row('released', plugin.version);
-  row('figures', `${writeFigures().length} file(s)`);
   report();
 }
 
 function prove() {
   const suite = path.join('tooling', 'test', 'guard.test.mjs');
-  const failing = (cwd) => [...new Set([...spawnSync(process.execPath, ['--test', '--test-reporter=tap', suite], { cwd, encoding: 'utf8' })
-    .stdout.matchAll(/^\s*not ok \d+ - (.+)$/gm)].map((hit) => hit[1]))];
+  const failing = (cwd) => {
+    const run = spawnSync(process.execPath, ['--test', '--test-reporter=tap', suite], { cwd, encoding: 'utf8' });
+    if (run.error || run.signal || (run.status !== 0 && !/failureType: 'testCodeFailure'/.test(run.stdout))) throw new Error('suite execution failed before behavioral proof');
+    return { status: run.status, cases: [...new Set([...run.stdout.matchAll(/^\s*not ok \d+ - (.+)$/gm)].map((hit) => hit[1]))] };
+  };
   const box = mkdtempSync(path.join(tmpdir(), 'serio-prove-'));
-  let head = [];
-  let tree = [];
+  let head;
+  let tree;
   try {
-    spawnSync('git', ['-C', REPO, 'archive', '--format=tar', '-o', path.join(box, 'head.tar'), 'HEAD']);
-    spawnSync('tar', ['-xf', 'head.tar'], { cwd: box });
+    if (spawnSync('git', ['-C', REPO, 'archive', '--format=tar', '-o', path.join(box, 'head.tar'), 'HEAD']).status !== 0) throw new Error('cannot archive HEAD');
+    if (spawnSync('tar', ['-xf', 'head.tar'], { cwd: box }).status !== 0) throw new Error('cannot unpack HEAD');
     copyFileSync(path.join(REPO, suite), path.join(box, suite));
     head = failing(box);
     tree = failing(REPO);
   } finally { rmSync(box, { recursive: true, force: true }); }
-  row('fails on HEAD', head.join(' · ') || 'nothing — no case proves the change');
-  row('fails on tree', tree.join(' · ') || 'nothing');
+  row('fails on HEAD', head.cases.join(' · ') || 'nothing — no case proves the change');
+  row('fails on tree', tree.cases.join(' · ') || 'nothing');
   report();
-  if (!head.length || tree.length) process.exitCode = 1;
+  if (head.status === 0 || !head.cases.length || tree.status !== 0 || tree.cases.length) process.exitCode = 1;
 }
 
 function setup(args) {
-  install();
-  sync(args);
-  if (args.project) sync({ ...args, scope: 'project', target: args.project });
-  upkeep();
-  syncReply();
+  install(args);
+  if (args.policy) sync(args);
   report();
-  console.log('Cowork: paste this into Settings > Cowork > Global instructions:');
-  console.log(replyBody());
-  console.log('');
-  const { failed } = doctor();
-  console.log('');
-  console.log(failed
-    ? '  Restart Claude Code, then run: npm run doctor'
-    : '  Ready. Restart Claude Code so the session card loads.');
+  console.log('Installed. Review and trust the hooks in the native host, then start a fresh session.');
 }
 
 const args = parse(process.argv.slice(2));
-const command = ['sync', 'install', 'upkeep', 'doctor', 'release', 'setup', 'prove'].includes(args._[0])
-  ? args._.shift()
-  : 'setup';
+const command = args._.shift() || 'setup';
+if (!['sync', 'install', 'uninstall', 'upkeep', 'doctor', 'release', 'setup', 'prove'].includes(command)) fail(`unknown command: ${command}`);
 
 if (command === 'setup') await setup(args);
 else if (command === 'sync') { sync(args); report(); }
-else if (command === 'install') { install(); report(); }
-else if (command === 'upkeep') { upkeep(); if (args.install) install(); report(); if (args.check) check(); }
-else if (command === 'doctor') process.exit(doctor().failed ? 1 : 0);
+else if (command === 'install') { install(args); report(); }
+else if (command === 'uninstall') { install(args, true); report(); }
+else if (command === 'upkeep') {
+  const before = args.check ? new Map(sources(true).map((file) => [file, readFileSync(path.join(REPO, file), 'utf8')])) : null;
+  upkeep();
+  if (args.install) install(args);
+  report();
+  if (args.check) check(before);
+}
+else if (command === 'doctor') process.exit(doctor(args).failed ? 1 : 0);
 else if (command === 'release') release(args);
 else if (command === 'prove') prove();

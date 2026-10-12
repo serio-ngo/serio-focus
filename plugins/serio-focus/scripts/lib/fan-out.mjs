@@ -1,9 +1,15 @@
 import { closeSync, mkdirSync, openSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { waveCap, waveWindow } from './limits.mjs';
-import { bumpAll, rootOf, sessionOf } from './ledger.mjs';
-import { waveDir } from './runtime.mjs';
 import { Blocked } from './blocked.mjs';
+import { rootOf, sessionOf, waveDir } from './runtime.mjs';
+
+const positive = (raw, fallback) => {
+  const n = Math.floor(Number(raw));
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+};
+
+export const waveCap = () => positive(process.env.SERIO_MAX_PER_WAVE, 3);
+const waveWindow = () => positive(process.env.SERIO_WAVE_MS, 60000);
 
 function claimSlot(dir, bucket, cap) {
   try { mkdirSync(dir, { recursive: true }); } catch {
@@ -24,23 +30,8 @@ function claimSlot(dir, bucket, cap) {
   return cap + 1;
 }
 
-export function fanOutCap(payload, count = 1) {
+export function fanOutCap(payload) {
   const cap = waveCap();
-  const dir = waveDir(rootOf(payload), sessionOf(payload));
-  const bucket = Math.floor(Date.now() / waveWindow());
-  const claimed = [];
-
-  for (let n = 0; n < count; n += 1) {
-    const slot = claimSlot(dir, bucket, cap);
-    if (slot <= cap) { claimed.push(slot); continue; }
-
-    for (const held of claimed) {
-      try { rmSync(path.join(dir, `${bucket}-${held}`), { force: true }); } catch { }
-    }
-    bumpAll(rootOf(payload), sessionOf(payload), { blocked: 1, waves: 1, agentsCapped: count });
-    const waves = Array.from({ length: Math.ceil(count / cap) }, (_, n) => Math.min(cap, count - n * cap)).join('+');
-    throw new Blocked(count > cap
-      ? `FAN-OUT CAP: ${count} asked, ${cap} run. Next: run them as waves, // AGENTS: ${waves}\n`
-      : `FAN-OUT CAP: ${count > 1 ? `${count} asked` : `subagent ${slot}`} held. Next: wait one wave\n`);
-  }
+  const slot = claimSlot(waveDir(rootOf(payload), sessionOf(payload)), Math.floor(Date.now() / waveWindow()), cap);
+  if (slot > cap) throw new Blocked(`FAN-OUT CAP: subagent ${slot} held. Next: wait one wave`);
 }

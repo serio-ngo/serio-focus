@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.22.0 | 2026-10-12 | Agents architect, coder and reviewer with deliver and pr-loop skills; tester draft disabled; Codex role agents written by setup; guards cut to git lock, delete lock, fan-out cap and audit; read budget, web cap, receipt, quota note and rescue removed as native duplicates or unprovable; Git Bash temp deletes pass; one hooks file serves Claude and Codex; corpus scored in the suite and published for the README badges |
 | 1.20.1 | 2026-09-27 | Send the 80% usage note to each parallel session |
 | 1.20.0 | 2026-09-27 | Disable stall hold |
 | 1.19.1 | 2026-09-27 | limit note main-only after two hits; delegate nudges for reads, web and journal polls; per-call review routing; marketplace install via claude plugin |

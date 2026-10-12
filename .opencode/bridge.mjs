@@ -1,48 +1,22 @@
 import { append, entry } from '../plugins/serio-focus/scripts/audit.mjs';
 import { Blocked, judge } from '../plugins/serio-focus/scripts/guard.mjs';
-import { rootOf } from '../plugins/serio-focus/scripts/lib/ledger.mjs';
-import { report } from '../plugins/serio-focus/scripts/verify.mjs';
+import { rootOf } from '../plugins/serio-focus/scripts/lib/runtime.mjs';
 
-const TOOLS = { read: 'Read', edit: 'Edit', write: 'Write', bash: 'Bash', grep: 'Grep', glob: 'Glob', task: 'TaskCreate' };
-const ALIAS = { filePath: 'file_path', oldString: 'old_string', newString: 'new_string' };
+const NAMES = { bash: 'Bash', powershell: 'PowerShell', agent: 'Agent', task: 'Task', spawn_agent: 'spawn_agent' };
 
-function toPayload(tool, args = {}, sessionID = '', cwd = process.cwd()) {
-  const name = String(tool || '').toLowerCase();
-  const input = args && typeof args === 'object' ? { ...args } : {};
-  for (const [from, to] of Object.entries(ALIAS)) {
-    if (input[from] !== undefined && input[to] === undefined) input[to] = input[from];
-  }
-  if (name === 'task') delete input.model;
-  return {
-    hook_event_name: 'PreToolUse',
-    session_id: String(sessionID || 'unknown'),
-    cwd,
-    agent_type: 'main',
-    tool_name: TOOLS[name] || String(tool || ''),
-    tool_input: input,
+export function verdictFor(tool, args, sessionID, cwd = process.cwd()) {
+  const key = String(tool || '').toLowerCase();
+  const payload = {
+    hook_event_name: 'PreToolUse', session_id: String(sessionID || 'unknown'), cwd,
+    tool_name: NAMES[key] || String(tool || ''),
+    tool_input: args && typeof args === 'object' ? args : {},
   };
-}
-
-export function verdictFor(tool, args, sessionID, cwd) {
-  const payload = toPayload(tool, args, sessionID, cwd);
   try {
-    const rewrite = judge(payload);
-    if (rewrite && args && typeof args === 'object') {
-      for (const [key, value] of Object.entries(rewrite.updatedInput)) {
-        const camel = Object.keys(ALIAS).find((from) => ALIAS[from] === key);
-        if (camel && camel in args) args[camel] = value;
-        else args[key] = value;
-      }
-    }
+    judge(payload);
     return null;
   } catch (error) {
     if (!(error instanceof Blocked)) throw error;
-    const reason = error.message.trim();
-    append(rootOf(payload), entry(payload, reason));
-    return reason;
+    append(rootOf(payload), entry(payload, error.message));
+    return error.message;
   }
-}
-
-export function flush(sessionID, cwd = process.cwd()) {
-  report({ hook_event_name: 'Stop', session_id: String(sessionID || 'unknown'), cwd });
 }

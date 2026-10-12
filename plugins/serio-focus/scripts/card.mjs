@@ -1,36 +1,26 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { projectOf, rootOf, sessionOf, sweep, update } from './lib/ledger.mjs';
-import { LEAN } from './lib/dispatch.mjs';
-import { BIG_FILE_BYTES, MAX_PER_WAVE, SCOUT_BYTES, stallHold } from './lib/limits.mjs';
-import { NEAR } from './lib/quota.mjs';
-import { version } from './lib/runtime.mjs';
-import { compact } from './lib/stats.mjs';
-import { stall } from './lib/transcript.mjs';
-import { rescued } from './rescue.mjs';
+import { waveCap } from './lib/fan-out.mjs';
+import { rootOf, stateDir, version } from './lib/runtime.mjs';
 
-const FREEING = new Set(['compact', 'clear']);
-function forgetReads(payload) {
-  if (FREEING.has(String(payload.source || ''))) update(rootOf(payload), sessionOf(payload), (state) => { state.reads = {}; });
-}
+const STALE = [[/^\.wave-/, 864e5], [/^\.session-/, 30 * 864e5]];
 
-export function card(project) {
-  const saved = project ? rescued(project).length : 0;
-  const hold = stallHold();
-  return `Serio Focus ${version()} — session card
-CAPS  ${MAX_PER_WAVE} subagents per wave · every workflow agent() names a model · a subagent with no or a denied tier runs as sonnet · a subagent with no type runs as ${LEAN}, core tools only, name general-purpose for connectors · a workflow fanning out through a map or loop states // AGENTS: ${MAX_PER_WAVE} and pools the loop to it, or ${MAX_PER_WAVE}+1 for waves · reads over ${BIG_FILE_BYTES / 1024}KB trimmed or held, main reads over ${SCOUT_BYTES / 1024}KB and repeat web calls noted for a subagent${hold ? ` · dispatch and web held after ${compact(hold)} tok with no repo change` : ''} · git commit and push stay manual
- LIMIT a note to document all work at ${NEAR}% of a usage window, learned from the last two limit hits
-SHAPE the focus output style shapes every reply${saved ? `\nRESCUE ${saved} session(s) ended on an API error. Next: read .claude/rescue/` : ''}`;
+export const card = () => `Serio Focus ${version()}: commit, push, git wipes and unsafe recursive deletes are held for the owner; at most ${waveCap()} direct subagents start per wave.`;
+
+function sweep(dir) {
+  let names = [];
+  try { names = readdirSync(dir); } catch { return; }
+  for (const name of names) {
+    const age = (STALE.find(([rx]) => rx.test(name)) || [])[1];
+    try { if (age && Date.now() - statSync(path.join(dir, name)).mtimeMs > age) rmSync(path.join(dir, name), { recursive: true, force: true }); } catch { }
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let payload = {};
-  try { payload = JSON.parse(readFileSync(0, 'utf8')); } catch { }
-
-  forgetReads(payload);
-  stall(payload);
-  sweep(rootOf(payload));
-  process.stdout.write(`${card(projectOf(payload))}\n`);
-  process.exit(0);
+  try { payload = JSON.parse(readFileSync(0, 'utf8')) || {}; } catch { }
+  sweep(stateDir(rootOf(payload)));
+  process.stdout.write(`${card()}\n`);
 }

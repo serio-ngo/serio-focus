@@ -8,12 +8,10 @@ const FD_DUP = /[<>]&/;
 const HEREDOC = /^([^\n]*?)(?<!<)<<(?!<)-?[ \t]*(['"]?)\\?([\w.-]+)\2([^\n]*)\n(?:([\s\S]*?)\n)??[ \t]*\3[ \t]*$/gm;
 const RUNS_BODY = /\b(?:bash|sh|zsh|dash|ksh|pwsh|powershell|cmd|ssh|eval|source)\b/i;
 
-export const PIPE = /(?<!\|)\|(?!\|)/;
-
 export const bodiless = (command) => command.replace(HEREDOC, (hit, head, quote, word, tail, body = '') =>
   `${head}<<${word}${tail}\n${RUNS_BODY.test(head + tail) ? body.replace(/['"]/g, '') : `: ${body.replace(/[\s;&|'"`$]+/g, ' ')}`}`);
 
-function split(command, breakers, subshell) {
+export function segments(command) {
   const out = [];
   let buffer = '';
   let quote = null;
@@ -26,16 +24,13 @@ function split(command, breakers, subshell) {
     }
     if (char === '"' || char === "'") { quote = char; buffer += char; continue; }
     if (char === '&' && REDIRECT_AMP(command[i - 1], command[i + 1])) { buffer += char; continue; }
-    if (breakers.includes(char)) { out.push(buffer); buffer = ''; continue; }
-    if (subshell && char === '$' && command[i + 1] === '(') { out.push(buffer); buffer = ''; i += 1; continue; }
+    if (';\n&|`'.includes(char)) { out.push(buffer); buffer = ''; continue; }
+    if (char === '$' && command[i + 1] === '(') { out.push(buffer); buffer = ''; i += 1; continue; }
     buffer += char;
   }
   out.push(buffer);
   return out.map((part) => part.replace(/^\s*(?:\w+=\S+\s+)*/, '').trim()).filter(Boolean);
 }
-
-export const segments = (command) => split(command, ';\n&|`', true);
-export const pipelines = (command) => split(command, ';\n&', false);
 
 export function unwrap(segment) {
   let out = String(segment).trim();
