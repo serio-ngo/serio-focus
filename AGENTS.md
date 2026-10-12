@@ -32,4 +32,3 @@ Layout, commands, releases: [CONTRIBUTING.md](CONTRIBUTING.md).
 - Block permission bypasses, unsafe delete exceptions, missing failure proof and unsupported host claims.
 - Preserve explicit model/role choices and complete instruction access.
 - Verify the current PR head; retain unresolved findings and failed checks.
-- Use [the workflow](docs/WORKFLOW.md) for substantial delivery; keep TDD registration disabled.

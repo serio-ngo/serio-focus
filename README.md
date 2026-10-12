@@ -57,10 +57,7 @@ Shell matching is supplementary, not a sandbox or complete security boundary. Re
 permissions. Unsupported events are omitted from the generated Codex manifest. Cloud orchestration
 and OpenCode subagent parity are not covered by local hook proof.
 
-## Workflow and proof
-
-Use the [development workflow](docs/WORKFLOW.md): native planning, one writer, an on-demand reviewer,
-existing project checks, then PR review at the current head. The TDD role remains a disabled draft.
+## Proof
 
 ```powershell
 npm test
@@ -73,6 +70,6 @@ The suite and corpus prove their named inputs. Native sessions prove installatio
 PR review settings still need delivery evidence at the reviewed revision. Never infer universal reliability
 or token savings from corpus scores.
 
-[Session plan](docs/sessions/session-02-minimal-workflow.md) · [Manifest](docs/MANIFEST.md) ·
+[Manifest](docs/MANIFEST.md) ·
 [Benchmark method](docs/BENCHMARK.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) ·
 [Apache-2.0](LICENSE)
