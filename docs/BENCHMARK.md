@@ -21,7 +21,8 @@
 | Limit | Detail |
 |---|---|
 | Ordinary tasks | cost more tokens, not fewer — the guard buys a ceiling on the tail, not an average saving |
-| Cowork | hooks do not fire there |
+| Codex | Local native hooks only; review trust and callback evidence per host. No Claude transcript quota inference. |
+| Cloud orchestration | Local plugin installation does not establish hook execution there. |
 | OpenCode | its subagents bypass the guard |
 | Known bypasses | four, listed open in [Track A](#track-a) |
 
@@ -40,12 +41,12 @@
 | trimmed | `trimmed` | bytes cut from a read over 24KB |
 | read by subagents | `offload` | bytes read under a non-`main` actor; shown, never counted as kept out |
 | admitted | `read` | bytes let into the main thread |
-| dispatched scout / runner | `scouts`, `runners` | counted only |
-| plugin footprint | — | session card + skill and agent descriptions, chars / 4, always in context |
+| direct-agent calls | `agents` | counted only; native roles and model choices stay unchanged |
+| configured plugin text | — | session card, chars / 4 estimate; no skills, agent descriptions or forced style body |
 
 | Share rule | Why |
 |---|---|
-| `net` is kept-out tokens minus footprint | the window cost in tokens; negative when the window did no whole-file reads |
+| `net` is kept-out byte estimates minus configured text | an arithmetic estimate; not measured total usage or billing savings |
 | a retried refusal credits once | first refusal stamps `actor + path + mtime:size + rule`; repeats skip the byte credit |
 | the follow-up read lands in the denominator | a slice read after a cap counts as `admitted` |
 | session receipt | `kept out` as a share of the main thread's context: last request's input + cache write + cache read tokens |
@@ -165,12 +166,12 @@ npm run benchmark:compare
 | Guard | Caught | Wrongly blocked | F1 |
 |---|---|---|---|
 | no guard, permission prompts only | 0% | 0% | 0.00 |
-| Claude Code permissions.deny globs | 9% | 4% | 0.15 |
-| a pattern-list PreToolUse hook | 26% | 20% | 0.35 |
-| block every tool call | 100% | 100% | 0.65 |
+| Claude Code permissions.deny globs | 13% | 3% | 0.21 |
+| a pattern-list PreToolUse hook | 50% | 9% | 0.59 |
+| block every tool call | 100% | 100% | 0.50 |
 | **serio-focus** | 100% | 0% | 1.00 |
 
-48 cases, 2026-09-27; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
+48 cases, 2026-10-12; the comparators are mechanism baselines in `tooling/benchmark/baselines.mjs`, not vendor code.
 
 26 of 48 scored cases are `spec` (rule-derived), 8 `probe`, 14 `regression`; recall here is a regression check, not a detection rate.
 <!-- /guard-scores -->
@@ -183,20 +184,20 @@ npm run benchmark:compare
 - Multiple roots aggregate: `node tooling/benchmark/benchmark.mjs <repo…> [--write]`; combined totals print, outputs land in the first root.
 
 <!-- eval-results -->
-Run 2026-09-27 · 48 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
+Run 2026-10-12 · 48 cases · guard `plugins/serio-focus/scripts/guard.mjs` · ask = held.
 
 | Metric | Value |
 |---|---|
-| Recall | 23/23 (100%) |
-| Precision | 23/23 (100%) |
-| False-positive rate | 0/25 (0%) |
+| Recall | 16/16 (100%) |
+| Precision | 16/16 (100%) |
+| False-positive rate | 0/32 (0%) |
 | F1 | 1.00 |
-| Recall 95% CI (Wilson) | 85–100% — n=23 |
-| FP-rate 95% CI (Wilson) | 0–14% — n=25 |
-| Recall by origin | spec 14/14 (100%) · probe 6/6 (100%) · regression 3/3 (100%) |
+| Recall 95% CI (Wilson) | 80–100% — n=16 |
+| FP-rate 95% CI (Wilson) | 0–11% — n=32 |
+| Recall by origin | spec 7/7 (100%) · probe 6/6 (100%) · regression 3/3 (100%) |
 | Known bypasses caught | n/a |
 
-Confusion: TP 23 · FN 0 · FP 0 · TN 25. Bypasses scored apart.
+Confusion: TP 16 · FN 0 · FP 0 · TN 32. Bypasses scored apart.
 
 26 of 48 scored cases are `spec` (rule-derived), 8 `probe`, 14 `regression`; recall here is a regression check, not a detection rate.
 <!-- /eval-results -->

@@ -81,8 +81,6 @@ function wrap(line, max) {
   return out;
 }
 
-// every demo verdict is this guard's own deny reason or rewrite reason, captured live —
-// except the last row, which quotes the focus output style verbatim
 function probe() {
   const root = mkdtempSync(path.join(tmpdir(), 'serio-figure-'));
   const big = path.join(root, 'src', 'big.js');
@@ -107,18 +105,13 @@ function probe() {
     return { blocked: false, verdict: reason };
   };
 
+  for (let n = 0; n < 3; n += 1) fire('Agent', { prompt: 'bounded task' });
   const steps = [
-    [`Workflow · ${DEMO_AGENTS} agents`, 'Workflow', { script: `// AGENTS: ${DEMO_AGENTS}\nawait parallel(mods.map((m) => () => agent(m, { model: 'haiku' })))` }],
+    ['Agent · fourth direct call', 'Agent', { prompt: 'fourth task' }],
     ['Read src/big.js · 35 KB', 'Read', { file_path: big }],
-    ['Bash · `git commit -m "wip"`', 'Bash', { command: 'git commit -m "wip"' }],
+    ['Bash · git commit', 'Bash', { command: 'git commit -m wip' }],
   ].map(([label, tool, input]) => ({ label, ...fire(tool, input) }));
-  const answer = [
-    'Audit docs — fix 3 links',
-    '- fixed 3 anchors · docs/BENCHMARK.md:12',
-    '- held git commit to final state · listed exact command',
-    'Next: run npm run upkeep',
-    'Step 2 of 5',
-  ];
+  const answer = [];
 
   const receipt = sessionLine(load(root, 'demo'));
   rmSync(root, { recursive: true, force: true });
@@ -139,7 +132,6 @@ function demoSvg({ steps, answer, receipt } = probe()) {
     wrap(`${step.blocked ? '⨯' : '↻'}  ${step.verdict}`, WRAP)
       .forEach((line, i) => rows.push({ text: i ? `   ${line}` : line, fill: hue, wash: i === 0 ? wash : null, bar: i === 0 }));
   }
-  rows.push({ text: '⏺  Answer · focus style', fill: INK, weight: 600 });
   answer.forEach((line, i) => rows.push({
     text: line.startsWith('-') ? `   ${line}` : line,
     fill: /^Next:/.test(line) ? HUE.with : INK,

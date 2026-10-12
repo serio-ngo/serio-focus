@@ -5,12 +5,12 @@
     "name": "Serio NGO",
     "url": "https://serio.org.pl"
   },
-  "description": "Open-source deterministic guardrails for Claude Code. Hooks and scripts only — no data, no telemetry, no dependencies.",
+  "description": "Optional deterministic guards for native coding hosts. No runtime dependencies.",
   "plugins": [
     {
       "name": "serio-focus",
       "source": "./plugins/serio-focus",
-      "description": "Budget caps, a git and delete lock, an audit trail and a focus output style for Claude Code. Subagent floods and oversized reads are capped; commit, push and recursive deletes stop before they run. No model call, no API key, no telemetry, no dependencies.",
+      "description": "Optional shell, read and direct-agent guards. No forced style, model routing, API key or model call.",
       "category": "workflow",
       "keywords": ["adhd", "focus", "guardrails", "human-in-the-loop", "audit"]
     }

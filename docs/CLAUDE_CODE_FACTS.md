@@ -86,12 +86,15 @@
 | `autoUpdate` | settings `extraKnownMarketplaces.<name>.autoUpdate` first, then `known_marketplaces.json`; third-party default off; `claude plugin marketplace add` rewrites the settings entry without it (observed 2026-09-26) |
 | Fresh machine | a marketplace declared only in settings is unknown to `claude plugin` until `claude plugin marketplace add` (observed 2026-09-26) |
 | Skill | `<plugin-root>/skills/<name>/SKILL.md` → `/<plugin>:<skill>` |
-| Skill frontmatter | `name` `description` `license` `compatibility` `metadata` `allowed-tools` — **nothing else**, hard upload error |
+| Portable skill frontmatter | `name` `description` `license` `compatibility` `metadata` `allowed-tools`; host extensions are separate |
+| Claude skill extensions | Native Claude supports invocation controls, `context`, `agent` and other fields; validate against the current host schema, not only the portable upload schema |
+| Local marketplace version | Native `plugin list --json` reports `readFromFolder` and `folderVersion` when a local source supplies current content; cached registry metadata may retain an older version (observed 2026-10-12) |
 | Skill context | description always in; body on invocation only |
 | Subagent | `<plugin-root>/agents/<name>.md` → `<plugin>:<agent>` |
 | Plugin subagents ignore | `hooks`, `mcpServers`, `permissionMode` — block with `deny: ["Agent(name)"]` |
 
 - Source: <https://code.claude.com/docs/en/plugins/loading.md>, retrieved 2026-09-26; gate and settings `env` filter read in the 2.1.281 binary
+- Skill extensions: <https://code.claude.com/docs/en/skills>; portable fields: <https://agentskills.io/specification>; retrieved 2026-10-12
 
 ## Auth
 

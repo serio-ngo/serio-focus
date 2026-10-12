@@ -2,11 +2,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { projectOf, rootOf, sessionOf, sweep, update } from './lib/ledger.mjs';
-import { LEAN } from './lib/dispatch.mjs';
-import { BIG_FILE_BYTES, MAX_PER_WAVE, SCOUT_BYTES, stallHold } from './lib/limits.mjs';
+import { BIG_FILE_BYTES, waveCap } from './lib/limits.mjs';
 import { NEAR } from './lib/quota.mjs';
 import { version } from './lib/runtime.mjs';
-import { compact } from './lib/stats.mjs';
 import { stall } from './lib/transcript.mjs';
 import { rescued } from './rescue.mjs';
 
@@ -17,11 +15,9 @@ function forgetReads(payload) {
 
 export function card(project) {
   const saved = project ? rescued(project).length : 0;
-  const hold = stallHold();
   return `Serio Focus ${version()} — session card
-CAPS  ${MAX_PER_WAVE} subagents per wave · every workflow agent() names a model · a subagent with no or a denied tier runs as sonnet · a subagent with no type runs as ${LEAN}, core tools only, name general-purpose for connectors · a workflow fanning out through a map or loop states // AGENTS: ${MAX_PER_WAVE} and pools the loop to it, or ${MAX_PER_WAVE}+1 for waves · reads over ${BIG_FILE_BYTES / 1024}KB trimmed or held, main reads over ${SCOUT_BYTES / 1024}KB and repeat web calls noted for a subagent${hold ? ` · dispatch and web held after ${compact(hold)} tok with no repo change` : ''} · git commit and push stay manual
- LIMIT a note to document all work at ${NEAR}% of a usage window, learned from the last two limit hits
-SHAPE the focus output style shapes every reply${saved ? `\nRESCUE ${saved} session(s) ended on an API error. Next: read .claude/rescue/` : ''}`;
+CAPS ${waveCap()} direct agent calls per wave; ${BIG_FILE_BYTES / 1024}KB read budget; instruction files exempt; commit, push and unsafe deletes held.
+${process.env.PLUGIN_ROOT ? 'SCOPE local native hooks; Claude quota inference and API-failure recovery are not supported here.' : `LIMIT usage note at ${NEAR}% after two observed limit hits; repository rules and native roles govern work.`}${saved && !process.env.PLUGIN_ROOT ? ` RESCUE ${saved} session(s) ended on an API error. Next: read .claude/rescue/` : ''}`;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

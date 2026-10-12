@@ -4,19 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { Blocked } from './lib/blocked.mjs';
 import { append, entry } from './audit.mjs';
 import { bump, rootOf } from './lib/ledger.mjs';
-import { LEAN, agentsRequested, bookRedirect, costBudget, dispatchBudget, reroute, slim, withScript } from './lib/dispatch.mjs';
 import { fanOutCap } from './lib/fan-out.mjs';
 import { judgeShell } from './lib/shell-danger.mjs';
 import { kb, polled, readBudget, shellReadBudget, webBudget } from './lib/read-budget.mjs';
-import { stallHold } from './lib/limits.mjs';
 import { nearLimit } from './lib/quota.mjs';
-import { compact } from './lib/stats.mjs';
-import { stall } from './lib/transcript.mjs';
 
-export const SPAWN_TOOLS = ['Agent', 'Task', 'Workflow'];
+export const SPAWN_TOOLS = ['Agent', 'Task', 'spawn_agent'];
 const WEB_TOOLS = ['WebSearch', 'WebFetch'];
 export { Blocked };
-
 let current = {};
 
 const deny = (reason, label = 'BLOCKED') => {
@@ -24,70 +19,26 @@ const deny = (reason, label = 'BLOCKED') => {
   throw new Blocked(`${label}: ${reason}\n`);
 };
 
-function judgeRead(payload, input) {
-  const trim = readBudget(payload, input, 'read');
-  return trim ? {
-    updatedInput: { ...input, offset: 0, limit: trim.lines },
-    reason: `READ CAP: ${trim.name} ${kb(trim.size)}. Kept first ${trim.lines} lines`,
-  } : null;
-}
-
-function judgeSpawn(payload, raw, tool) {
-  const input = withScript(raw, tool, payload.cwd);
-  const routed = dispatchBudget(input, payload.cwd, tool);
-  const moved = routed && reroute(raw, input, tool, routed);
-  const leaned = slim(moved || raw, input, tool);
-  const updatedInput = leaned || moved;
-  const verdicts = [!moved && routed, costBudget(input, tool)].filter(Boolean);
-  if (routed?.tier) bookRedirect(payload, routed.tier);
-  if (verdicts.length) deny(verdicts.map((v) => v.reason).join('; '), 'DISPATCH BUDGET');
-  const { wave, total } = agentsRequested(input, tool);
-  fanOutCap(payload, wave);
-
-  bump(payload, 'agents', total);
-  const kind = String(input.subagent_type || '');
-  if (/scout/i.test(kind)) bump(payload, 'scouts', total);
-  else if (/runner/i.test(kind)) bump(payload, 'runners', total);
-  if (!updatedInput) return null;
-  const reason = `DISPATCH BUDGET: ${[moved && `${routed.tier ? `${routed.tier} is denied for subagents` : 'no model named'}, routed to ${routed.alt}`,
-    leaned && `runs as ${LEAN} (general-purpose for connectors)`].filter(Boolean).join('; ')}`;
-  append(rootOf(payload), entry(payload, reason));
-  return { updatedInput, reason };
-}
-
-function judgeShellCall(payload, input) {
-  if ('command' in input && typeof input.command !== 'string') {
-    deny('blocked a shell call whose command was not a string', 'GIT WRITE');
-  }
-  const command = typeof input.command === 'string' ? input.command : '';
-  const verdict = judgeShell(command);
-  if (verdict) deny(verdict, /recursive delete|git wipe/.test(verdict) ? 'DELETE LOCK' : 'GIT WRITE');
-
-  return shellReadBudget(payload, input);
-}
-
-function judgeStall(payload, tool) {
-  const main = !payload.agent_id;
-  const hold = stallHold();
-  if (!hold || (main && !SPAWN_TOOLS.includes(tool) && !WEB_TOOLS.includes(tool))) return;
-  const tokens = stall(payload);
-  if (tokens >= hold) {
-    deny(`${compact(tokens)} tok since the last repo change. Next: ${main
-      ? 'write the deliverable into the repo; dispatch and web reopen when the tree changes'
-      : 'return your findings now'}`, 'STALL HOLD');
-  }
-}
-
 export function judge(raw = {}) {
   const payload = raw && typeof raw === 'object' ? raw : {};
   const tool = String(payload.tool_name || '');
   const input = payload.tool_input || {};
   current = payload;
-  judgeStall(payload, tool);
-
-  if (tool === 'Read') return judgeRead(payload, input);
-  if (SPAWN_TOOLS.includes(tool)) return judgeSpawn(payload, input, tool);
-  if (tool === 'Bash' || tool === 'PowerShell') return judgeShellCall(payload, input);
+  if (tool === 'Read') {
+    const trim = readBudget(payload, input, true);
+    return trim ? { updatedInput: { ...input, offset: 1, limit: trim.lines },
+      reason: `READ CAP: ${trim.name} ${kb(trim.size)}. Kept first ${trim.lines} lines` } : null;
+  }
+  if (SPAWN_TOOLS.includes(tool)) {
+    fanOutCap(payload);
+    bump(payload, 'agents');
+  }
+  if (tool === 'Bash' || tool === 'PowerShell') {
+    if ('command' in input && typeof input.command !== 'string') deny('shell command must be a string', 'GIT WRITE');
+    const verdict = judgeShell(input.command || '', 0, payload.cwd);
+    if (verdict) deny(verdict, /recursive delete|git wipe/.test(verdict) ? 'DELETE LOCK' : 'GIT WRITE');
+    return shellReadBudget(payload, input);
+  }
   if (WEB_TOOLS.includes(tool)) return webBudget(payload, tool);
   return null;
 }
@@ -95,51 +46,32 @@ export function judge(raw = {}) {
 const refuse = (error) => {
   if (!(error instanceof Blocked)) throw error;
   const reason = error.message.trim();
-  const values = entry(current, reason);
-  if (values) append(rootOf(current), values);
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'deny',
-      permissionDecisionReason: reason,
-      additionalContext: reason,
-    },
-  }));
-  process.exit(0);
+  append(rootOf(current), entry(current, reason));
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: {
+    hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason, additionalContext: reason,
+  } }));
 };
 
 function main() {
-  let raw = '';
-  try { raw = readFileSync(0, 'utf8'); } catch { raw = ''; }
-
+  const raw = readFileSync(0, 'utf8');
   let payload;
-  try {
-    payload = JSON.parse(raw);
-  } catch {
-    const spawnOrShell = new RegExp(`"tool_name"\\s*:\\s*"(?:Bash|PowerShell|${SPAWN_TOOLS.join('|')})"`);
-    if (spawnOrShell.test(raw)) {
-      current = {};
-      try { deny('blocked a subagent or shell call whose payload could not be parsed'); } catch (error) { refuse(error); }
+  try { payload = JSON.parse(raw); } catch {
+    if (/"tool_name"\s*:\s*"(?:Bash|PowerShell|Agent|Task|spawn_agent)"/.test(raw)) {
+      try { deny('tool payload could not be parsed'); } catch (error) { refuse(error); }
     }
-    process.exit(0);
+    return;
   }
-
-  let rewrite = null;
-  try { rewrite = judge(payload); } catch (error) { refuse(error); }
-  const note = nearLimit(payload) || polled(payload);
+  let rewrite;
+  try { rewrite = judge(payload); } catch (error) { refuse(error); return; }
+  const note = (!process.env.PLUGIN_ROOT && nearLimit(payload)) || polled(payload);
   if (note) append(rootOf(payload), entry(payload, note));
-
-  if (rewrite || note) {
-    process.stdout.write(JSON.stringify({
-      ...(note && { systemMessage: note }),
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        ...(rewrite?.updatedInput && { permissionDecision: 'allow', permissionDecisionReason: rewrite.reason, updatedInput: rewrite.updatedInput }),
-        additionalContext: [rewrite?.reason, note].filter(Boolean).join('\n'),
-      },
-    }));
-  }
-  process.exit(0);
+  if (rewrite || note) process.stdout.write(JSON.stringify({
+    ...(note && { systemMessage: note }),
+    hookSpecificOutput: { hookEventName: 'PreToolUse',
+      ...(rewrite?.updatedInput && { permissionDecision: 'allow', permissionDecisionReason: rewrite.reason, updatedInput: rewrite.updatedInput }),
+      additionalContext: [rewrite?.reason, note].filter(Boolean).join('\n'),
+    },
+  }));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

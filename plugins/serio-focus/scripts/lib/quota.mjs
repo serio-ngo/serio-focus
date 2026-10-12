@@ -77,7 +77,7 @@ export function nearLimit(payload = {}, now = Date.now()) {
       const key = `${payload.session_id}|${type}`;
       if (pct < NEAR || state.caps[type].length < 2 || state.noted[key] === start) continue;
       state.noted[key] = start;
-      return `LIMIT NEAR: ${pct}% of the ${type} usage window spent, cap ${compact(cap)} tok from the last limit hits. Next: document all work now as the environment and project instructions require`;
+      return `LIMIT NEAR: ${pct}% of the ${type} usage window spent, cap ${compact(cap)} tok from the last limit hits. Next: finish the current step and list the open work in the reply; write a file only where the project rules ask for one`;
     }
     return '';
   });

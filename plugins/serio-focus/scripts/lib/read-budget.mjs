@@ -1,12 +1,13 @@
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { BASH_OUTPUT_CAP, BIG_FILE_BYTES, SCOUT_BYTES, delegateOn, webCap } from './limits.mjs';
+import { BASH_OUTPUT_CAP, BIG_FILE_BYTES, webCap } from './limits.mjs';
 import { rootOf, sessionOf, update } from './ledger.mjs';
 import { Blocked } from './blocked.mjs';
 import { shellReads } from './shell-reads.mjs';
 import { failed } from './transcript.mjs';
 
 const MEDIA = /\.(?:png|jpe?g|gif|webp|bmp|ico|pdf)$/i;
+const INSTRUCTIONS = /(?:^|[/\\])(?:AGENTS|CLAUDE|SKILL)\.md$|(?:^|[/\\])skills[/\\]/i;
 const SAMPLE_BYTES = 64 * 1024;
 const SAMPLE_LINES = 200;
 
@@ -21,7 +22,7 @@ export function webBudget(payload, tool) {
     state.reads[`${actor}|web`] = Number(state.reads[`${actor}|web`] || 0) + 1;
     return state.reads[`${actor}|web`];
   });
-  if (actor === 'main') return used > 1 && delegateOn() ? { reason: `DELEGATE: ${tool} call ${used} from main. Next: send web research to a serio-focus:worker subagent` } : null;
+  if (actor === 'main') return null;
   if (used > webCap()) throw new Blocked(`WEB BUDGET: ${tool} call ${used} is over the ${webCap()}-call subagent cap. Next: return what you have\n`);
   return null;
 }
@@ -71,7 +72,7 @@ function bookSlice(state, payload, file, spec, { shell = false } = {}) {
 
 function judgeRead(state, payload, input, rewritable) {
   const file = String(input.file_path || '');
-  if (!file || MEDIA.test(file)) return null;
+  if (!file || MEDIA.test(file) || INSTRUCTIONS.test(file)) return null;
   if (input.offset !== undefined || input.limit !== undefined || input.pages !== undefined) {
     bookSlice(state, payload, file, {
       from: Math.max(0, Number(input.offset || 0) - 1),
@@ -96,7 +97,7 @@ function judgeRead(state, payload, input, rewritable) {
       state.saved[action] += 1;
       state.saved[bucket] += credit;
     }
-    throw new Blocked(`READ BUDGET: ${message}${main && delegateOn() ? ' — read the lines you need with offset and limit, or delegate the read to a scout subagent' : ''}\n`);
+    throw new Blocked(`READ BUDGET: ${message} — use offset and limit for the needed lines\n`);
   };
 
   const seen = String(state.reads[key] ?? '');
@@ -158,8 +159,6 @@ export function shellReadBudget(payload, input) {
       }
       throw error;
     }
-    const read = state.saved.read - before.read;
-    return actorOf(payload) === 'main' && read > SCOUT_BYTES && delegateOn() && !reads.some((r) => r.piped)
-      ? { reason: `DELEGATE: this call puts ${kb(read)} of file reads into main context for every later turn. Next: send exploration reads to serio-focus:scout; read here only what you edit` } : null;
+    return null;
   });
 }

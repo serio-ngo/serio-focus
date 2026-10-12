@@ -9,8 +9,8 @@
 
 1. Each fact has one home. Do not duplicate facts between files.
 2. Never send, publish, pay or submit.
-3. Use the cheapest sufficient actor: script, then haiku, sonnet, opus.
-4. Write in tables and short imperative sentences. Partial completion is acceptable; silent failure is not.
+3. Use deterministic scripts first. Let the host and user select models and native roles.
+4. Write in tables and short imperative sentences. Continue until the requested result is verified or the user explicitly authorizes stopping. Use interactivity for blockers and necessary questions; continue independent work while waiting.
 5. No comments in code. No runtime dependencies. The fewest lines and branches that pass the suite.
 6. Nothing model-, price- or plan-specific in shipped files.
 7. Max 300 lines per file in `plugins/`. Must-ship helpers live in `plugins/serio-focus/scripts/lib/`. Analysis-only code lives in `tooling/`.
@@ -25,3 +25,11 @@
 > Keep names self-explanatory; one short comment per section max.
 
 Layout, commands, releases: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Code Review Rules
+
+- Trace changed guards through their callers and native host payloads.
+- Block permission bypasses, unsafe delete exceptions, missing failure proof and unsupported host claims.
+- Preserve explicit model/role choices and complete instruction access.
+- Verify the current PR head; retain unresolved findings and failed checks.
+- Use [the workflow](docs/WORKFLOW.md) for substantial delivery; keep TDD registration disabled.

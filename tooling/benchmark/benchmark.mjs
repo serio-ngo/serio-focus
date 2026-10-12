@@ -64,6 +64,8 @@ const ci = ([lo, hi]) => `${lo}–${hi}%`;
 
 function score(cmd, cases) {
   const probe = mkdtempSync(path.join(tmpdir(), 'serio-eval-'));
+  if (spawnSync('git', ['init', '-q', probe]).status !== 0) throw new Error('cannot initialize corpus fixture');
+  writeFileSync(path.join(probe, '.gitignore'), 'node_modules/\n');
   const env = {
     ...process.env,
     SERIO_OS_DIR: probe,
@@ -73,7 +75,7 @@ function score(cmd, cases) {
     if (run.status === 2) return true;
     try {
       const out = JSON.parse(run.stdout || '').hookSpecificOutput;
-      return ['ask', 'deny'].includes(out?.permissionDecision) || (Boolean(out?.updatedInput) && !/^DISPATCH BUDGET: runs as /.test(out.permissionDecisionReason));
+      return ['ask', 'deny'].includes(out?.permissionDecision) || Boolean(out?.updatedInput);
     }
     catch { return false; }
   };
@@ -249,7 +251,6 @@ const REPLAY_RULES = [
   [/is unchanged and already in context/, 're-read dedup'],
   [/whole-file limit/, 'whole-file cap'],
   [/FAN-OUT CAP/, 'fan-out cap'],
-  [/DISPATCH BUDGET/, 'dispatch budget'],
   [/stays manual/, 'git and delete lock'],
 ];
 
@@ -455,14 +456,13 @@ if (flags.replay) {
 
 console.log('\n  guard actions');
 rule('re-read dedup', t.rereads, 'a byte-identical file already in context');
-rule('deferred to slice or scout', t.slices, 'over the 24KB whole-file cap');
+rule('deferred to slice', t.slices, 'over the 24KB whole-file cap');
 rule('trimmed reads', t.rewrites, 'first 24KB admitted, rest kept out');
-rule('subagent dispatch', t.agents, 'reading moved off the main thread');
+rule('direct-agent calls', t.agents, 'counted; native choices preserved');
 rule('scout used', t.scouts, 'a lookup answered off-thread');
 rule('runner used', t.runners, 'a verdict back, never the log');
-rule('redirected to a cheaper tier', t.redirects, 'dispatch budget');
 rule('capped waves', t.waves, 'fan-out cap');
-rule('blocked', t.blocked, 'git and delete lock, dispatch budget, fan-out cap');
+rule('blocked', t.blocked, 'git and delete lock, fan-out cap');
 console.log();
 
 const OPEN = '<!-- serio-stats -->';

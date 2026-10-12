@@ -1,0 +1,47 @@
+{
+  "name": "serio-focus",
+  "version": "1.21.0",
+  "description": "Optional deterministic shell, read and direct-agent guards. Native roles and repository instructions remain in control. No model calls or runtime dependencies.",
+  "hooks": {
+    "hooks": {
+      "SessionStart": [
+        {
+          "matcher": "startup|resume|clear|compact|fork",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/card.mjs\"",
+              "timeout": 10,
+              "statusMessage": "Session card"
+            }
+          ]
+        }
+      ],
+      "PreToolUse": [
+        {
+          "matcher": "^(Read|Bash|PowerShell|Task|Agent|spawn_agent|WebSearch|WebFetch)$",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs\"",
+              "timeout": 10,
+              "statusMessage": "Optional read, agent and shell guards"
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs\"",
+              "timeout": 15,
+              "statusMessage": "Session receipt"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

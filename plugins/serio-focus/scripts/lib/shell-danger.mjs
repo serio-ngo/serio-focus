@@ -1,5 +1,9 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { gitWriteAllowed } from './limits.mjs';
-import { bodiless, segments, strip, unwrap } from './shell-parse.mjs';
+import { bodiless, segments, strip, tokens, unwrap } from './shell-parse.mjs';
 
 const GIT = String.raw`^git\b(?:\s+(?:-[Cc]\s+\S+|--\S+(?:[=\s]\S+)?))*\s+`;
 const git = (tail) => new RegExp(GIT + tail, 'i');
@@ -20,28 +24,41 @@ const REMOVE_ITEM_RECURSE = /^(?:Remove-Item\b[^\n]*-(?:Recurse|R)(?:\b|$)|(?:ri
 const DISPOSABLE = /(?:^|[/\\]|\$\{?|\$env:|%)(?:node_modules|dist(?:-[\w.-]+)?|build|out|coverage|target|vendor|tmp|temp|tmpdir|scratchpad|\.next|\.nuxt|\.turbo|\.cache|\.wrangler|\.venv|\.pytest_cache|__pycache__)(?:[/\\}%]|$)|\.(?:log|tmp|pyc|o|class|tsbuildinfo)$|GetTempPath\(\)|^\$\(mktemp\b/i;
 const ABSOLUTE = /^(?:[/\\~$%]|[A-Za-z]:)/;
 const CD = /^(?:cd|pushd|Set-Location)\s+(\S.*)$/i;
-const ASSIGNED = /(?:^|[;\n]\s*)(?:\$([A-Za-z_]\w*)\s*=\s*([^;\n]+)|(?:export\s+)?([A-Za-z_]\w*)=("[^"]*"|'[^']*'|\$\(mktemp\b[^()]*\)|[^\s;&|]*)(?=\s*(?:[;&|\n]|$)))|\$\{?([A-Za-z_]\w*)\}?/g;
-const REBOUND = /\b(?:for|foreach|read|select)\s+(?:-\w+\s+)*\(?\$?([A-Za-z_]\w*)/gi;
+const inside = (root, file) => {
+  const relative = path.relative(root, file);
+  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+};
 
-function expand(command) {
-  const vars = {};
-  const rebound = new Set([...command.matchAll(REBOUND)].map((hit) => hit[1]));
-  return command.replace(ASSIGNED, (hit, ps, psValue, name, value, ref, at) => {
-    if (ps || name) { vars[ps || name] = { value: strip(String(psValue ?? value).trim()), whole: Boolean(ps) }; return hit; }
-    const known = rebound.has(ref) ? undefined : vars[ref];
-    if (known === undefined) return hit;
-    const whole = known.whole || command.slice(0, at).split('"').length % 2 === 0;
-    return whole && DISPOSABLE.test(known.value) ? known.value.replace(/\s+/g, '') : known.value;
-  });
+function physical(file) {
+  let ancestor = file;
+  while (!existsSync(ancestor) && path.dirname(ancestor) !== ancestor) ancestor = path.dirname(ancestor);
+  try { return path.resolve(realpathSync(ancestor), path.relative(ancestor, file)); } catch { return null; }
 }
 
-function onlyDisposable(segment, dir) {
-  const operands = segment.split(/\s+/).slice(1)
+function safeTarget(token, cwd) {
+  if (/[\$%~*?`]/.test(token) || token.includes('..')) return false;
+  const target = path.resolve(cwd, token);
+  const real = physical(target);
+  const root = physical(cwd);
+  const temp = physical(tmpdir());
+  if (!real || !root || /(?:^|[/\\])\.git(?:[/\\]|$)/.test(target)) return false;
+  if (temp && inside(tmpdir(), target) && inside(temp, real) && !inside(root, target)) return true;
+  if (!inside(root, target) || !inside(root, real)) return false;
+  const relative = path.relative(root, target);
+  const tracked = spawnSync('git', ['-C', cwd, 'ls-files', '-z', '--', relative], { encoding: 'utf8' });
+  if (tracked.status !== 0 || tracked.stdout) return false;
+  const scratch = process.env.SERIO_SCRATCH_DIR && path.resolve(cwd, process.env.SERIO_SCRATCH_DIR);
+  if (scratch && inside(root, scratch) && (target === scratch || inside(scratch, target)) && (real === physical(scratch) || inside(physical(scratch), real))) return true;
+  return DISPOSABLE.test(token) && spawnSync('git', ['-C', cwd, 'check-ignore', '-q', '--', `${relative}/`]).status === 0;
+}
+
+function onlyDisposable(segment, dir, cwd) {
+  const operands = tokens(segment).slice(1)
     .filter((token) => !/^-|^\/[A-Za-z]$|^\d+$|^\d*[<>]/.test(token))
     .map((token) => token.replace(/^['"]|['"]$/g, ''))
     .filter(Boolean)
     .map((token) => (dir && !ABSOLUTE.test(token) ? `${dir}/${token}` : token));
-  return operands.length > 0 && operands.every((token) => !token.includes('..') && DISPOSABLE.test(token));
+  return operands.length > 0 && operands.every((token) => safeTarget(token, cwd));
 }
 
 const NO_OP_FLAG = /(?:^|\s)(?:--help|--version|--dry-run|--dryrun|-WhatIf)(?:[=\s]|$)/i;
@@ -54,25 +71,24 @@ function innerCommand(segment) {
   return (SHELL_INNER.exec(segment) || SHELL_INNER_BARE.exec(segment) || [])[2];
 }
 
-export function judgeShell(command, depth = 0) {
-  if (gitWriteAllowed()) return null;
+export function judgeShell(command, depth = 0, cwd = process.cwd()) {
   let dir = '';
-  for (const segment of segments(expand(bodiless(command))).map(unwrap)) {
+  for (const segment of segments(bodiless(command)).map(unwrap)) {
     const cd = strip((CD.exec(segment) || [])[1] || '');
     if (cd) dir = ABSOLUTE.test(cd) || !dir ? cd : `${dir}/${cd}`;
-    if (NO_OP_FLAG.test(segment.replace(/'[^']*'|"[^"]*"/g, ' '))) continue;
+    if (NO_OP_FLAG.test(segment.replace(/'[^']*'|"[^"]*"/g, ' ').replace(/(?:^|\s)#.*$/, ''))) continue;
     for (const rx of COMMIT_OR_PUSH) {
-      if (rx.test(segment)) return `"${segment.slice(0, 80)}" commit and push stays manual — draft the exact command and list it in the final state, do not run it`;
+      if (!gitWriteAllowed() && rx.test(segment)) return `"${segment.slice(0, 80)}" commit and push stays manual — draft the exact command and list it in the final state, do not run it`;
     }
     for (const rx of GIT_WIPE) {
       if (rx.test(segment)) return `"${segment.slice(0, 80)}" git wipe stays manual — draft the exact command and list it in the final state, do not run it`;
     }
-    if ((RM_RECURSIVE.test(segment) || REMOVE_ITEM_RECURSE.test(segment)) && !onlyDisposable(segment, dir)) {
+    if ((RM_RECURSIVE.test(segment) || REMOVE_ITEM_RECURSE.test(segment)) && !onlyDisposable(segment, dir, cwd)) {
       return `"${segment.slice(0, 80)}" recursive delete stays manual — draft the exact command and list it in the final state, do not run it`;
     }
     if (depth < 2 && SHELLS.test(segment)) {
       const inner = innerCommand(segment);
-      const verdict = inner && judgeShell(inner, depth + 1);
+      const verdict = inner && judgeShell(inner, depth + 1, cwd);
       if (verdict) return verdict;
     }
   }

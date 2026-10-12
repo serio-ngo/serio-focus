@@ -24,23 +24,12 @@ function claimSlot(dir, bucket, cap) {
   return cap + 1;
 }
 
-export function fanOutCap(payload, count = 1) {
+export function fanOutCap(payload) {
   const cap = waveCap();
   const dir = waveDir(rootOf(payload), sessionOf(payload));
   const bucket = Math.floor(Date.now() / waveWindow());
-  const claimed = [];
-
-  for (let n = 0; n < count; n += 1) {
-    const slot = claimSlot(dir, bucket, cap);
-    if (slot <= cap) { claimed.push(slot); continue; }
-
-    for (const held of claimed) {
-      try { rmSync(path.join(dir, `${bucket}-${held}`), { force: true }); } catch { }
-    }
-    bumpAll(rootOf(payload), sessionOf(payload), { blocked: 1, waves: 1, agentsCapped: count });
-    const waves = Array.from({ length: Math.ceil(count / cap) }, (_, n) => Math.min(cap, count - n * cap)).join('+');
-    throw new Blocked(count > cap
-      ? `FAN-OUT CAP: ${count} asked, ${cap} run. Next: run them as waves, // AGENTS: ${waves}\n`
-      : `FAN-OUT CAP: ${count > 1 ? `${count} asked` : `subagent ${slot}`} held. Next: wait one wave\n`);
-  }
+  const slot = claimSlot(dir, bucket, cap);
+  if (slot <= cap) return;
+  bumpAll(rootOf(payload), sessionOf(payload), { blocked: 1, waves: 1, agentsCapped: 1 });
+  throw new Blocked(`FAN-OUT CAP: subagent ${slot} held. Next: wait one wave\n`);
 }

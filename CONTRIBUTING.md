@@ -2,8 +2,7 @@
 
 ## First PR in 20 minutes
 
-A labelled corpus line is the cheapest real contribution: it is what turns a refusal, or a missed
-refusal, into a permanent check.
+- Add a labelled corpus line for a refusal or missed refusal; preserve it as a permanent check.
 
 | Step | Command or file |
 |---|---|
@@ -54,7 +53,8 @@ refusal, into a permanent check.
 | Path | Contents |
 |---|---|
 | `plugins/serio-focus/` | the plugin, the only shipped tree; inventory in `docs/MANIFEST.md` |
-| `.opencode/` | `bridge.mjs` + `plugin/serio-focus.ts`, the opencode adapter, calling the same `scripts/lib/` guards |
+| `.agents/plugins/marketplace.json` | Generated native Codex marketplace; canonical source in `.claude-plugin/marketplace.json` |
+| `.opencode/` | Existing adapter calling shared guards; native runtime and subagent parity unverified |
 | `tooling/` | never ships; [tooling/README.md](tooling/README.md) |
 | `docs/` | generated manifest and SVG figures, Claude Code reference, benchmark method; `flood.svg` is static, sourced in `BENCHMARK.md` |
 | `audit/` | `YYYY-MM.jsonl`, fields in `scripts/audit.mjs` as `FIELDS`; gitignored, append-only |
@@ -63,9 +63,11 @@ refusal, into a permanent check.
 | Command | Effect |
 |---|---|
 | `claude --plugin-dir plugins/serio-focus` | run this checkout as the plugin for one session; hooks load once at start |
-| `npm run install:plugin` | install the latest marketplace release through `claude plugin`; restart to load |
+| `npm run setup -- --host codex` | Register the local marketplace and install through native Codex commands; review hook trust |
+| `npm run setup -- --host claude` | Register the local marketplace and install through native Claude commands |
+| `npm run install:plugin -- --host codex` | Install this checkout through the native host CLI; restart to load |
 | `npm run upkeep` | regenerate `docs/MANIFEST.md`, README inventory |
-| `npm run upkeep:check` | upkeep, then fail when the tree differs — the CI gate |
+| `npm run upkeep:check` | Fail when generation changes saved artifacts; allow unrelated existing diffs |
 
 ## Tests
 
@@ -98,8 +100,8 @@ npm run release patch "one-line note"
 
 | Rule | Value |
 |---|---|
-| Setup | personalise with `npm run setup` |
+| Setup | Select the native host; apply Claude permissions separately with `npm run sync` only when requested |
 | Reports | [SECURITY.md](SECURITY.md) |
-| Git | merge and delete stay denied in both modes |
+| Git | Commit/push remain manual unless explicitly unlocked; git wipes and unsafe recursive deletes stay held |
 | `--without` token | matches `Bash`, `Read`, `Edit` rules only |
 | Connectors | no connector rule ships; a connector token matches nothing |
