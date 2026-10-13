@@ -36,7 +36,7 @@ function physical(file) {
 }
 
 function restorable(token, cwd) {
-  if (/[$%*?`[{^]/.test(token) || /^~|[/\\]~(?:[/\\]|$)/.test(token)) return false;
+  if (/[$%*?`[{^()]/.test(token) || /^~|[/\\]~(?:[/\\]|$)/.test(token)) return false;
   const real = physical(path.resolve(cwd, drive(token)));
   const root = physical(cwd);
   if (!real || !root || !path.relative(real, root) || inside(real, root) || /[/\\]\.git(?:[/\\]|$)/i.test(real)) return false;
