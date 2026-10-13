@@ -36,16 +36,18 @@ function physical(file) {
 }
 
 function restorable(token, cwd) {
-  if (/[$%*?`[{^()]/.test(token) || /^~|[/\\]~(?:[/\\]|$)/.test(token)) return false;
+  if (/[$%*?`[{^(),]/.test(token) || /^~|[/\\]~(?:[/\\]|$)/.test(token)) return false;
   const real = physical(path.resolve(cwd, drive(token)));
   const root = physical(cwd);
   if (!real || !root || !path.relative(real, root) || inside(real, root) || /[/\\]\.git(?:[/\\]|$)/i.test(real)) return false;
   const dir = existing(path.dirname(real));
+  const spec = path.relative(dir, real).split(path.sep).join('/');
   const status = spawnSync('git', ['--no-optional-locks', '--literal-pathspecs', '-C', dir, 'status', '--porcelain', '-z', '--ignored=matching', '--untracked-files=normal',
-    '--', path.relative(dir, real).split(path.sep).join('/')], { encoding: 'utf8' });
+    '--', spec], { encoding: 'utf8' });
   const temp = physical(tmpdir());
   if (status.status !== 0) return Boolean(temp) && inside(temp, real);
-  return !existsSync(path.join(real, '.git')) && status.stdout.split('\0').filter(Boolean).every((entry) => entry.startsWith('!! ') && DISPOSABLE.test(entry.slice(3)));
+  const flags = spawnSync('git', ['--literal-pathspecs', '-C', dir, 'ls-files', '-v', '-z', '--', spec], { encoding: 'utf8' });
+  return flags.status === 0 && !/(?:^|\0)[a-zS]/.test(flags.stdout) && !existsSync(path.join(real, '.git')) && status.stdout.split('\0').filter(Boolean).every((entry) => entry.startsWith('!! ') && DISPOSABLE.test(entry.slice(3)));
 }
 
 function allRestorable(segment, dir, cwd) {

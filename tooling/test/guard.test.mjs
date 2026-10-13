@@ -34,13 +34,15 @@ writeFileSync(path.join(outside, 'data', 'a.txt'), 'keep');
 const box = sandbox('guard-');
 spawnSync('git', ['init', '-q', box]);
 writeFileSync(path.join(box, '.gitignore'), 'node_modules/\ndist*/\n.wrangler/\n');
-for (const file of ['lib/a.js', 'mod/a.js', 'dist/tracked.txt', 'docs/a.md', 'src/a.ts', 'child/notes/a.md', '123', '--valuable', 'dist-x/a.txt']) {
+for (const file of ['lib/a.js', 'mod/a.js', 'dist/tracked.txt', 'docs/a.md', 'src/a.ts', 'child/notes/a.md', '123', '--valuable', 'dist-x/a.txt', 'hid/a.js']) {
   mkdirSync(path.dirname(path.join(box, file)), { recursive: true });
   writeFileSync(path.join(box, file), 'keep');
 }
-spawnSync('git', ['-C', box, 'add', '-f', 'lib', 'mod', 'dist/tracked.txt']);
+spawnSync('git', ['-C', box, 'add', '-f', 'lib', 'mod', 'hid', 'dist/tracked.txt']);
 spawnSync('git', ['-C', box, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'fixture']);
 writeFileSync(path.join(box, 'mod', 'a.js'), 'changed');
+spawnSync('git', ['-C', box, 'update-index', '--assume-unchanged', 'hid/a.js']);
+writeFileSync(path.join(box, 'hid', 'a.js'), 'changed');
 symlinkSync(path.join(outside, 'data'), path.join(box, 'dist', 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
 process.env.SERIO_WAVE_MS = String(864e5);
 const fire = (file, payload, env = { ...process.env, SERIO_OS_DIR: box }) => {
@@ -198,6 +200,8 @@ blocks('holds deletes and wipes git cannot restore', [
   'rm -rf docs',
   '(rm -rf docs)',
   'cd missing || rm -rf docs',
+  'Remove-Item -Recurse docs,src',
+  'rm -rf hid',
   'echo $(rm -rf docs)',
   'rm --recursive docs',
   'rm -rf -- docs --help',
