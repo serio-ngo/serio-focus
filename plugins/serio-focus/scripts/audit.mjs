@@ -4,19 +4,16 @@ import { sessionOf, version } from './lib/runtime.mjs';
 const FIELDS = ['ts', 'v', 'session', 'actor', 'agent', 'call', 'action', 'target', 'rule', 'result'];
 
 export function entry(payload, reason) {
-  const tool = String(payload.tool_name || '');
-  if (!tool) return null;
-  const input = payload.tool_input || {};
-  const [rule, ...rest] = String(reason).trim().split(': ');
+  const rule = String(reason).split(':', 1)[0];
   return {
     session: sessionOf(payload),
     actor: payload.agent_type || 'main',
     agent: payload.agent_id || '',
     call: payload.tool_use_id || '',
-    action: tool,
-    target: String((typeof input.command === 'string' && input.command) || input.description || '').slice(0, 120),
+    action: String(payload.tool_name || 'unknown'),
+    target: /git wipe|recursive delete|commit and push|subagent/.exec(reason)?.[0] || 'payload',
     rule,
-    result: rest.join(': '),
+    result: 'deny',
   };
 }
 
@@ -29,5 +26,5 @@ export function append(root, values) {
     record.v = version();
     mkdirSync(`${root}/audit`, { recursive: true });
     appendFileSync(`${root}/audit/${record.ts.slice(0, 7)}.jsonl`, `${JSON.stringify(record)}\n`, 'utf8');
-  } catch { }
+  } catch { process.stderr.write('SERIO AUDIT: could not persist denial\n'); }
 }

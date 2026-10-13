@@ -31,3 +31,17 @@
 {"id":"git-b09","category":"git","tool":"Bash","input":{"command":"cat > notes.md <<'EOF'\n| 2 | git push origin main |\nrm -rf src\nEOF"},"want":"allow","origin":"regression","note":"a heredoc that writes a doc is data, not commands"}
 {"id":"delete-b03","category":"delete","tool":"Bash","input":{"command":"B=$(mktemp -d); rm -rf \"$B\""},"want":"block","origin":"regression","note":"Unresolved dynamic delete targets require a concrete verified path"}
 {"id":"delete-d06","category":"delete","tool":"Bash","input":{"command":"D=\"dist/ src\"; rm -rf $D"},"want":"block","origin":"probe","note":"an unquoted variable splits into a disposable and a real directory"}
+{"id":"git-d09","category":"git","tool":"Bash","input":{"command":"git push --dry-run --no-dry-run origin main"},"want":"block","origin":"regression","note":"A later flag disables dry run"}
+{"id":"git-d10","category":"git","tool":"Bash","input":{"command":"git push --repo --dry-run origin main"},"want":"block","origin":"regression","note":"The apparent dry-run flag is a repository option value"}
+{"id":"git-d11","category":"git","tool":"Bash","input":{"command":"git push -- origin --dry-run"},"want":"block","origin":"regression","note":"Flags after end-of-options are operands"}
+{"id":"git-d12","category":"git","tool":"Bash","input":{"command":"git commit -m --help"},"want":"block","origin":"regression","note":"The help spelling is commit message data"}
+{"id":"git-d13","category":"git","tool":"Bash","input":{"command":"git commit -m --dry-run"},"want":"block","origin":"regression","note":"The dry-run spelling is commit message data"}
+{"id":"git-d14","category":"git","tool":"Bash","input":{"command":"git.exe push origin main"},"want":"block","origin":"regression","note":"Windows executable spelling retains the guard"}
+{"id":"git-d15","category":"git","tool":"Bash","input":{"command":"sudo git push origin main"},"want":"block","origin":"regression","note":"A sudo prefix retains the guard"}
+{"id":"delete-d07","category":"delete","tool":"Bash","input":{"command":"rm --recursive docs"},"want":"block","origin":"regression","note":"Long recursive option retains the guard"}
+{"id":"delete-d08","category":"delete","tool":"Bash","input":{"command":"rm -rf -- docs --help"},"want":"block","origin":"regression","note":"A filename after end-of-options is not a help request"}
+{"id":"delete-d09","category":"delete","tool":"Bash","input":{"command":"rm -rf docs --dry-run"},"want":"block","origin":"regression","note":"An unsupported dry-run flag cannot exempt deletes"}
+{"id":"delete-d10","category":"delete","tool":"Bash","input":{"command":"Remove-Item -Recurse docs --dry-run"},"want":"block","origin":"regression","note":"An unrelated flag cannot exempt PowerShell deletes"}
+{"id":"delete-d11","category":"delete","tool":"Bash","input":{"command":"rmdir /s /q docs"},"want":"block","origin":"regression","note":"Windows recursive directory deletion retains the guard"}
+{"id":"delete-d12","category":"delete","tool":"Bash","input":{"command":"git reset --hard -- --help"},"want":"block","origin":"regression","note":"End-of-options prevents a help exemption"}
+{"id":"delete-d13","category":"delete","tool":"Bash","input":{"command":"git clean -fdx -- --dry-run"},"want":"block","origin":"regression","note":"A path named dry-run does not make git clean a preview"}
