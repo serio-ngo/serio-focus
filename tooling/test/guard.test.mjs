@@ -1,7 +1,7 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +58,7 @@ it('rejects stale generated artefacts and product descriptions', () => {
     recursive: true, filter: (file) => !/(?:^|[/\\])(?:\.git|\.claude|node_modules|audit)(?:[/\\]|$)/.test(file),
   });
   const cli = path.join(repo, 'tooling', 'cli', 'serio.mjs');
+  assert.match(readFileSync(path.join(REPO, '.github', 'workflows', 'verify.yml'), 'utf8'), /os: \[ubuntu-latest, windows-latest, macos-latest\]/);
   const before = spawnSync(process.execPath, [cli, 'upkeep'], { encoding: 'utf8' });
   if (before.status !== 0) throw new Error(before.stderr || 'fixture generation failed');
   const description = JSON.parse(readFileSync(path.join(repo, 'plugins', 'serio-focus', '.claude-plugin', 'plugin.json'), 'utf8')).description;
@@ -70,6 +71,10 @@ it('rejects stale generated artefacts and product descriptions', () => {
     assert.match(result.stderr, /generated artefacts are stale:/);
     assert(result.stderr.includes(file), result.stderr);
   }
+  writeFileSync(path.join(repo, 'plugins', 'serio-focus', 'scripts', 'guard.mjs'), 'process.exit(1);');
+  const failed = spawnSync(process.execPath, [cli, 'upkeep'], { encoding: 'utf8' });
+  assert.notEqual(failed.status, ALLOWED);
+  assert.match(failed.stderr, /guard execution failed:/);
 });
 
 it('rejects zero inventory counts when skill and agent files exist', () => {
@@ -114,6 +119,13 @@ blocks('blocks git commit and push', [
   'git -C sub commit -m x',
   'git push origin main',
   'git push --force origin main',
+  'git push --dry-run --no-dry-run origin main',
+  'git push --repo --dry-run origin main',
+  'git push -- origin --dry-run',
+  'git commit -m --help',
+  'git commit -m --dry-run',
+  'git.exe push origin main',
+  'sudo git push origin main',
   'git push origin main # --dry-run',
   'bash -c "git push origin main"',
   'powershell -Command "git commit -m x"',
@@ -131,7 +143,36 @@ it('reopens commit and push while SERIO_GIT_WRITE is 1, and audits every hold', 
   assert.equal(open('rm -rf docs'), ASK);
   const rows = readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(Object.entries(rows.at(-1)).filter(([key]) => ['session', 'action', 'target', 'rule'].includes(key)),
-    [['session', 'git-open'], ['action', 'Bash'], ['target', 'rm -rf docs'], ['rule', 'DELETE LOCK']]);
+    [['session', 'git-open'], ['action', 'Bash'], ['target', 'recursive delete'], ['rule', 'DELETE LOCK']]);
+});
+
+it('never persists shell secrets or descriptions in denial records', () => {
+  const secret = 'private-token-123';
+  ask({ cwd: box, session_id: 'private-command', agent_type: 'coder', agent_id: 'agent-1', tool_use_id: 'call-1',
+    ...bash(`git push https://user:${secret}@example.test/repo`) });
+  const saved = readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8');
+  assert(!saved.includes(secret));
+  const row = JSON.parse(saved.trim().split('\n').at(-1));
+  assert.deepEqual([row.agent, row.call, row.actor, row.result], ['agent-1', 'call-1', 'coder', 'deny']);
+});
+
+it('keeps denials observable when the audit directory cannot be written', () => {
+  const root = sandbox('audit-failure-');
+  writeFileSync(path.join(root, 'audit'), 'keep');
+  const run = spawnSync(process.execPath, [script('guard.mjs')], { input: JSON.stringify(bash('git push origin main')),
+    encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: root } });
+  assert.match(run.stdout, /"permissionDecision":"deny"/);
+  assert.match(run.stderr, /SERIO AUDIT: could not persist denial/);
+  assert.equal(readFileSync(path.join(root, 'audit'), 'utf8'), 'keep');
+});
+
+it('audits malformed protected payload denials', () => {
+  const root = sandbox('audit-malformed-');
+  const run = spawnSync(process.execPath, [script('guard.mjs')], { input: '{"tool_name":"Bash",', encoding: 'utf8',
+    env: { ...process.env, SERIO_OS_DIR: root } });
+  assert.match(run.stdout, /"permissionDecision":"deny"/);
+  const row = JSON.parse(readFileSync(path.join(root, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8'));
+  assert.deepEqual([row.action, row.rule, row.result], ['Bash', 'BLOCKED', 'deny']);
 });
 
 it('allows git reads, local branch work and scratch deletes, in the guard and in the settings policy', () => {
@@ -142,7 +183,7 @@ it('allows git reads, local branch work and scratch deletes, in the guard and in
   const shellTempReal = realpathSync(tmpdir()).replace(/^([A-Za-z]):/, (hit, drive) => `/${drive.toLowerCase()}`).replace(/\\/g, '/');
   for (const command of ['git status', 'git log --oneline', 'git diff --stat', 'git fetch origin',
     'git checkout main', 'git stash push -m wip', 'git branch feat/x', 'git merge main',
-    'git push --dry-run origin main', 'git branch -a', 'git branch --show-current', 'git tag -l', 'git stash list',
+    'git push --dry-run origin main', 'git push --help', 'git branch -a', 'git branch --show-current', 'git tag -l', 'git stash list',
     'git checkout -- src/a.ts', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null', 'rm -rf drafts/stills/x',
     `rm -rf ${shellTemp}/serio-probe-x`,
     `rm -rf ${shellTempReal}/serio-probe-x`,
@@ -159,7 +200,17 @@ spawnSync('git', ['-C', box, 'add', '-f', 'dist/tracked.txt']);
 symlinkSync(sandbox('outside-'), path.join(box, 'dist', 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
 
 blocks('blocks recursive deletes and git wipes', [
+  'rm -rf /a node_modules',
+  'rm -rf -- --valuable node_modules',
+  'rm -rf 123 node_modules',
   'rm -rf docs',
+  'rm --recursive docs',
+  'rm -rf -- docs --help',
+  'rm -rf docs --dry-run',
+  'Remove-Item -Recurse docs --dry-run',
+  'rmdir /s /q docs',
+  'git reset --hard -- --help',
+  'git clean -fdx -- --dry-run',
   'rm -rf ~/docs',
   'rm -rf docs # --dry-run',
   'D="$TEMP/probe"; rm -rf "$D"',
@@ -181,6 +232,14 @@ blocks('blocks recursive deletes and git wipes', [
   'D="dist/ src"; rm -rf $D',
   'D="dist/ src"; rm -rf "$D"',
 ], (command) => ({ cwd: box, ...bash(command) }));
+
+it('blocks tracked deletes after changing cwd before a nested shell', () => {
+  const child = path.join(box, 'child');
+  mkdirSync(path.join(child, 'node_modules'), { recursive: true });
+  writeFileSync(path.join(child, 'node_modules', 'tracked.txt'), 'keep');
+  spawnSync('git', ['-C', box, 'add', '-f', 'child/node_modules/tracked.txt']);
+  ask({ cwd: box, ...bash('cd child; bash -c "rm -rf node_modules"') });
+});
 
 it('blocks in-box deletes through a symlinked cwd', () => {
   const outer = sandbox('outer-');
@@ -219,6 +278,28 @@ describe('fan-out cap', () => {
   it('runs three agents per wave and holds the fourth', () => {
     for (let n = 0; n < 3; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku' }), ALLOWED);
     assert.equal(held('wave', { prompt: 'fourth', model: 'haiku' }), ASK);
+  });
+  it('holds agents without deleting an occupied state path', () => {
+    const target = path.join(box, '.claude', '.wave-state-file');
+    writeFileSync(target, 'keep');
+    assert.equal(held('state-file', { prompt: 'probe' }), ASK);
+    assert.equal(readFileSync(target, 'utf8'), 'keep');
+  });
+  it('retains claims across wave boundaries without creating overflow slots', async () => {
+    const { fanOutCap } = await import('../../plugins/serio-focus/scripts/lib/fan-out.mjs');
+    const now = Date.now;
+    const payload = { cwd: box, session_id: 'boundary' };
+    const target = path.join(box, '.claude', '.wave-boundary');
+    try {
+      for (const bucket of [11, 12]) {
+        Date.now = () => bucket * Number(process.env.SERIO_WAVE_MS);
+        for (let n = 0; n < 3; n += 1) fanOutCap(payload);
+        assert.throws(() => fanOutCap(payload), /FAN-OUT CAP/);
+      }
+      Date.now = () => 11 * Number(process.env.SERIO_WAVE_MS);
+      assert.throws(() => fanOutCap(payload), /FAN-OUT CAP/);
+      assert.equal(readdirSync(target).length, 6);
+    } finally { Date.now = now; }
   });
   it('never rewrites explicit native agent choices or routes to-do tools into the wave', () => {
     const invalid = spawnSync(process.execPath, [path.join(REPO, 'tooling', 'cli', 'serio.mjs'), 'unknown-command'], {

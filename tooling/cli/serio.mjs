@@ -73,26 +73,16 @@ function merge(target, patch) {
       }
     }
   }
-  for (const key of ['env', 'extraKnownMarketplaces', 'enabledPlugins']) {
-    if (patch[key]) merged[key] = { ...target[key], ...patch[key] };
-  }
   return merged;
 }
 
 function releaseLocks(settings, requested) {
-  const bundles = readJson('tooling', 'settings', 'policy.json').unlock ?? {};
-  const stale = Object.entries(bundles)
+  const policy = readJson('tooling', 'settings', 'policy.json');
+  const stale = [...(policy.retired ?? []), ...Object.entries(policy.unlock ?? {})
     .filter(([token]) => requested.includes(token))
-    .flatMap(([, rules]) => rules);
+    .flatMap(([, rules]) => rules)];
   if (!stale.length || !settings.permissions?.deny) return settings;
   const deny = settings.permissions.deny.filter((rule) => !stale.includes(rule));
-  return { ...settings, permissions: { ...settings.permissions, deny } };
-}
-
-function retire(settings) {
-  const gone = readJson('tooling', 'settings', 'policy.json').retired ?? [];
-  if (!gone.length || !settings.permissions?.deny) return settings;
-  const deny = settings.permissions.deny.filter((rule) => !gone.includes(rule));
   return { ...settings, permissions: { ...settings.permissions, deny } };
 }
 
@@ -112,7 +102,6 @@ function sync(args) {
   const before = readJsonFile(target, {});
   let after = merge(before, policyFor(scope, args.without, undefined, args.unlock));
   after = releaseLocks(after, args.unlock ?? []);
-  after = retire(after);
   after.env = { ...after.env };
   if ((args.unlock ?? []).includes('git')) after.env.SERIO_GIT_WRITE = '1';
   else delete after.env.SERIO_GIT_WRITE;

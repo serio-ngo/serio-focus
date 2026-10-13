@@ -32,7 +32,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const raw = readFileSync(0, 'utf8');
   let payload = null;
   try { payload = JSON.parse(raw); } catch {
-    if (/"tool_name"\s*:\s*"(?:Bash|PowerShell|Agent|Task|spawn_agent)"/.test(raw)) deny({}, new Blocked('BLOCKED: tool payload could not be parsed'));
+    const tool = /"tool_name"\s*:\s*"(Bash|PowerShell|Agent|Task|spawn_agent)"/.exec(raw)?.[1];
+    if (tool) deny({ tool_name: tool }, new Blocked('BLOCKED: tool payload could not be parsed'));
   }
   if (payload && typeof payload === 'object') try { judge(payload); } catch (error) { deny(payload, error); }
 }

@@ -30,12 +30,12 @@
 | No read, edit, write, search or web coverage. The `PreToolUse` matcher admits `Bash`, `PowerShell` and spawn tools only. | `Read`, `Write`, `Edit`, `Grep`, `WebFetch` | Allowed. |
 | A binary name held in a shell variable is not resolved. | `X=rm; $X -rf docs` | Allowed. |
 | A payload decoded inside a pipeline is not followed. | `echo … \| base64 -d \| bash` | Allowed. |
-| An unquoted no-op flag used as a value suppresses the whole segment. | `curl -X POST -d --help` | Allowed. |
+| PowerShell here-string data can be mistaken for shell commands. | Here-string containing `rm -rf node_modules` | May be blocked. |
 
 | Gap | Rule behind it |
 |---|---|
 | Connector calls | `guard.mjs` judges shell and spawn tools only. Connector egress is left to native permission rules; `tooling/settings/policy.json` ships none for `mcp__`. |
-| No-op flag | cost of `NO_OP_FLAG` in `plugins/serio-focus/scripts/lib/shell-danger.mjs` (`rm --help`, `npm publish --dry-run` stay unblocked); a quoted flag is still inspected |
+| Preview flags | Only narrowly recognized Git previews bypass the locks; ambiguous preview syntax may be held. |
 
 | Check | Command |
 |---|---|

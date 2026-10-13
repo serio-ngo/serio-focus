@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin.json",
   "name": "serio-focus",
   "displayName": "Serio Focus",
-  "version": "1.22.0",
+  "version": "1.23.0",
   "description": "Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: shell and subagent guards plus architect, coder and reviewer agents with a PR review loop. No model calls, API keys or runtime dependencies.",
   "author": {
     "name": "Serio NGO",

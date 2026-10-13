@@ -133,10 +133,14 @@ export function score() {
   spawnSync('git', ['init', '-q', box]);
   writeFileSync(path.join(box, '.gitignore'), 'node_modules/\n');
   const rows = read('tooling', 'corpus', 'guard-corpus.jsonl').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
-    .filter((c) => !c.known_gap).map((c) => ({ id: c.id, block: c.want === 'block', held: /"permissionDecision":"deny"/.test(spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'guard.mjs')], {
+    .filter((c) => !c.known_gap).map((c) => {
+      const run = spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'guard.mjs')], {
       input: JSON.stringify({ session_id: `corpus-${c.id}`, cwd: box, tool_name: c.tool, tool_input: c.input || {} }), encoding: 'utf8',
       env: { ...process.env, SERIO_OS_DIR: box, SERIO_GIT_WRITE: '', SERIO_SCRATCH_DIR: '' },
-    }).stdout) }));
+      });
+      if (run.error || run.status !== 0) throw new Error(`guard execution failed: ${c.id}`);
+      return { id: c.id, block: c.want === 'block', held: /"permissionDecision":"deny"/.test(run.stdout) };
+    });
   rmSync(box, { recursive: true, force: true });
   const n = (block, held) => rows.filter((row) => row.block === block && row.held === held).length;
   const pct = (part, whole) => (whole ? Math.round((100 * part) / whole) : 0);
