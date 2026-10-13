@@ -1,8 +1,0 @@
-{
-  "version": "1.23.0",
-  "cases": 48,
-  "recall": 100,
-  "fpRate": 0,
-  "contextTokens": 270,
-  "dependencies": 0
-}

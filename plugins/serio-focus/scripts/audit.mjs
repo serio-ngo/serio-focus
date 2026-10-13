@@ -1,24 +1,21 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { sessionOf, version } from './lib/runtime.mjs';
 
-const FIELDS = ['ts', 'v', 'session', 'actor', 'agent', 'call', 'action', 'target', 'rule', 'result'];
+const FIELDS = ['ts', 'v', 'session', 'actor', 'agent', 'call', 'action', 'rule', 'result'];
 
-export function entry(payload, reason) {
-  const rule = String(reason).split(':', 1)[0];
+export function entry(payload, reason, result) {
   return {
     session: sessionOf(payload),
     actor: payload.agent_type || 'main',
     agent: payload.agent_id || '',
     call: payload.tool_use_id || '',
     action: String(payload.tool_name || 'unknown'),
-    target: /git wipe|recursive delete|commit and push|subagent/.exec(reason)?.[0] || 'payload',
-    rule,
-    result: 'deny',
+    rule: String(reason).split(':', 1)[0],
+    result,
   };
 }
 
 export function append(root, values) {
-  if (!values) return;
   const now = new Date();
   const record = Object.fromEntries(FIELDS.map((key) => [key, values[key] ?? '']));
   record.ts = now.toISOString();

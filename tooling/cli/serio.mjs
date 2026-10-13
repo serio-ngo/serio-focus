@@ -9,7 +9,7 @@ import { PLUGIN, REPO, codexRoles, inventory, manifest, markdown, pluginVersion,
 const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const CODEX_AGENTS = path.join(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'agents');
 const RULE_LISTS = ['deny', 'ask', 'allow'];
-const TEXT = /\.(md|mjs|json|jsonc|ya?ml|cff)$/;
+const TEXT = /\.(md|mjs|json|jsonc|ya?ml)$/;
 
 const marketplace = readJson('.claude-plugin', 'marketplace.json');
 const PLUGIN_NAME = marketplace.plugins[0].name;
@@ -28,7 +28,7 @@ const report = () => {
 };
 
 function parse(argv) {
-  const args = { _: [], without: [], unlock: [] };
+  const args = { _: [], without: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (!arg.startsWith('--')) { args._.push(arg); continue; }
@@ -37,11 +37,9 @@ function parse(argv) {
     if (next === undefined || next.startsWith('--')) { args[key] = true; continue; }
     args[key] = argv[++i];
   }
-  for (const key of ['without', 'unlock']) {
-    if (typeof args[key] === 'string') {
-      args[key] = args[key].split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-    } else if (args[key] === true) args[key] = [];
-  }
+  if (typeof args.without === 'string') {
+    args.without = args.without.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  } else if (args.without === true) args.without = [];
   return args;
 }
 
@@ -76,12 +74,9 @@ function merge(target, patch) {
   return merged;
 }
 
-function releaseLocks(settings, requested) {
-  const policy = readJson('tooling', 'settings', 'policy.json');
-  const stale = [...(policy.retired ?? []), ...Object.entries(policy.unlock ?? {})
-    .filter(([token]) => requested.includes(token))
-    .flatMap(([, rules]) => rules)];
-  if (!stale.length || !settings.permissions?.deny) return settings;
+function releaseLocks(settings) {
+  const stale = readJson('tooling', 'settings', 'policy.json').retired;
+  if (!settings.permissions?.deny) return settings;
   const deny = settings.permissions.deny.filter((rule) => !stale.includes(rule));
   return { ...settings, permissions: { ...settings.permissions, deny } };
 }
@@ -100,13 +95,7 @@ function sync(args) {
   const target = path.resolve(args.target
     || (scope === 'project' ? path.join(REPO, '.claude', 'settings.json') : path.join(CONFIG_DIR, 'settings.json')));
   const before = readJsonFile(target, {});
-  let after = merge(before, policyFor(scope, args.without, undefined, args.unlock));
-  after = releaseLocks(after, args.unlock ?? []);
-  after.env = { ...after.env };
-  if ((args.unlock ?? []).includes('git')) after.env.SERIO_GIT_WRITE = '1';
-  else delete after.env.SERIO_GIT_WRITE;
-  for (const key of Object.keys(after.env)) if (key.startsWith('HANDOFF_')) delete after.env[key];
-  if (Object.keys(after.env).length === 0) delete after.env;
+  const after = releaseLocks(merge(before, policyFor(scope, args.without)));
   if (!args.dryRun) writeJson(target, after);
   if (scope === 'project' && !args.dryRun) {
     const dir = path.dirname(path.resolve(target));
@@ -120,7 +109,7 @@ function sync(args) {
 
 const registryKey = () => `${PLUGIN_NAME}@${marketplace.name}`;
 const hostOf = (args) => {
-  const host = args.host || 'codex';
+  const host = args.host || 'claude';
   if (!['claude', 'codex'].includes(host)) fail('host must be claude or codex');
   return host;
 };
@@ -170,12 +159,11 @@ function upkeep() {
   writeJson(path.join(REPO, '.claude-plugin', 'marketplace.json'), { ...marketplace, description: plugin.description,
     plugins: marketplace.plugins.map((entry) => entry.name === plugin.name ? { ...entry, description: plugin.description } : entry) });
   const { cases, recall, fpRate } = score();
-  const { contextTokens, dependencies } = inventory();
-  writeJson(path.join(REPO, 'tooling', 'results', 'scores.json'), { version: plugin.version, cases, recall, fpRate, contextTokens, dependencies });
+  const { contextTokens } = inventory();
   writeBlock(path.join(REPO, 'docs', 'BENCHMARK.md'), '<!-- serio-scores -->', '<!-- /serio-scores -->', table(['Measure', 'Value'], [
     `| Labelled cases | ${cases} |`, `| Recall: blocks held | ${recall}% |`, `| False blocks: allows held | ${fpRate}% |`, `| Startup context | ~${contextTokens} tokens |`,
   ]).split('\n'));
-  row('figures', `${writeFigures({ cases, recall, fpRate, contextTokens }).length} file(s)`);
+  row('figures', `${writeFigures().length} file(s)`);
   writeJson(path.join(PLUGIN, '.codex-plugin', 'plugin.json'), {
     name: plugin.name, version: plugin.version, description: plugin.description, skills: './skills/', hooks: './hooks/hooks.json',
     interface: { displayName: plugin.displayName, developerName: plugin.author.name, category: 'Productivity' },
@@ -223,23 +211,20 @@ function doctor(args = {}) {
   }
 
   const probe = mkdtempSync(path.join(tmpdir(), 'serio-doctor-'));
-  const at = (dir, script, payload, env) => spawnSync(process.execPath, [path.join(dir, 'scripts', script)], {
-    input: JSON.stringify(payload), encoding: 'utf8',
-    env: { ...process.env, SERIO_OS_DIR: probe, ...env },
+  const at = (dir, script, payload) => spawnSync(process.execPath, [path.join(dir, 'scripts', script)], {
+    input: JSON.stringify(payload), encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: probe },
   });
   const session = () => `doctor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const pre = (tool_name, tool_input) => ({ hook_event_name: 'PreToolUse', session_id: session(), cwd: probe, tool_name, tool_input });
-  const fire = (payload, env) => at(PLUGIN, 'guard.mjs', payload, env);
-  const shell = (command, env) => fire(pre('Bash', { command }), env);
+  const shell = (command) => at(PLUGIN, 'guard.mjs', pre('Bash', { command }));
 
-  check('the git gate holds commit and push, nothing else git',
-    ['git commit -m x', 'git push origin main'].every((c) => held(shell(c, { SERIO_GIT_WRITE: '0' })))
-    && ['git status', 'git stash push -m wip', 'git merge main'].every((c) => !held(shell(c, { SERIO_GIT_WRITE: '0' }))),
+  check('commit and push run',
+    ['git commit -m x', 'git push origin main'].every((c) => !held(shell(c))),
     'deterministic script probe; native hook trust and invocation are separate');
-  check('the checkout guard blocks recursive deletes and git wipes',
-    ['rm -rf docs', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),
+  check('git wipes and deletes git cannot restore are held',
+    ['rm -rf ~/serio-doctor-probe', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),
     'rm -r, clean -fdx, reset --hard');
-  check('the checkout card prints', spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'card.mjs')], { encoding: 'utf8' }).stdout.trim().length > 0);
+  check('the checkout card prints', at(PLUGIN, 'card.mjs', {}).stdout.trim().length > 0);
 
   rmSync(probe, { recursive: true, force: true });
 
@@ -265,7 +250,6 @@ function release(args) {
   const plugin = readJsonFile(manifestPath);
   plugin.version = BUMPS[bump](plugin.version.split('.').map(Number)).join('.');
   writeJson(manifestPath, plugin);
-  writeFileSync(path.join(REPO, 'docs', 'MANIFEST.md'), manifest(), 'utf8');
   const pkgPath = path.join(REPO, 'package.json');
   const pkg = readJsonFile(pkgPath);
   pkg.version = plugin.version;
@@ -275,8 +259,7 @@ function release(args) {
   const rows = existsSync(changelog)
     ? readFileSync(changelog, 'utf8').split('\n').filter((line) => /^\| \d/.test(line))
     : [];
-  const date = args.date || new Date().toISOString().slice(0, 10);
-  rows.unshift(`| ${plugin.version} | ${date} | ${note.replaceAll('|', '\\|')} |`);
+  rows.unshift(`| ${plugin.version} | ${new Date().toISOString().slice(0, 10)} | ${note.replaceAll('|', '\\|')} |`);
   writeFileSync(changelog, `${head}${rows.join('\n')}\n`, 'utf8');
   upkeep();
   row('released', plugin.version);
@@ -308,7 +291,6 @@ function prove() {
 
 function setup(args) {
   install(args);
-  if (args.policy) sync(args);
   report();
   console.log('Installed. Review and trust the hooks in the native host, then start a fresh session.');
 }
@@ -324,7 +306,6 @@ else if (command === 'uninstall') { install(args, true); report(); }
 else if (command === 'upkeep') {
   const before = args.check ? new Map(sources(true).map((file) => [file, readFileSync(path.join(REPO, file), 'utf8')])) : null;
   upkeep();
-  if (args.install) install(args);
   report();
   if (args.check) check(before);
 }

@@ -9,7 +9,8 @@ import { SPAWN_TOOLS } from '../../plugins/serio-focus/scripts/guard.mjs';
 import { inventory } from '../cli/generate.mjs';
 
 const ALLOWED = 0;
-const ASK = 'deny';
+const ASK = 'ask';
+const DENY = 'deny';
 const PLUGIN = fileURLToPath(new URL('../../plugins/serio-focus/', import.meta.url));
 const REPO = path.resolve(PLUGIN, '..', '..');
 const script = (name) => path.join(PLUGIN, 'scripts', name);
@@ -26,14 +27,25 @@ after(() => {
   }
 });
 
+const outside = sandbox('outside-');
+spawnSync('git', ['init', '-q', outside]);
+mkdirSync(path.join(outside, 'data'));
+writeFileSync(path.join(outside, 'data', 'a.txt'), 'keep');
 const box = sandbox('guard-');
 spawnSync('git', ['init', '-q', box]);
 writeFileSync(path.join(box, '.gitignore'), 'node_modules/\ndist*/\n.wrangler/\n');
+for (const file of ['lib/a.js', 'mod/a.js', 'dist/tracked.txt', 'docs/a.md', 'src/a.ts', 'child/notes/a.md', '123', '--valuable', 'dist-x/a.txt']) {
+  mkdirSync(path.dirname(path.join(box, file)), { recursive: true });
+  writeFileSync(path.join(box, file), 'keep');
+}
+spawnSync('git', ['-C', box, 'add', '-f', 'lib', 'mod', 'dist/tracked.txt']);
+spawnSync('git', ['-C', box, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'fixture']);
+writeFileSync(path.join(box, 'mod', 'a.js'), 'changed');
+symlinkSync(path.join(outside, 'data'), path.join(box, 'dist', 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
 process.env.SERIO_WAVE_MS = String(864e5);
-process.env.SERIO_SCRATCH_DIR = path.join(box, 'drafts');
 const fire = (file, payload, env = { ...process.env, SERIO_OS_DIR: box }) => {
   const run = spawnSync(process.execPath, [file], { input: typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}), encoding: 'utf8', env });
-  return /"permissionDecision":"deny"/.test(run.stdout) ? ASK : run.status;
+  return /"permissionDecision":"(ask|deny)"/.exec(run.stdout)?.[1] ?? run.status;
 };
 
 const guard = (payload, env) => fire(script('guard.mjs'), payload, env);
@@ -45,7 +57,7 @@ const ask = (payload, env) => {
     input: JSON.stringify(payload), encoding: 'utf8', env: env ?? { ...process.env, SERIO_OS_DIR: box },
   });
   assert.equal(run.status, ALLOWED);
-  assert.match(run.stdout, /"permissionDecision":"deny"/, payload.tool_input?.command);
+  assert.match(run.stdout, /"permissionDecision":"(?:ask|deny)"/, payload.tool_input?.command);
   return JSON.parse(run.stdout).hookSpecificOutput.permissionDecision;
 };
 const blocks = (label, cases, payload) => it(label, () => {
@@ -62,7 +74,7 @@ it('rejects stale generated artefacts and product descriptions', () => {
   const before = spawnSync(process.execPath, [cli, 'upkeep'], { encoding: 'utf8' });
   if (before.status !== 0) throw new Error(before.stderr || 'fixture generation failed');
   const description = JSON.parse(readFileSync(path.join(repo, 'plugins', 'serio-focus', '.claude-plugin', 'plugin.json'), 'utf8')).description;
-  for (const file of ['docs/demo.svg', 'tooling/results/scores.json', 'plugins/serio-focus/.codex-plugin/plugin.json']) {
+  for (const file of ['docs/demo.svg', 'docs/MANIFEST.md', 'plugins/serio-focus/.codex-plugin/plugin.json']) {
     const target = path.join(repo, file);
     const text = readFileSync(target, 'utf8');
     writeFileSync(target, text.includes(description) ? text.replaceAll(description, 'stale description') : `${text}\nstale\n`);
@@ -94,16 +106,16 @@ it('rejects zero inventory counts when skill and agent files exist', () => {
 it('keeps startup context small and agents, skills and Codex roles well-formed', async () => {
   const { agents, codexRoles, skills, startupChars } = await import('../cli/generate.mjs');
   const roles = agents();
-  assert.deepEqual(roles.map((agent) => agent.name), ['architect', 'coder', 'reviewer']);
+  assert.deepEqual(roles.map((agent) => agent.name), ['architect', 'coder', 'reviewer', 'tester']);
   for (const doc of [...roles, ...skills()]) assert.ok(doc.description.length > 0 && doc.description.length <= 300, doc.name);
   for (const skill of skills()) assert.equal(skill.name, skill.dir, skill.dir);
-  for (const agent of roles) assert.equal(/\b(?:Edit|Write)\b/.test(agent.tools), agent.name === 'coder', agent.name);
+  for (const agent of roles) assert.equal(/\b(?:Edit|Write)\b/.test(agent.tools), ['coder', 'tester'].includes(agent.name), agent.name);
   for (const [role, agent] of codexRoles().map((role, i) => [role, roles[i]])) {
     assert.match(role.text, new RegExp(`^name = "serio-${agent.name}"\\ndescription = ".+"\\n`));
-    assert.equal(role.text.includes('sandbox_mode = "read-only"'), agent.name !== 'coder', agent.name);
+    assert.equal(role.text.includes('sandbox_mode = "read-only"'), ['architect', 'reviewer'].includes(agent.name), agent.name);
     assert.ok(role.text.endsWith(`'''\n${agent.body}\n'''\n`) && !agent.body.includes("'''"), agent.name);
   }
-  assert.ok(startupChars() < 1500, String(startupChars()));
+  assert.ok(startupChars() < 1950, String(startupChars()));
   const hooks = JSON.parse(readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
   assert.deepEqual(Object.keys(hooks).sort(), ['PreToolUse', 'SessionStart']);
 });
@@ -113,55 +125,37 @@ it('corpus: every labelled case gets its verdict', async () => {
   assert.deepEqual(score().misses, []);
 });
 
-blocks('blocks git commit and push', [
-  'git commit -m x',
-  'git commit --verify -m x',
-  'git -C sub commit -m x',
-  'git push origin main',
-  'git push --force origin main',
-  'git push --dry-run --no-dry-run origin main',
-  'git push --repo --dry-run origin main',
-  'git push -- origin --dry-run',
-  'git commit -m --help',
-  'git commit -m --dry-run',
-  'git.exe push origin main',
-  'sudo git push origin main',
-  'git push origin main # --dry-run',
-  'bash -c "git push origin main"',
-  'powershell -Command "git commit -m x"',
-  'if true; then git push origin main; fi',
-  "cat >> CHANGELOG.md <<'EOF'\ndon't crash\nEOF\ngit push origin main",
-  "bash <<'EOF'\n# don't\ngit push origin main\nEOF",
-], bash);
-
-it('reopens commit and push while SERIO_GIT_WRITE is 1, and audits every hold', () => {
-  const open = (command) => guard({ cwd: box, session_id: 'git-open', tool_name: 'Bash', tool_input: { command } },
-    { ...process.env, SERIO_OS_DIR: box, SERIO_GIT_WRITE: '1' });
+it('runs commit and push, and audits every hold', () => {
+  const run = (command) => guard({ cwd: box, session_id: 'git-open', ...bash(command) });
   for (const command of ['git commit -m x', 'git push origin main']) {
-    assert.equal(open(command), ALLOWED, command);
+    assert.equal(run(command), ALLOWED, command);
   }
-  assert.equal(open('rm -rf docs'), ASK);
+  assert.equal(run('rm -rf docs'), ASK);
   const rows = readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(Object.entries(rows.at(-1)).filter(([key]) => ['session', 'action', 'target', 'rule'].includes(key)),
-    [['session', 'git-open'], ['action', 'Bash'], ['target', 'recursive delete'], ['rule', 'DELETE LOCK']]);
+  assert.deepEqual(Object.entries(rows.at(-1)).filter(([key]) => ['session', 'action', 'target', 'rule', 'result'].includes(key)),
+    [['session', 'git-open'], ['action', 'Bash'], ['rule', 'DELETE'], ['result', ASK]]);
+  const codex = JSON.parse(spawnSync(process.execPath, [script('guard.mjs')], { input: JSON.stringify({ cwd: box, turn_id: 'turn-1', ...bash('rm -rf docs') }),
+    encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: box } }).stdout).hookSpecificOutput;
+  assert.equal(codex.permissionDecision, DENY);
+  assert.match(codex.permissionDecisionReason, /Held: give the user the exact command/);
 });
 
 it('never persists shell secrets or descriptions in denial records', () => {
   const secret = 'private-token-123';
   ask({ cwd: box, session_id: 'private-command', agent_type: 'coder', agent_id: 'agent-1', tool_use_id: 'call-1',
-    ...bash(`git push https://user:${secret}@example.test/repo`) });
+    ...bash(`rm -rf ~/${secret}`) });
   const saved = readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8');
   assert(!saved.includes(secret));
   const row = JSON.parse(saved.trim().split('\n').at(-1));
-  assert.deepEqual([row.agent, row.call, row.actor, row.result], ['agent-1', 'call-1', 'coder', 'deny']);
+  assert.deepEqual([row.agent, row.call, row.actor, row.result], ['agent-1', 'call-1', 'coder', ASK]);
 });
 
 it('keeps denials observable when the audit directory cannot be written', () => {
   const root = sandbox('audit-failure-');
   writeFileSync(path.join(root, 'audit'), 'keep');
-  const run = spawnSync(process.execPath, [script('guard.mjs')], { input: JSON.stringify(bash('git push origin main')),
+  const run = spawnSync(process.execPath, [script('guard.mjs')], { input: JSON.stringify(bash('rm -rf ~/private-token-123')),
     encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: root } });
-  assert.match(run.stdout, /"permissionDecision":"deny"/);
+  assert.match(run.stdout, /"permissionDecision":"ask"/);
   assert.match(run.stderr, /SERIO AUDIT: could not persist denial/);
   assert.equal(readFileSync(path.join(root, 'audit'), 'utf8'), 'keep');
 });
@@ -175,31 +169,29 @@ it('audits malformed protected payload denials', () => {
   assert.deepEqual([row.action, row.rule, row.result], ['Bash', 'BLOCKED', 'deny']);
 });
 
-it('allows git reads, local branch work and scratch deletes, in the guard and in the settings policy', () => {
+it('allows git work and deletes git can restore, in the guard and in the settings policy', () => {
   const policy = JSON.parse(readFileSync(new URL('../settings/policy.json', import.meta.url), 'utf8'));
-  const denied = [...policy.deny, ...Object.values(policy.unlock).flat()].map((rule) => /^Bash\((.*)\)$/.exec(rule)?.[1]).filter(Boolean)
+  const denied = policy.deny.map((rule) => /^Bash\((.*)\)$/.exec(rule)?.[1]).filter(Boolean)
     .map((glob) => new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
   const shellTemp = tmpdir().replace(/^([A-Za-z]):/, (hit, drive) => `/${drive.toLowerCase()}`).replace(/\\/g, '/');
   const shellTempReal = realpathSync(tmpdir()).replace(/^([A-Za-z]):/, (hit, drive) => `/${drive.toLowerCase()}`).replace(/\\/g, '/');
   for (const command of ['git status', 'git log --oneline', 'git diff --stat', 'git fetch origin',
     'git checkout main', 'git stash push -m wip', 'git branch feat/x', 'git merge main',
     'git push --dry-run origin main', 'git push --help', 'git branch -a', 'git branch --show-current', 'git tag -l', 'git stash list',
-    'git checkout -- src/a.ts', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null', 'rm -rf drafts/stills/x',
+    'git commit -m x', 'git push origin main', 'git push --force origin main',
+    'git checkout -- src/a.ts', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null', 'rm -rf missing-dir',
+    'rm -rf lib', 'rm -rf dist/tracked.txt', 'rm -rf node_modules >/dev/null',
     `rm -rf ${shellTemp}/serio-probe-x`,
     `rm -rf ${shellTempReal}/serio-probe-x`,
     `rm -rf ${shellTemp}/wave~1-still`,
+    ...(process.platform === 'darwin' ? [] : ['rm -rf /tmp/serio-probe-x']),
     "cat > notes.md <<'EOF'\n| 2 | git push origin main |\nrm -rf src\nEOF"]) {
     assert.equal(at('git-ok', { tool_name: 'Bash', tool_input: { command } }), ALLOWED, command);
-    if (/^git (?!merge|push)/.test(command)) assert(!denied.some((rx) => rx.test(command)), `settings deny ${command}`);
+    if (/^git (?!push --force)/.test(command)) assert(!denied.some((rx) => rx.test(command)), `settings deny ${command}`);
   }
 });
 
-mkdirSync(path.join(box, 'dist'), { recursive: true });
-writeFileSync(path.join(box, 'dist', 'tracked.txt'), 'keep');
-spawnSync('git', ['-C', box, 'add', '-f', 'dist/tracked.txt']);
-symlinkSync(sandbox('outside-'), path.join(box, 'dist', 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
-
-blocks('blocks recursive deletes and git wipes', [
+blocks('holds deletes and wipes git cannot restore', [
   'rm -rf /a node_modules',
   'rm -rf -- --valuable node_modules',
   'rm -rf 123 node_modules',
@@ -216,13 +208,30 @@ blocks('blocks recursive deletes and git wipes', [
   'D="$TEMP/probe"; rm -rf "$D"',
   'B=$(mktemp -d); rm -rf "$B"',
   'rm -rf /',
+  'rm -rf .',
+  'rm -rf .git',
+  'rm -rf mod',
   'ri -r docs',
   'Remove-Item -Recurse -Force docs',
+  'Remove-Item -rec docs',
+  'del /s /q docs',
+  '/bin/rm -rf docs',
+  '\\rm -rf docs',
+  'env rm -rf docs',
+  'powershell -Command "Remove-Item -Recurse docs"',
+  "cat >> CHANGELOG.md <<'EOF'\ndon't crash\nEOF\nrm -rf docs",
+  "bash <<'EOF'\n# don't\nrm -rf docs\nEOF",
+  'cd child; bash -c "rm -rf notes"',
   'git clean -fdx',
+  'git clean --force',
   'git reset --hard HEAD~1',
+  'git.exe -C sub reset --hard HEAD~1',
   'rm -rf tmp/../src',
-  'rm -rf dist/tracked.txt',
   'rm -rf dist/escape',
+  'rm -rf {docs,src}',
+  'rm -rf [d]ocs',
+  'rm -rf ~root',
+  ...(process.platform === 'linux' ? [] : ['rm -rf DOCS']),
   'rm -rf "$D"; D=/tmp',
   'D=/tmp; D=/home; rm -rf "$D"',
   'true && D=/tmp; rm -rf "$D"',
@@ -233,40 +242,20 @@ blocks('blocks recursive deletes and git wipes', [
   'D="dist/ src"; rm -rf "$D"',
 ], (command) => ({ cwd: box, ...bash(command) }));
 
-it('blocks tracked deletes after changing cwd before a nested shell', () => {
-  const child = path.join(box, 'child');
-  mkdirSync(path.join(child, 'node_modules'), { recursive: true });
-  writeFileSync(path.join(child, 'node_modules', 'tracked.txt'), 'keep');
-  spawnSync('git', ['-C', box, 'add', '-f', 'child/node_modules/tracked.txt']);
-  ask({ cwd: box, ...bash('cd child; bash -c "rm -rf node_modules"') });
-});
-
-it('blocks in-box deletes through a symlinked cwd', () => {
-  const outer = sandbox('outer-');
-  const inner = path.join(outer, 'inner');
-  mkdirSync(inner, { recursive: true });
-  const link = path.join(outer, 'link');
-  symlinkSync(inner, link, process.platform === 'win32' ? 'junction' : 'dir');
-  assert.equal(guard({ cwd: link, session_id: 'link-cwd', tool_name: 'Bash', tool_input: { command: 'rm -rf docs' } },
-    { ...process.env, SERIO_OS_DIR: outer }), ASK);
-});
-
-it('allows scratch deletes through a symlinked cwd', () => {
-  const inner = path.join(box, 'inner');
-  mkdirSync(inner, { recursive: true });
-  const link = path.join(box, 'link');
-  try { rmSync(link, { recursive: true, force: true }); } catch { }
-  symlinkSync(inner, link, process.platform === 'win32' ? 'junction' : 'dir');
-  assert.equal(guard({ cwd: link, session_id: 'link-scratch', tool_name: 'Bash', tool_input: { command: 'rm -rf drafts/out/x' } },
-    { ...process.env, SERIO_OS_DIR: box, SERIO_SCRATCH_DIR: path.join(link, 'drafts') }), ALLOWED);
+it('judges deletes through a symlinked cwd', () => {
+  const link = path.join(sandbox('link-'), 'link');
+  symlinkSync(box, link, process.platform === 'win32' ? 'junction' : 'dir');
+  const run = (command) => guard({ cwd: link, session_id: 'link-cwd', ...bash(command) });
+  assert.equal(run('rm -rf docs'), ASK);
+  assert.equal(run('rm -rf dist-x'), ALLOWED);
 });
 
 it('gives the OpenCode bridge the same shell verdict', async () => {
   const { verdictFor } = await import('../../.opencode/bridge.mjs');
   process.env.SERIO_OS_DIR = box;
-  assert.match(verdictFor('bash', { command: 'git push origin main' }, 'oc', box), /^GIT WRITE: /);
-  assert.match(verdictFor('powershell', { command: 'git push origin main' }, 'oc', box), /^GIT WRITE: /);
-  assert.match(verdictFor('PowerShell', { command: 'git commit -m x' }, 'oc', box), /^GIT WRITE: /);
+  assert.match(verdictFor('bash', { command: 'rm -rf docs' }, 'oc', box), /^DELETE: .*Held: give the user the exact command\.$/);
+  assert.match(verdictFor('powershell', { command: 'Remove-Item -Recurse docs' }, 'oc', box), /^DELETE: /);
+  assert.match(verdictFor('PowerShell', { command: 'git reset --hard' }, 'oc', box), /^WIPE: /);
   assert.equal(verdictFor('bash', { command: 'git status' }, 'oc', box), null);
   assert.equal(verdictFor('BASH', { command: 'git status' }, 'oc', box), null);
 });
@@ -277,13 +266,14 @@ describe('fan-out cap', () => {
 
   it('runs three agents per wave and holds the fourth', () => {
     for (let n = 0; n < 3; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku' }), ALLOWED);
-    assert.equal(held('wave', { prompt: 'fourth', model: 'haiku' }), ASK);
+    assert.equal(held('wave', { prompt: 'fourth', model: 'haiku' }), DENY);
   });
-  it('holds agents without deleting an occupied state path', () => {
+  it('runs agents when the state path cannot be created, without deleting it', () => {
     const target = path.join(box, '.claude', '.wave-state-file');
     writeFileSync(target, 'keep');
-    assert.equal(held('state-file', { prompt: 'probe' }), ASK);
+    assert.equal(spawn('state-file', { prompt: 'probe' }), ALLOWED);
     assert.equal(readFileSync(target, 'utf8'), 'keep');
+    assert.equal(guard({ session_id: 'file-root', tool_name: 'Agent', tool_input: { prompt: 'probe' } }, { ...process.env, SERIO_OS_DIR: target }), ALLOWED);
   });
   it('retains claims across wave boundaries without creating overflow slots', async () => {
     const { fanOutCap } = await import('../../plugins/serio-focus/scripts/lib/fan-out.mjs');

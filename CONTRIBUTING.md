@@ -43,7 +43,7 @@
 | Local rules | that codebase's own `AGENTS.md` or `CLAUDE.md`, never here |
 | Reuse | check Claude Code built-ins and public plugins first |
 | New skill | on second occurrence of the pattern only |
-| Product description | Edit `plugins/serio-focus/.claude-plugin/plugin.json`; `npm run upkeep` generates package, marketplace, Codex metadata and the README introduction |
+| Product description | Edit `plugins/serio-focus/.claude-plugin/plugin.json`; `npm run upkeep` copies it to package, marketplace and Codex metadata |
 
 ## Code
 
@@ -57,8 +57,8 @@
 | `.agents/plugins/marketplace.json` | Generated native Codex marketplace; canonical source in `.claude-plugin/marketplace.json` |
 | `.opencode/` | Existing adapter calling shared guards; native runtime and subagent parity unverified |
 | `tooling/` | never ships; [tooling/README.md](tooling/README.md) |
-| `docs/` | generated manifest and SVG figures, host facts, workflow, plan, benchmark method; `flood.svg` is static, sourced in `BENCHMARK.md` |
-| `audit/` | `YYYY-MM.jsonl`, fields in `scripts/audit.mjs` as `FIELDS`; gitignored, append-only |
+| `docs/` | generated manifest and demo, host facts, workflow, plan, benchmark method |
+| `audit/` | `YYYY-MM.jsonl`, fields in `scripts/audit.mjs` as `FIELDS`; append-only; lands in `SERIO_OS_DIR`, else the plugin data dir (`CLAUDE_PLUGIN_DATA`, `PLUGIN_DATA`), else the project dir |
 
 | Command | Effect |
 |---|---|
@@ -66,7 +66,7 @@
 | `npm run setup -- --host codex` | Register the local marketplace and install through native Codex commands; review hook trust |
 | `npm run setup -- --host claude` | Register the local marketplace and install through native Claude commands |
 | `npm run install:plugin -- --host codex` | Install this checkout through the native host CLI; restart to load |
-| `npm run upkeep` | regenerate `docs/MANIFEST.md`, manifests and README blocks |
+| `npm run upkeep` | regenerate `docs/MANIFEST.md`, manifests, the BENCHMARK result block and the demo |
 | `npm run upkeep:check` | Fail when generation changes saved artifacts; allow unrelated existing diffs |
 
 ## Tests
@@ -86,7 +86,7 @@ npm run release patch "one-line note"
 |---|---|
 | Suite | runs |
 | Version | bumps |
-| Manifests and README blocks | regenerate |
+| Manifests, MANIFEST, BENCHMARK block and demo | regenerate |
 | Changelog | updates |
 
 | Bump | Earns it |
@@ -101,8 +101,8 @@ npm run release patch "one-line note"
 
 | Rule | Value |
 |---|---|
-| Setup | Select the native host; apply Claude permissions separately with `npm run sync` only when requested |
+| Setup | `--host claude` by default, `--host codex` for Codex; apply Claude permissions separately with `npm run sync` only when requested |
 | Reports | [SECURITY.md](SECURITY.md) |
-| Git | Commit/push remain manual unless explicitly unlocked; git wipes and unsafe recursive deletes stay held |
+| Git | Commit and push run; deletes git cannot restore and git wipes ask first |
 | `--without` token | matches `Bash`, `Read`, `Edit` rules only |
 | Connectors | no connector rule ships; a connector token matches nothing |

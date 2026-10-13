@@ -12,7 +12,7 @@ export const waveCap = () => positive(process.env.SERIO_MAX_PER_WAVE, 3);
 const waveWindow = () => positive(process.env.SERIO_WAVE_MS, 60000);
 
 function claimSlot(dir, bucket, cap) {
-  try { mkdirSync(dir, { recursive: true }); } catch { return cap + 1; }
+  try { mkdirSync(dir, { recursive: true }); } catch { return 1; }
   for (let n = 1; n <= cap; n += 1) {
     try {
       closeSync(openSync(path.join(dir, `${bucket}-${n}`), 'wx'));

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,19 +19,15 @@ export const walk = (dir, base = '') => (existsSync(dir) ? readdirSync(dir, { wi
   });
 
 const SCOPES = {
-  user: ({ deny, ask }) => ({
-    permissions: { defaultMode: 'default', deny, ask },
-  }),
+  user: ({ deny, ask }) => ({ permissions: { deny, ask } }),
   project: ({ deny }) => ({ permissions: { deny } }),
 };
 
-export function policyFor(scope, without = [], policy = readJson('tooling', 'settings', 'policy.json'), unlock = []) {
+export function policyFor(scope, without = [], policy = readJson('tooling', 'settings', 'policy.json')) {
   const drop = (rules) => without.length
     ? rules.filter((rule) => !without.some((token) => rule.toLowerCase().includes(token)))
     : rules;
-  const shut = Object.entries(policy.unlock ?? {})
-    .filter(([token]) => !unlock.includes(token)).flatMap(([, rules]) => rules);
-  return SCOPES[scope]({ deny: drop([...policy.deny, ...shut]), ask: drop(policy.ask) });
+  return SCOPES[scope]({ deny: drop(policy.deny), ask: drop(policy.ask) });
 }
 
 export const table = (header, rows) => [
@@ -111,7 +107,7 @@ const documents = (root, folder, pattern) => {
   return walk(dir).filter((file) => pattern.test(file)).map((file) => {
     const [, head = '', body = ''] = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(readFileSync(path.join(dir, file), 'utf8').replace(/\r\n/g, '\n')) || [];
     const field = (key) => (new RegExp(`^${key}:\\s*(.*)$`, 'm').exec(head) || [])[1] || '';
-    return { dir: path.dirname(file), name: field('name'), description: field('description'), tools: field('tools'), manual: field('disable-model-invocation') === 'true', body: body.trim() };
+    return { dir: path.dirname(file), name: field('name'), description: field('description'), tools: field('tools'), body: body.trim() };
   }).sort((a, b) => (a.name < b.name ? -1 : 1));
 };
 
@@ -119,7 +115,7 @@ export const skills = (root = REPO) => documents(root, 'skills', /(?:^|\/)SKILL\
 export const agents = (root = REPO) => documents(root, 'agents', /\.md$/);
 
 export const startupChars = (root = REPO) => card().length
-  + [...skills(root).filter((skill) => !skill.manual), ...agents(root)].reduce((n, doc) => n + doc.name.length + doc.description.length, 0);
+  + [...skills(root), ...agents(root)].reduce((n, doc) => n + doc.name.length + doc.description.length, 0);
 
 export const codexRoles = (root = REPO) => agents(root).map((agent) => ({
   file: `serio-${agent.name}.toml`,
@@ -132,14 +128,20 @@ export function score() {
   const box = mkdtempSync(path.join(tmpdir(), 'serio-score-'));
   spawnSync('git', ['init', '-q', box]);
   writeFileSync(path.join(box, '.gitignore'), 'node_modules/\n');
+  for (const file of ['docs/a.md', 'src/a.ts', 'lib/a.js']) {
+    mkdirSync(path.join(box, path.dirname(file)), { recursive: true });
+    writeFileSync(path.join(box, file), 'keep');
+  }
+  spawnSync('git', ['-C', box, 'add', 'lib/a.js']);
+  spawnSync('git', ['-C', box, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'fixture']);
   const rows = read('tooling', 'corpus', 'guard-corpus.jsonl').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
     .filter((c) => !c.known_gap).map((c) => {
       const run = spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'guard.mjs')], {
       input: JSON.stringify({ session_id: `corpus-${c.id}`, cwd: box, tool_name: c.tool, tool_input: c.input || {} }), encoding: 'utf8',
-      env: { ...process.env, SERIO_OS_DIR: box, SERIO_GIT_WRITE: '', SERIO_SCRATCH_DIR: '' },
+      env: { ...process.env, SERIO_OS_DIR: box },
       });
       if (run.error || run.status !== 0) throw new Error(`guard execution failed: ${c.id}`);
-      return { id: c.id, block: c.want === 'block', held: /"permissionDecision":"deny"/.test(run.stdout) };
+      return { id: c.id, block: c.want === 'block', held: /"permissionDecision":"(?:ask|deny)"/.test(run.stdout) };
     });
   rmSync(box, { recursive: true, force: true });
   const n = (block, held) => rows.filter((row) => row.block === block && row.held === held).length;

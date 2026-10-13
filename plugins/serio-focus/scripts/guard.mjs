@@ -15,16 +15,22 @@ export function judge(payload) {
   const input = payload.tool_input || {};
   if (SPAWN_TOOLS.includes(tool)) fanOutCap(payload);
   if (tool !== 'Bash' && tool !== 'PowerShell') return;
-  if (typeof (input.command ?? '') !== 'string') throw new Blocked('GIT WRITE: shell command must be a string');
+  if (typeof (input.command ?? '') !== 'string') throw new Blocked('BLOCKED: shell command must be a string');
   const verdict = judgeShell(input.command || '', 0, payload.cwd);
-  if (verdict) throw new Blocked(`${/recursive delete|git wipe/.test(verdict) ? 'DELETE LOCK' : 'GIT WRITE'}: ${verdict}`);
+  if (verdict) throw new Blocked(verdict, true);
 }
 
-function deny(payload, error) {
+export const reasonOf = (error, decision) => (error.ask
+  ? `${error.message}. ${decision === 'ask' ? 'Allow only if you asked for it.' : 'Held: give the user the exact command.'}`
+  : error.message);
+
+function hold(payload, error) {
   if (!(error instanceof Blocked)) throw error;
-  append(rootOf(payload), entry(payload, error.message));
+  const decision = error.ask && !('turn_id' in payload) ? 'ask' : 'deny';
+  const reason = reasonOf(error, decision);
+  append(rootOf(payload), entry(payload, reason, decision));
   process.stdout.write(JSON.stringify({ hookSpecificOutput: {
-    hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: error.message, additionalContext: error.message,
+    hookEventName: 'PreToolUse', permissionDecision: decision, permissionDecisionReason: reason,
   } }));
 }
 
@@ -33,7 +39,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let payload = null;
   try { payload = JSON.parse(raw); } catch {
     const tool = /"tool_name"\s*:\s*"(Bash|PowerShell|Agent|Task|spawn_agent)"/.exec(raw)?.[1];
-    if (tool) deny({ tool_name: tool }, new Blocked('BLOCKED: tool payload could not be parsed'));
+    if (tool) hold({ tool_name: tool }, new Blocked('BLOCKED: tool payload could not be parsed'));
   }
-  if (payload && typeof payload === 'object') try { judge(payload); } catch (error) { deny(payload, error); }
+  if (payload && typeof payload === 'object') try { judge(payload); } catch (error) { hold(payload, error); }
 }
