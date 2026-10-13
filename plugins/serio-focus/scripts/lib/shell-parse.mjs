@@ -1,10 +1,8 @@
 const REDIRECT_AMP = (prev, next) => /[<>]/.test(prev || '') || next === '>';
-const SHELL_PREFIX = /^(?:(?:sudo|eval|command|exec|builtin|nohup|time|nice|stdbuf|xargs|if|then|else|elif|while|until|do)\b(?:\s+-\S+)*\s+|[!{(]\s*)/i;
+const SHELL_PREFIX = /^(?:(?:sudo|env|eval|command|exec|builtin|nohup|time|nice|stdbuf|xargs|if|then|else|elif|while|until|do)\b(?:\s+-\S+)*\s+|[!{(]\s*|(?:\w+=(?:"[^"]*"|'[^']*'|[^\s'"])*\s+)+)/i;
 const SHELL_QUOTED = /^(['"])([\s\S]*)\1$/;
-const REDIRECT = /^&?\d*[<>]{1,2}&?\d*$/;
-const REDIRECTED = /^&?\d*[<>]{1,2}/;
-const TO_FILE = /^(?:&|1?)>{1,2}(?![&])/;
-const FD_DUP = /[<>]&/;
+const REDIRECT = /^&?\d*[<>]{1,2}&?$/;
+const REDIRECTED = /^&?\d*[<>]/;
 const HEREDOC = /^([^\n]*?)(?<!<)<<(?!<)-?[ \t]*(['"]?)\\?([\w.-]+)\2([^\n]*)\n(?:([\s\S]*?)\n)??[ \t]*\3[ \t]*$/gm;
 const RUNS_BODY = /\b(?:bash|sh|zsh|dash|ksh|pwsh|powershell|cmd|ssh|eval|source)\b/i;
 
@@ -29,7 +27,7 @@ export function segments(command) {
     buffer += char;
   }
   out.push(buffer);
-  return out.map((part) => part.replace(/^\s*(?:\w+=\S+\s+)*/, '').trim()).filter(Boolean);
+  return out.map((part) => part.trim()).filter(Boolean);
 }
 
 export function unwrap(segment) {
@@ -64,22 +62,10 @@ export const strip = (token) => token.replace(/^['"]|['"]$/g, '');
 
 export function tokens(segment) {
   const out = [];
-  let toFile = false;
   const raw = shellWords(segment).filter(Boolean);
   for (let i = 0; i < raw.length; i += 1) {
-    const word = raw[i];
-    if (REDIRECT.test(word)) {
-      const detached = /[<>]&?$/.test(word);
-      const target = detached ? (raw[i + 1] || '') : '';
-      if (TO_FILE.test(word) && !FD_DUP.test(word) && !target.startsWith('&')) toFile = true;
-      if (detached) i += 1;
-      continue;
-    }
-    if (REDIRECTED.test(word)) {
-      if (TO_FILE.test(word)) toFile = true;
-      continue;
-    }
-    out.push(word);
+    if (REDIRECT.test(raw[i])) i += 1;
+    else if (!REDIRECTED.test(raw[i])) out.push(raw[i]);
   }
-  return toFile ? [] : out;
+  return out;
 }

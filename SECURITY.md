@@ -16,13 +16,13 @@
 
 | Boundary | Rule |
 |---|---|
-| Surface | Runs only where Claude Code or Codex executes plugin hooks (`SessionStart`, `PreToolUse`), and in OpenCode through `.opencode/`. No effect in cloud sessions or any surface that skips this hook path. |
-| Shape | A policy gate on the agent's tool calls. It is not a sandbox. It does not confine code that was already written, processes the agent spawned, or network calls made by a connector itself. |
+| Surface | Runs only where Claude Code or Codex executes plugin hooks (`SessionStart`, `PreToolUse`), and in OpenCode through `.opencode/`. Claude cloud sessions do not install plugins; Codex cloud tasks are undocumented. |
+| Shape | A seatbelt on the agent's tool calls: deletes git cannot restore ask first in Claude and are held in Codex and OpenCode. It is not a sandbox. It does not confine code that was already written, processes the agent spawned, or network calls made by a connector itself. |
 | Strength | Shell matching is pattern-based and does not hold against a determined adversary. Use it together with operating system permissions and Claude Code `permissions.deny` rules, not instead of them. |
 
 ## Known gaps
 
-<!-- measured 2026-10-12 against `plugins/serio-focus/scripts/guard.mjs`; each row is reproducible with the command below -->
+<!-- measured 2026-10-13 against `plugins/serio-focus/scripts/guard.mjs`; each row is reproducible with the command below -->
 
 | Gap | Probe | Verdict |
 |---|---|---|
@@ -31,6 +31,9 @@
 | A binary name held in a shell variable is not resolved. | `X=rm; $X -rf docs` | Allowed. |
 | A payload decoded inside a pipeline is not followed. | `echo … \| base64 -d \| bash` | Allowed. |
 | PowerShell here-string data can be mistaken for shell commands. | Here-string containing `rm -rf node_modules` | May be blocked. |
+| Non-recursive and scripted deletes are not judged. | `rm file`, `find . -delete`, `node -e "fs.rmSync(...)"` | Allowed. |
+| Nested shells with backslash-escaped quotes, or a third nesting level, are not followed. | `bash -c "bash -c \"rm -rf docs\""` | Allowed. |
+| Hook `ask` under `bypassPermissions` is undocumented. | untracked `rm -rf` in a bypass session | Prompt expected, unproven. |
 
 | Gap | Rule behind it |
 |---|---|
@@ -42,4 +45,4 @@
 | Reproduce a gap | pipe the probe as a `PreToolUse` payload into `plugins/serio-focus/scripts/guard.mjs`; empty stdout means allowed |
 | Score the corpus | `npm run eval` |
 | Method, last run | [docs/BENCHMARK.md](docs/BENCHMARK.md) |
-| After every host update | `npm test` — fires every hook against a representative payload; fails on changed event or field |
+| After every host update | `npm test` runs the guard on synthetic payloads and checks the hook events and matcher; a changed host field needs a fresh-session check |

@@ -9,7 +9,7 @@ You review a change. Edit, commit and post nothing. The scope comes in the promp
 
 1. Read the repository instructions, including any `## Code Review Rules` section.
 2. Read the diff, then the callers, tests and config each change touches.
-3. When the Ponytail review skill is available, apply its checks. Otherwise check in this order: correct, safe, holds under load, tested, fast, lean.
+3. When a code-review skill is installed, apply its checks. Otherwise check in this order: correct, safe, holds under load, tested, fast, lean.
 4. Report a finding only at 80% confidence or more, with the input or path that fails. Leave style the linter owns.
 
 Return exactly these sections:

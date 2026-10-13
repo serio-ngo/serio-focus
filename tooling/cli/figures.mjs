@@ -1,14 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { waveCap } from '../../plugins/serio-focus/scripts/lib/fan-out.mjs';
 import { PLUGIN, REPO, writeBlock } from './generate.mjs';
 
 const INK = '#24292f';
 const MUTED = '#57606a';
 const HUE = { without: '#cf222e', with: '#0969da' };
-const WASH = { without: '#ffebe9', with: '#ddf4ff' };
+const WASH = { without: '#ffebe9' };
 
 const DEMO_OPEN = '<!-- serio-demo -->';
 const DEMO_CLOSE = '<!-- /serio-demo -->';
@@ -20,49 +19,10 @@ const DOCS = (name) => path.join(REPO, 'docs', name);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 const text = (x, y, s, o = {}) => `<text x="${x}" y="${y}" fill="${o.fill ?? INK}" font-size="${o.size ?? 12}"`
-  + `${o.weight ? ` font-weight="${o.weight}"` : ''}${o.anchor ? ` text-anchor="${o.anchor}"` : ''}${o.family ? ` font-family="${o.family}"` : ''}`
+  + `${o.weight ? ` font-weight="${o.weight}"` : ''}`
   + `${o.cls ? ` class="${o.cls}"` : ''}>${esc(s)}</text>`;
 const open = (w, h, label, family = FONT) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)}" font-family="${family}">`;
 const file = (lines) => `${lines.join('\n')}\n`;
-
-function tiles(scores) {
-  return {
-    stops: [
-      [String(waveCap()), 'subagents per wave'],
-      ['commit · push', 'held for the owner'],
-      ['rm -r · reset --hard', 'held unless disposable'],
-    ],
-    wins: [
-      [`${scores.recall}%`, 'corpus recall'],
-      [`${scores.fpRate}%`, 'false blocks'],
-      [String(scores.cases), 'labelled cases'],
-    ],
-    cost: [
-      [`${scores.contextTokens} tok`, 'startup context'],
-      ['Cloud sessions', 'hooks do not fire'],
-      ['OpenCode', 'subagents bypass the guard'],
-    ],
-  };
-}
-
-function tileRow(items) {
-  const W = 720; const H = 92; const gap = 16;
-  const w = (W - gap * (items.length - 1)) / items.length;
-  const alt = items.map(([value, label]) => `${value} ${label}`).join('; ');
-  return file([
-    open(W, H, alt),
-    ...items.flatMap(([value, label], i) => {
-      const x = i * (w + gap);
-      return [
-        `<rect x="${x + 0.5}" y="0.5" width="${w - 1}" height="${H - 1}" rx="8" fill="#ffffff" stroke="#d0d7de"/>`,
-        `<rect x="${x + 16}" y="22" width="3" height="48" rx="1.5" fill="${HUE.with}"/>`,
-        text(x + 30, 50, value, { size: 26, weight: 700 }),
-        text(x + 30, 71, label, { size: 12 }),
-      ];
-    }),
-    '</svg>',
-  ]);
-}
 
 function wrap(line, max) {
   const out = [];
@@ -76,13 +36,18 @@ function wrap(line, max) {
 
 function probe() {
   const root = mkdtempSync(path.join(tmpdir(), 'serio-figure-'));
-  spawnSync('git', ['init', '-q', root]);
+  const git = (...args) => spawnSync('git', ['-C', root, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args]);
+  git('init', '-q');
+  mkdirSync(path.join(root, 'src', 'old-widget'), { recursive: true });
+  writeFileSync(path.join(root, 'src', 'old-widget', 'index.js'), 'export {};\n');
+  git('add', '.');
+  git('commit', '-qm', 'widget');
 
-  const fire = (tool_name, tool_input, { session = 'demo', agent_type } = {}) => {
+  const fire = (command) => {
     const run = spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'guard.mjs')], {
-      input: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: session, cwd: root, tool_name, tool_input, agent_type }),
+      input: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: 'demo', cwd: root, tool_name: 'Bash', tool_input: { command } }),
       encoding: 'utf8',
-      env: { ...process.env, SERIO_OS_DIR: root, SERIO_GIT_WRITE: '0', SERIO_MAX_PER_WAVE: '', SERIO_WAVE_MS: String(864e5) },
+      env: { ...process.env, SERIO_OS_DIR: root },
     });
     let decision = '';
     let reason = '';
@@ -91,21 +56,31 @@ function probe() {
       decision = out.permissionDecision || '';
       reason = out.permissionDecisionReason || '';
     } catch { }
-    if (run.status === 2 || decision === 'deny' || decision === 'ask') return { blocked: true, verdict: reason || run.stderr.trim() };
     if (run.status !== 0) throw new Error(`guard exited ${run.status}: ${run.stderr}`);
-    return { blocked: false, verdict: reason };
+    return { decision, verdict: reason };
   };
 
-  for (let n = 0; n < 3; n += 1) fire('Agent', { prompt: 'bounded task' });
   const steps = [
-    ['Bash · git status', 'Bash', { command: 'git status' }],
-    ['Agent · fourth direct call', 'Agent', { prompt: 'fourth task' }],
-    ['Bash · git push origin main', 'Bash', { command: 'git push origin main' }],
-    ['Bash · rm -rf src', 'Bash', { command: 'rm -rf src' }],
-  ].map(([label, tool, input]) => ({ label, ...fire(tool, input) }));
-  const answer = [];
+    ['architect · plan: 2 tasks, each with its check'],
+    ['tester · red: widget test fails as expected'],
+    ['coder · Bash · rm -rf src/old-widget', ''],
+    ['reviewer · verdict ready'],
+    ['Bash · git push -u origin feat/drop-widget', ''],
+    ['Bash · rm -rf ~/notes', 'ask'],
+  ].map(([label, want]) => {
+    if (want === undefined) return { label };
+    const { decision, verdict } = fire(label.split(' · ').at(-1));
+    if (decision !== want) throw new Error(`demo row "${label}" got "${decision}", expected "${want}"`);
+    return decision ? { label, verdict } : { label: `${label} ✓` };
+  });
+  const answer = [
+    'Shipped: old widget removed, PR open.',
+    '- src/old-widget deleted — tracked, git can restore it',
+    '- push ran — merge stays with you',
+    'Next: allow or skip rm -rf ~/notes — outside the repo, no undo.',
+  ];
   const holds = readdirSync(path.join(root, 'audit')).reduce((n, name) => n + readFileSync(path.join(root, 'audit', name), 'utf8').trim().split('\n').length, 0);
-  const receipt = `SERIO FOCUS · ${holds} holds written to the audit log`;
+  const receipt = `SERIO FOCUS · ${holds} hold${holds === 1 ? '' : 's'} written to the audit log`;
   rmSync(root, { recursive: true, force: true });
   return { steps, answer, receipt };
 }
@@ -114,21 +89,18 @@ function demoSvg({ steps, answer, receipt } = probe()) {
   const WRAP = 100; const CH = 8.2;
   const FADE_IN = 0.3; const HOLD = 5; const FADE_OUT = 1; const BLANK = 0.5;
   const TYPE_AT = 0.8; const TYPE_LEN = 1.4;
-  const prompt = '> tidy the repo and push it.';
+  const prompt = '> /serio-focus:deliver drop the old widget and ship it';
   const rows = [{ text: '$ claude', fill: MUTED }, { text: prompt, typed: true, weight: 600, fill: INK }];
   for (const step of steps) {
     rows.push({ text: `⏺  ${step.label}`, fill: INK, weight: 600 });
     if (!step.verdict) continue;
-    const hue = step.blocked ? HUE.without : HUE.with;
-    const wash = step.blocked ? WASH.without : WASH.with;
-    wrap(`${step.blocked ? '⨯' : '↻'}  ${step.verdict}`, WRAP)
-      .forEach((line, i) => rows.push({ text: i ? `   ${line}` : line, fill: hue, wash: i === 0 ? wash : null, bar: i === 0 }));
+    wrap(`?  ${step.verdict}`, WRAP)
+      .forEach((line, i) => rows.push({ text: i ? `   ${line}` : line, fill: HUE.without, wash: i === 0 ? WASH.without : null, bar: i === 0 }));
   }
   answer.forEach((line, i) => rows.push({
     text: line.startsWith('-') ? `   ${line}` : line,
     fill: /^Next:/.test(line) ? HUE.with : INK,
     weight: i === 0 || /^Next:|^Step /.test(line) ? 600 : undefined,
-    wash: i === 0 ? null : null,
     bar: false,
   }));
   receipt.split('\n').forEach((line, i) => rows.push({ text: line, fill: MUTED, weight: i ? undefined : 600, box: i === 0 }));
@@ -165,7 +137,7 @@ function demoSvg({ steps, answer, receipt } = probe()) {
   }).join('');
   const cues = rows.map((row, i) => `.d${i}{animation:k${i} ${loop}s infinite both}`).join('');
   const typeW = Math.ceil(prompt.length * CH);
-  const alt = `serio-focus session: ${steps.map((s) => (s.verdict ? `${s.label} → ${s.verdict}` : `${s.label}, allowed`)).join(' · ')} · ${receipt}`;
+  const alt = `serio-focus session: ${steps.map((s) => (s.verdict ? `${s.label} → ${s.verdict}` : s.label)).join(' · ')} · ${receipt}`;
   return { width: W, alt, svg: file([
     open(W, H, alt, MONO),
     '<style>',
@@ -187,12 +159,8 @@ function demoSvg({ steps, answer, receipt } = probe()) {
   ]) };
 }
 
-export function writeFigures(scores) {
+export function writeFigures() {
   const out = [];
-  for (const [name, items] of Object.entries(tiles(scores))) {
-    writeFileSync(DOCS(`tiles-${name}.svg`), tileRow(items), 'utf8');
-    out.push(`wrote docs/tiles-${name}.svg`);
-  }
   const demo = demoSvg();
   writeFileSync(DOCS('demo.svg'), demo.svg, 'utf8');
   out.push('wrote docs/demo.svg');

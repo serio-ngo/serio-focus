@@ -2,12 +2,12 @@
 
 <sub><b>Answers</b> · which hook, permission, plugin, skill and review identifiers Claude Code and Codex accept · <a href="../README.md">README</a></sub>
 
-<!-- verified against `code.claude.com/docs` on 2026-09-04, hooks re-verified 2026-09-23; source per section -->
+<!-- verified against `code.claude.com/docs` on 2026-09-04, hooks re-verified 2026-10-13; source per section -->
 
 ## Hooks
 
 <details open>
-<summary>Hook facts · 31 rows</summary>
+<summary>Hook facts · 35 rows</summary>
 
 | Fact | Value |
 |---|---|
@@ -18,6 +18,7 @@
 | Exact / pipe-list chars | letters, digits, `_`, `-`, space, comma, pipe |
 | Any other char | unanchored JS RegExp (`Edit.*` matches `NotebookEdit`) |
 | Stdout reaches context | `UserPromptSubmit`, `SessionStart`, `PostModelSwitch` only |
+| SessionStart stdout size | capped at 10,000 characters; longer output is saved to a file and replaced by its path and a 2,000-character preview |
 | Stdin, every event | `session_id` `transcript_path` `cwd` `hook_event_name` |
 | Stdin, tool events add | `tool_name` `tool_input`; `agent_id` and `agent_type` inside a subagent, workflow subagents included; both absent on main |
 | Subagent session | reuses parent `session_id`; parallel siblings share `agent_type` (`workflow-subagent`, observed) — key per-agent state on `agent_id` |
@@ -35,11 +36,14 @@
 | JSON output | exit `0`, stdout holds only the JSON object; exit `2` keeps blocking and the JSON fields are still read |
 | PreToolUse `hookSpecificOutput.updatedInput` | **replaces the entire `tool_input`** — include unchanged fields; pair with `permissionDecision: "allow"` (auto-approve) or `"ask"` (show the rewritten input); deny/ask permission rules re-evaluate against the returned input |
 | PreToolUse `permissionDecisionReason` | `allow` / `ask`: shown to the user, not Claude; `deny`: shown to Claude |
+| PreToolUse `ask` | native prompt in default and auto modes; `claude -p` with no prompt host turns it into deny and Claude reads the reason; cloud sessions wait for approval in the session UI; under `bypassPermissions` undocumented |
+| Critical paths | a hook `allow` never approves `rm` or `rmdir` of a critical path such as `/` or `~` |
 | PreToolUse `additionalContext` | string added to Claude's context alongside the tool result — the only rewrite field the model sees |
 | PostToolUse `hookSpecificOutput.updatedToolOutput` | replaces the tool result Claude sees; must match the tool's output shape; the tool has already run |
 | PostToolUse `updatedMCPToolOutput` | MCP tools only; prefer `updatedToolOutput` |
 | `systemMessage` | universal field: warning text shown to the **user**, not model context; Stop honours it |
-| Env | `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT` |
+| Env | `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA` (plugin hooks only, persistent across updates) |
+| Host markers | env `CLAUDECODE=1`, `CLAUDE_CODE_REMOTE=true` in cloud sessions; stdin `permission_mode` |
 | Kill switch | `"disableAllHooks": true` |
 
 </details>
@@ -49,7 +53,7 @@
   "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/x.mjs\"" } ] } ] } }
 ```
 
-- Source: <https://code.claude.com/docs/en/hooks.md>
+- Source: <https://code.claude.com/docs/en/hooks.md>, <https://code.claude.com/docs/en/permission-modes.md>, <https://code.claude.com/docs/en/headless.md>, <https://code.claude.com/docs/en/env-vars.md>, retrieved 2026-10-13; `CLAUDE_PLUGIN_DATA` read in the 2.1.296 binary
 
 ## Permissions
 
@@ -92,9 +96,12 @@
 | Skill context | name and description at start, cut at 1,536 chars each; body on invocation only |
 | Subagent | `<plugin-root>/agents/<name>.md` → `<plugin>:<agent>` |
 | Plugin subagents ignore | `hooks`, `mcpServers`, `permissionMode`, `initialPrompt` — block with `deny: ["Agent(name)"]` |
+| Cloud sessions | do not install plugins from `enabledPlugins`, so plugin hooks do not run; hooks committed in the repo's `.claude/settings.json` do |
+| Output styles | plugin `output-styles/`; frontmatter `name`, `description`, `keep-coding-instructions`, `force-for-plugin` (applies the style while the plugin is enabled) |
 
 - Source: <https://code.claude.com/docs/en/plugins/loading.md>, retrieved 2026-09-26; gate and settings `env` filter read in the 2.1.281 binary
 - Skill extensions: <https://code.claude.com/docs/en/skills>; portable fields: <https://agentskills.io/specification>; retrieved 2026-10-12
+- Cloud and output styles: <https://code.claude.com/docs/en/cloud-environments.md>, <https://code.claude.com/docs/en/output-styles.md>, retrieved 2026-10-13
 
 ## Auth
 
@@ -147,9 +154,14 @@
 | Skills | parser keeps `name`, `description`, `metadata` and ignores other keys; `agents/openai.yaml` `policy.allow_implicit_invocation: false` allows explicit `$skill` use only |
 | Hook events | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`, `SessionEnd` |
 | `PreToolUse` coverage | shell (matches `Bash`), `apply_patch`, MCP tools, `spawn_agent` (also matches `Agent`); not hosted web search |
-| Deny | `permissionDecision: "deny"` or exit 2; `ask` unsupported |
+| Deny | `permissionDecision: "deny"` with a non-empty reason, legacy `decision: "block"`, or exit 2 with stderr; the model reads the reason |
+| Fail open | `ask`, `approve`, an empty deny reason, `continue: false`, unparsable JSON, a timeout or any other exit: the tool runs |
+| PreToolUse stdin | `session_id`, `turn_id`, `transcript_path`, `cwd`, `hook_event_name`, `model`, `permission_mode`, `tool_name`, `tool_input`, `tool_use_id`; `agent_id`, `agent_type` in subagents; `turn_id` marks Codex |
+| SessionStart | stdout becomes developer context; about 2,500 tokens per handler unless `additionalContextLimit` overrides |
+| Cloud tasks | plugin hooks not documented to run; treat as absent |
 | Trust | non-managed hooks need per-hash trust in `/hooks`; a changed hook asks again |
-| Env | `PLUGIN_ROOT` and `CLAUDE_PLUGIN_ROOT` |
+| Env | `PLUGIN_ROOT`, `PLUGIN_DATA` and the aliases `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`, plugin hooks only |
 | Local review | `codex review --base <branch>` or `/review`; reports only |
 
 - Source: <https://developers.openai.com/plugins/build/plugins>, <https://learn.chatgpt.com/docs/hooks>, <https://learn.chatgpt.com/docs/build-skills>, <https://learn.chatgpt.com/docs/agent-configuration/subagents>, <https://github.com/openai/codex/blob/main/codex-rs/core-plugins/src/manifest.rs>, retrieved 2026-10-12
+- Hook output and stdin: <https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/output_parser.rs>, <https://github.com/openai/codex/blob/main/codex-rs/hooks/schema/generated/pre-tool-use.command.input.schema.json>, <https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs>, <https://learn.chatgpt.com/docs/plugins.md>, retrieved 2026-10-13
