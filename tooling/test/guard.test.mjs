@@ -58,6 +58,7 @@ it('rejects stale generated artefacts and product descriptions', () => {
     recursive: true, filter: (file) => !/(?:^|[/\\])(?:\.git|\.claude|node_modules|audit)(?:[/\\]|$)/.test(file),
   });
   const cli = path.join(repo, 'tooling', 'cli', 'serio.mjs');
+  assert.match(readFileSync(path.join(REPO, '.github', 'workflows', 'verify.yml'), 'utf8'), /os: \[ubuntu-latest, windows-latest, macos-latest\]/);
   const before = spawnSync(process.execPath, [cli, 'upkeep'], { encoding: 'utf8' });
   if (before.status !== 0) throw new Error(before.stderr || 'fixture generation failed');
   const description = JSON.parse(readFileSync(path.join(repo, 'plugins', 'serio-focus', '.claude-plugin', 'plugin.json'), 'utf8')).description;
@@ -70,6 +71,10 @@ it('rejects stale generated artefacts and product descriptions', () => {
     assert.match(result.stderr, /generated artefacts are stale:/);
     assert(result.stderr.includes(file), result.stderr);
   }
+  writeFileSync(path.join(repo, 'plugins', 'serio-focus', 'scripts', 'guard.mjs'), 'process.exit(1);');
+  const failed = spawnSync(process.execPath, [cli, 'upkeep'], { encoding: 'utf8' });
+  assert.notEqual(failed.status, ALLOWED);
+  assert.match(failed.stderr, /guard execution failed:/);
 });
 
 it('rejects zero inventory counts when skill and agent files exist', () => {
@@ -195,6 +200,9 @@ spawnSync('git', ['-C', box, 'add', '-f', 'dist/tracked.txt']);
 symlinkSync(sandbox('outside-'), path.join(box, 'dist', 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
 
 blocks('blocks recursive deletes and git wipes', [
+  'rm -rf /a node_modules',
+  'rm -rf -- --valuable node_modules',
+  'rm -rf 123 node_modules',
   'rm -rf docs',
   'rm --recursive docs',
   'rm -rf -- docs --help',

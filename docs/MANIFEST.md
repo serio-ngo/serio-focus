@@ -1,6 +1,6 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.22.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.23.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Hooks
 
@@ -28,7 +28,7 @@
 
 | What ships | Count |
 |---|---|
-| Script lines | **334** across 8 files |
+| Script lines | **316** across 8 files |
 | Hook events | **2** |
 | Skills | **2** |
 | Subagents | **3** |

@@ -32,7 +32,7 @@ Subagent floods capped · destructive commands held for the owner · every hold 
 
 Claude Code and Codex can launch 20 subagents in one turn. A 5-hour window goes in seconds.
 
-The hook caps each wave at 3 and queues the rest.
+The hook permits 3 starts per wave and rejects further attempts. Retry after the next wave begins.
 
 <img src="docs/flood.svg" width="720" alt="20 subagents requested. Without the guard 20 start at once; with it 3 start and the rest wait for the next wave.">
 
@@ -58,7 +58,7 @@ In Codex, setup also writes the three agents to `~/.codex/agents/`; open `/hooks
 | Fan-out cap | `SERIO_MAX_PER_WAVE=3`, `SERIO_WAVE_MS=60000`: the fourth direct `Agent`, `Task` or `spawn_agent` call in a wave waits for the next one. Workflow scripts are not parsed. |
 | Git lock | `git commit` and `git push` are held for the owner, nested shells included; the reason names the exact command. Reads, branches, stashes and merges run. `SERIO_GIT_WRITE=1` reopens commit and push. |
 | Delete lock | Recursive deletes, `git clean -f` and `git reset --hard` are held unless every target is a literal path inside the temp dir, `SERIO_SCRATCH_DIR` or an ignored build folder. Tracked files and symlink escapes stay held. |
-| Audit | Every hold appends one line to `audit/YYYY-MM.jsonl`: session, agent, tool, target, rule. |
+| Audit | Holds append to `audit/YYYY-MM.jsonl`: session, agent, call, tool, category, rule and deny result. Arguments are omitted; write failures warn on stderr. |
 | Session card | One startup line names the holds. |
 
 | Agent | Notes |

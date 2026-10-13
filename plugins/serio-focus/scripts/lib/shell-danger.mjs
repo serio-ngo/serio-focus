@@ -53,8 +53,12 @@ function safeTarget(token, cwd) {
 }
 
 function onlyDisposable(segment, dir, cwd) {
+  let options = true;
   const operands = tokens(segment).slice(1)
-    .filter((token) => !/^-|^\/[A-Za-z]$|^\d+$|^\d*[<>]/.test(token))
+    .filter((token) => {
+      if (options && token === '--') { options = false; return false; }
+      return !options || !(token.startsWith('-') || (/^(?:rd|rmdir)\b/i.test(segment) && /^\/[sq]$/i.test(token)));
+    })
     .map((token) => token.replace(/^['"]|['"]$/g, ''))
     .filter(Boolean)
     .map((token) => (dir && !ABSOLUTE.test(token) ? `${dir}/${token}` : token));

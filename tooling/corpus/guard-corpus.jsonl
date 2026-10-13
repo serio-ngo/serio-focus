@@ -45,3 +45,4 @@
 {"id":"delete-d11","category":"delete","tool":"Bash","input":{"command":"rmdir /s /q docs"},"want":"block","origin":"regression","note":"Windows recursive directory deletion retains the guard"}
 {"id":"delete-d12","category":"delete","tool":"Bash","input":{"command":"git reset --hard -- --help"},"want":"block","origin":"regression","note":"End-of-options prevents a help exemption"}
 {"id":"delete-d13","category":"delete","tool":"Bash","input":{"command":"git clean -fdx -- --dry-run"},"want":"block","origin":"regression","note":"A path named dry-run does not make git clean a preview"}
+{"id":"delete-slash-path","category":"delete","tool":"Bash","input":{"command":"rm -rf /a node_modules"},"want":"block","origin":"regression","note":"An absolute single-letter path is an operand, not a Windows switch"}

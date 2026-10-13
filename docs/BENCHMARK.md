@@ -19,7 +19,7 @@
 <!-- serio-scores -->
 | Measure | Value |
 |---|---|
-| Labelled cases | 33 |
+| Labelled cases | 48 |
 | Recall: blocks held | 100% |
 | False blocks: allows held | 0% |
 | Startup context | ~270 tokens |
