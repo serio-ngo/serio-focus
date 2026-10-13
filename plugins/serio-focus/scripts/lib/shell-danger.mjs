@@ -49,6 +49,7 @@ function restorable(token, cwd) {
 }
 
 function allRestorable(segment, dir, cwd) {
+  if (dir && !existsSync(path.resolve(cwd, drive(dir)))) return false;
   let options = true;
   const operands = tokens(segment).slice(1)
     .filter((token) => {

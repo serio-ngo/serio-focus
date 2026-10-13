@@ -197,6 +197,7 @@ blocks('holds deletes and wipes git cannot restore', [
   'rm -rf 123 node_modules',
   'rm -rf docs',
   '(rm -rf docs)',
+  'cd missing || rm -rf docs',
   'echo $(rm -rf docs)',
   'rm --recursive docs',
   'rm -rf -- docs --help',
