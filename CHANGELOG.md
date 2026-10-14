@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.25.0 | 2026-10-14 | Stop hook receipt.mjs writes one session row per turn to audit/: project, branch, title, API calls, tokens, edited files; read from the transcript, no agent action |
 | 1.24.0 | 2026-10-13 | Tester agent on and deliver ships the branch; commit and push run; deletes ask only when git cannot restore the data (Claude asks, Codex and OpenCode hold); ADHD reply rules in the session card; audit and wave state move to the plugin data dir; tiles, flood figure and score badges removed |
 | 1.23.0 | 2026-10-13 | Close shell guard bypasses, preserve wave claims, redact denial logs and restore required CI coverage |
 | 1.22.0 | 2026-10-12 | Agents architect, coder and reviewer with deliver and pr-loop skills; tester draft disabled; Codex role agents written by setup; guards cut to git lock, delete lock, fan-out cap and audit; read budget, web cap, receipt, quota note and rescue removed as native duplicates or unprovable; Git Bash temp deletes pass; one hooks file serves Claude and Codex; corpus scored in the suite and published for the README badges |

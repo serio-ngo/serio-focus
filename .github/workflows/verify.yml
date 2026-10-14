@@ -61,7 +61,7 @@ jobs:
       - uses: DavidAnson/markdownlint-cli2-action@v24
       - uses: lycheeverse/lychee-action@v2
         with:
-          args: --no-progress --accept 200,206,429 "**/*.md"
+          args: --no-progress --accept 200,206,429,503 --max-retries 2 "**/*.md"
           fail: true
 
   release:

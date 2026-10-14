@@ -58,7 +58,7 @@
 | `.opencode/` | Existing adapter calling shared guards; native runtime and subagent parity unverified |
 | `tooling/` | never ships; [tooling/README.md](tooling/README.md) |
 | `docs/` | generated manifest and demo, host facts, workflow, plan, benchmark method |
-| `audit/` | `YYYY-MM.jsonl`, fields in `scripts/audit.mjs` as `FIELDS`; append-only; lands in `SERIO_OS_DIR`, else the plugin data dir (`CLAUDE_PLUGIN_DATA`, `PLUGIN_DATA`), else the project dir |
+| `audit/` | `YYYY-MM.jsonl`, fields in `scripts/audit.mjs` as `FIELDS`; append-only; holds from `guard.mjs`, cumulative `action: session` rows from `receipt.mjs` on every `Stop`, the last row per session wins; lands in `SERIO_OS_DIR`, else the plugin data dir (`CLAUDE_PLUGIN_DATA`, `PLUGIN_DATA`), else the project dir |
 
 | Command | Effect |
 |---|---|

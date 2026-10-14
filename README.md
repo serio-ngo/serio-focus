@@ -51,6 +51,7 @@ Warnings and irreversible steps stay in full sentences.
 | Delete of untracked, modified or outside-repo data; `git reset --hard`; `git clean -f` | Claude asks you. Codex and OpenCode hold the call and show you the command |
 | More than 3 direct subagent starts in 60 s | The next one waits for the next wave (`SERIO_MAX_PER_WAVE`, `SERIO_WAVE_MS`) |
 | Every hold | One line in `audit/YYYY-MM.jsonl`, without the command text |
+| Every turn end | One `session` line in the same file: project, branch, title, API calls, tokens, edited files; read from the transcript, no agent action |
 
 The guard is a seatbelt, not a sandbox: [SECURITY.md](SECURITY.md).
 
@@ -65,7 +66,7 @@ The guard is a seatbelt, not a sandbox: [SECURITY.md](SECURITY.md).
 
 Without a checkout, in Claude Code: `/plugin marketplace add serio-ngo/serio-focus`, then `/plugin install serio-focus@serio-ngo` and restart.
 
-In Codex, setup also writes the four agents to `~/.codex/agents/`; open `/hooks` and trust the two Serio hooks after every update. After `git pull`, `claude plugin update serio-focus@serio-ngo` loads the new version in Claude Code. Never copy the checkout into the plugin cache by hand.
+In Codex, setup also writes the four agents to `~/.codex/agents/`; open `/hooks` and trust the three Serio hooks after every update. After `git pull`, `claude plugin update serio-focus@serio-ngo` loads the new version in Claude Code. Never copy the checkout into the plugin cache by hand.
 
 <div align="center">
 <sub>
