@@ -119,7 +119,7 @@ it('keeps startup context small and agents, skills and Codex roles well-formed',
   }
   assert.ok(startupChars() < 1950, String(startupChars()));
   const hooks = JSON.parse(readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
-  assert.deepEqual(Object.keys(hooks).sort(), ['PreToolUse', 'SessionStart']);
+  assert.deepEqual(Object.keys(hooks).sort(), ['PreToolUse', 'SessionStart', 'Stop']);
 });
 
 it('corpus: every labelled case gets its verdict', async () => {
@@ -127,7 +127,7 @@ it('corpus: every labelled case gets its verdict', async () => {
   assert.deepEqual(score().misses, []);
 });
 
-it('runs commit and push, and audits every hold', () => {
+it('runs commit and push, audits every hold and every session receipt', () => {
   const run = (command) => guard({ cwd: box, session_id: 'git-open', ...bash(command) });
   for (const command of ['git commit -m x', 'git push origin main']) {
     assert.equal(run(command), ALLOWED, command);
@@ -140,6 +140,14 @@ it('runs commit and push, and audits every hold', () => {
     encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: box } }).stdout).hookSpecificOutput;
   assert.equal(codex.permissionDecision, DENY);
   assert.match(codex.permissionDecisionReason, /Held: give the user the exact command/);
+  const transcript = path.join(box, 'transcript.jsonl');
+  writeFileSync(transcript, [{ customTitle: 'T', gitBranch: 'b' }, 'x', ...[1, 1].map(() => ({ type: 'assistant',
+    message: { id: 'm', usage: { input_tokens: 2, output_tokens: 3 }, content: [{ type: 'tool_use', name: 'Edit', input: { file_path: 'a.js' } }] } }))]
+    .map((row) => JSON.stringify(row)).join('\n'));
+  assert.equal(fire(script('receipt.mjs'), { cwd: box, session_id: 'receipt', transcript_path: transcript }), 0);
+  const receipt = readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse).at(-1);
+  assert.deepEqual([receipt.session, receipt.action, receipt.result],
+    ['receipt', 'session', { project: box, branch: 'b', title: 'T', calls: 1, tokens: 5, files: ['a.js'] }]);
 });
 
 it('never persists shell secrets or descriptions in denial records', () => {

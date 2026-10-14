@@ -1,6 +1,6 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.24.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.25.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Hooks
 
@@ -8,6 +8,7 @@
 |---|---|---|---|
 | `PreToolUse` | `^(Bash\|PowerShell\|Agent\|Task\|spawn_agent)$` | `scripts/guard.mjs` | Claude, Codex |
 | `SessionStart` | `startup\|resume\|clear\|compact` | `scripts/card.mjs` | Claude, Codex |
+| `Stop` | `*` | `scripts/receipt.mjs` | Claude, Codex |
 
 ## Agents
 
@@ -29,8 +30,8 @@
 
 | What ships | Count |
 |---|---|
-| Script lines | **303** across 8 files |
-| Hook events | **2** |
+| Script lines | **339** across 9 files |
+| Hook events | **3** |
 | Skills | **2** |
 | Subagents | **4** |
 | Startup context: card, agent and skill descriptions | **~440** tokens |
