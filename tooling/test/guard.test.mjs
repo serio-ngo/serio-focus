@@ -142,7 +142,10 @@ it('runs commit and push, audits every hold and every session receipt', () => {
   assert.match(codex.permissionDecisionReason, /Held: give the user the exact command/);
   const transcript = path.join(box, 'transcript.jsonl');
   writeFileSync(transcript, [{ customTitle: 'T', gitBranch: 'b' }, 'x', ...[1, 1].map(() => ({ type: 'assistant',
-    message: { id: 'm', usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 4 }, content: [{ type: 'tool_use', name: 'Edit', input: { file_path: 'a.js' } }] } }))]
+    message: { id: 'm', usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 4 }, content: [{ type: 'tool_use', id: 'u1', name: 'Edit', input: { file_path: 'a.js' } }] } })),
+    { type: 'assistant', message: { id: 'm', content: [{ type: 'tool_use', id: 'u2', name: 'Edit', input: { file_path: 'b.js' } }] } },
+    { type: 'user', message: { id: 'r1', content: [{ type: 'tool_result', tool_use_id: 'u1', content: 'ok' }] } },
+    { type: 'user', message: { id: 'r2', content: [{ type: 'tool_result', tool_use_id: 'u2', is_error: true, content: 'denied' }] } }]
     .map((row) => JSON.stringify(row)).join('\n'));
   assert.equal(fire(script('receipt.mjs'), { cwd: box, session_id: 'receipt', transcript_path: transcript }), 0);
   const receipt = readFileSync(path.join(box, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse).at(-1);
