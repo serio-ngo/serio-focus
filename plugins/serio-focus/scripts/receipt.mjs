@@ -24,7 +24,7 @@ export function receipt(payload) {
     if (!usage || seen.has(row.message.id)) continue;
     seen.add(row.message.id);
     out.calls += 1;
-    out.tokens += (usage.input_tokens || 0) + (usage.output_tokens || 0) + (usage.cache_creation_input_tokens || 0);
+    out.tokens += (usage.input_tokens || 0) + (usage.output_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
   }
   return out;
 }
