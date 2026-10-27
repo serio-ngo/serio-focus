@@ -1,6 +1,6 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.26.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.27.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Hooks
 
@@ -24,7 +24,7 @@
 | Skill | Description |
 |---|---|
 | `deliver` | Use when asked to build or change something end to end. Runs the role agents in order - architect plans, tester writes a failing test, coder builds each task, reviewer checks each diff - then opens the pull request. |
-| `pr-loop` | Use when a pull request has failing checks or unresolved review comments, Codex review findings included. Verifies each finding, has the coder fix it, reruns checks and requests re-review until the head is clean. |
+| `pr-loop` | Use when a pull request has failing checks or unresolved review feedback from any reviewer, person or bot. Verifies each finding, has the coder fix it, reruns checks and requests re-review until the head is clean. |
 
 ## Inventory
 
@@ -34,6 +34,6 @@
 | Hook events | **3** |
 | Skills | **2** |
 | Subagents | **4** |
-| Startup context: card, agent and skill descriptions | **~451** tokens |
+| Startup context: card, agent and skill descriptions | **~453** tokens |
 | Third-party packages | **0** |
 | Network calls, API keys, model calls | **0** |

@@ -4,9 +4,10 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.27.0 | 2026-10-27 | neurodivergent wording; pr-loop works with any reviewer, bot or CI; suite cut to 300 lines of core checks |
 | 1.26.0 | 2026-10-27 | Committed permission baseline, state root ~/.serio-focus, architect read-only, doctor checks, OpenCode adapter removed, empty Codex receipts skipped, CI actions pinned |
 | 1.25.0 | 2026-10-14 | Stop hook receipt.mjs writes one session row per turn to audit/: project, branch, title, API calls, tokens, edited files; read from the transcript, no agent action |
-| 1.24.0 | 2026-10-13 | Tester agent on and deliver ships the branch; commit and push run; deletes ask only when git cannot restore the data (Claude asks, Codex and OpenCode hold); ADHD reply rules in the session card; audit and wave state move to the plugin data dir; tiles, flood figure and score badges removed |
+| 1.24.0 | 2026-10-13 | Tester agent on and deliver ships the branch; commit and push run; deletes ask only when git cannot restore the data (Claude asks, Codex and OpenCode hold); neurodivergent reply rules in the session card; audit and wave state move to the plugin data dir; tiles, flood figure and score badges removed |
 | 1.23.0 | 2026-10-13 | Close shell guard bypasses, preserve wave claims, redact denial logs and restore required CI coverage |
 | 1.22.0 | 2026-10-12 | Agents architect, coder and reviewer with deliver and pr-loop skills; tester draft disabled; Codex role agents written by setup; guards cut to git lock, delete lock, fan-out cap and audit; read budget, web cap, receipt, quota note and rescue removed as native duplicates or unprovable; Git Bash temp deletes pass; one hooks file serves Claude and Codex; corpus scored in the suite and published for the README badges |
 | 1.20.1 | 2026-09-27 | Send the 80% usage note to each parallel session |
@@ -23,7 +24,7 @@
 | 1.12.6 | 2026-09-16 | slim pass: cut task-loop, query budget, shell rewrite, AB and flood runners, lifetime ledger, frozen results; receipt reports only what the guard kept out and stays silent otherwise; audit gains session and rule; keywords drop the solo-founder framing |
 | 1.12.4 | 2026-09-15 | Blocked-only audit log, Wilson eval intervals, full-only guard |
 | 1.12.3 | 2026-09-15 | final-state flow, card memory trim, bridge to opencode, nonprofit hero |
-| 1.12.2 | 2026-09-14 | demo blocks render red again (deny read from stdout), svg loop resets clean; readme carries the serio logo and ADHD quality-of-life framing |
+| 1.12.2 | 2026-09-14 | demo blocks render red again (deny read from stdout), svg loop resets clean; readme carries the serio logo and neurodivergent quality-of-life framing |
 | 1.12.1 | 2026-09-14 | rename handoff-os to serio-focus: plugin id, paths, agent references, docs and URLs; HANDOFF_* env and generic handoff wording unchanged |
 | 1.12.0 | 2026-09-14 | action-first guard verdicts, OpenCode reply sync, suite cut 39 to 28 |
 | 1.11.0 | 2026-09-14 | ask-first holds, bridge restored, bare dispatch held |

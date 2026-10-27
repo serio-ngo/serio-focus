@@ -7,7 +7,7 @@
 
 # serio-focus
 
-**Four specialist agents take a change from plan to pull request. Short replies, built for ADHD focus.**
+**Four specialist agents take a change from plan to pull request. Short replies, built for neurodivergent focus.**
 
 architect · tester · coder · reviewer · a guard that asks before deletes git cannot undo
 
@@ -39,7 +39,7 @@ architect · tester · coder · reviewer · a guard that asks before deletes git
 
 ## Replies
 
-Every session starts with reply rules for an ADHD reader: result first, short bullets each with its why, one recommended action with its exact command.
+Every session starts with reply rules for a neurodivergent reader: result first, short bullets each with its why, one recommended action with its exact command.
 Warnings and irreversible steps stay in full sentences.
 
 ## Safety net

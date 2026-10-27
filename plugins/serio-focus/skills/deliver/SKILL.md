@@ -4,7 +4,7 @@ description: Use when asked to build or change something end to end. Runs the ro
 argument-hint: "<goal>"
 ---
 
-Deliver $ARGUMENTS. Agents: `serio-focus:<role>` in Claude, `serio-<role>` in Codex; where neither exists, apply the role's rules inline.
+Deliver $ARGUMENTS. Agents: this plugin's `architect`, `tester`, `coder` and `reviewer`, under the name the host lists; where none exists, apply the role's rules inline.
 
 | Step | Agent | Do | Evidence |
 |---|---|---|---|

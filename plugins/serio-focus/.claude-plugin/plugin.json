@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin.json",
   "name": "serio-focus",
   "displayName": "Serio Focus",
-  "version": "1.26.0",
-  "description": "Serio NGO's ADHD/AuDHD focus tool for Claude Code and Codex: architect, tester, coder and reviewer agents that take a change from plan to pull request, short focused replies, and a guard that asks before deletes git cannot undo. No model calls, API keys or runtime dependencies.",
+  "version": "1.27.0",
+  "description": "Serio NGO's neurodivergent focus tool for Claude Code and Codex: architect, tester, coder and reviewer agents that take a change from plan to pull request, short focused replies, and a guard that asks before deletes git cannot undo. No model calls, API keys or runtime dependencies.",
   "author": {
     "name": "Serio NGO",
     "url": "https://serio.org.pl"
@@ -12,7 +12,7 @@
   "repository": "https://github.com/serio-ngo/serio-focus",
   "license": "Apache-2.0",
   "keywords": [
-    "adhd",
+    "neurodivergent",
     "focus",
     "guardrails",
     "human-in-the-loop",
