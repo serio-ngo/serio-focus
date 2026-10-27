@@ -20,15 +20,11 @@ export function receipt(payload) {
     out.branch = row?.gitBranch || out.branch;
     for (const part of Array.isArray(row?.message?.content) ? row.message.content : []) {
       if (part?.type === 'tool_result') {
-        const id = part.tool_use_id || part.toolUseId || part.id;
-        if (id && !part.is_error && !part.error) ok.add(id);
+        if (!part.is_error) ok.add(part.tool_use_id);
         continue;
       }
       const file = WRITERS.test(part?.name) && (part.input?.file_path || part.input?.notebook_path);
-      if (typeof file !== 'string') continue;
-      const id = part.id || part.tool_use_id || part.toolUseId;
-      if (!id) { if (!out.files.includes(file)) out.files.push(file); continue; }
-      if (!pending.has(id)) pending.set(id, file);
+      if (typeof file === 'string' && !pending.has(part.id)) pending.set(part.id, file);
     }
     const usage = row?.type === 'assistant' && row.message?.usage;
     if (!usage || seen.has(row.message.id)) continue;
@@ -43,5 +39,6 @@ export function receipt(payload) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let payload = {};
   try { payload = JSON.parse(readFileSync(0, 'utf8')) || {}; } catch { }
-  append(rootOf(payload), { session: sessionOf(payload), actor: 'main', action: 'session', result: receipt(payload) });
+  const result = receipt(payload);
+  if (result.calls) append(rootOf(), { session: sessionOf(payload), actor: 'main', action: 'session', result });
 }

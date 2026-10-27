@@ -1,13 +1,13 @@
 # Workflow
 
-<sub><b>Answers</b> · how a change moves from task to merge with this plugin · facts and sources in <a href="HOST_FACTS.md">HOST_FACTS</a> · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · how a change moves from task to merge with this plugin · <a href="../README.md">README</a></sub>
 
 ## Roles
 
 | Role | Runs as | Writes | Returns |
 |---|---|---|---|
 | Orchestrator | The main session running `deliver`, then `pr-loop` | the plan and the evidence | Status to the owner |
-| Architect | `architect`: read-only instructions in Claude; Bash remains available. Codex uses `sandbox_mode = "read-only"` | nothing | One plan: tasks, paths, acceptance commands, risks |
+| Architect | `architect`: Read, Grep and Glob only in Claude. Codex uses `sandbox_mode = "read-only"` | nothing | One plan: tasks, paths, acceptance commands, risks |
 | Coder | `coder` agent, one task per dispatch, fresh context | code and tests, never commits | Changed lines, check output, what was not done |
 | Reviewer | `reviewer`: read-only instructions in Claude; Bash remains available. Codex uses a read-only sandbox | nothing | P0–P2 findings at `file:line`, verdict `ready` or `changes needed` |
 | Tester | `tester` agent, only when behaviour changes and the repository has tests | one failing test | Test path and its failing line for the coder |
@@ -32,7 +32,7 @@
 |---|---|---|---|
 | Local app | PR status bar: "Auto-fix CI & address comments" wakes the session; the session follows `pr-loop` | Code Review plugin: open the PR, "Fix" failing checks, run `$pr-loop` | Default |
 | Local CLI | `/serio-focus:deliver <goal>`, `/serio-focus:pr-loop <PR>` | `$deliver`, `$pr-loop` | Terminal only |
-| Cloud | `/autofix-pr` in Claude Code on the web | `@codex <task>` comment on the PR | Away from the machine; opt in per PR |
+| Cloud | `/autofix-pr` in Claude Code on the web | Not used | Away from the machine; opt in per PR |
 | CI bot | Not used | Not used | Needs API keys in an open repository; bot commits skip CI |
 
 ## Choices

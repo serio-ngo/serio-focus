@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { writeFigures } from './figures.mjs';
-import { PLUGIN, REPO, codexRoles, inventory, manifest, markdown, pluginVersion, policyFor, readJson, score, table, walk, writeBlock } from './generate.mjs';
+import { PLUGIN, REPO, codexRoles, inventory, manifest, markdown, pluginVersion, readJson, score, table, walk, writeBlock } from './generate.mjs';
 
 const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const CODEX_AGENTS = path.join(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'agents');
@@ -28,7 +28,7 @@ const report = () => {
 };
 
 function parse(argv) {
-  const args = { _: [], without: [] };
+  const args = { _: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (!arg.startsWith('--')) { args._.push(arg); continue; }
@@ -37,9 +37,6 @@ function parse(argv) {
     if (next === undefined || next.startsWith('--')) { args[key] = true; continue; }
     args[key] = argv[++i];
   }
-  if (typeof args.without === 'string') {
-    args.without = args.without.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  } else if (args.without === true) args.without = [];
   return args;
 }
 
@@ -74,36 +71,24 @@ function merge(target, patch) {
   return merged;
 }
 
-function releaseLocks(settings) {
-  const stale = readJson('tooling', 'settings', 'policy.json').retired;
-  if (!settings.permissions?.deny) return settings;
-  const deny = settings.permissions.deny.filter((rule) => !stale.includes(rule));
-  return { ...settings, permissions: { ...settings.permissions, deny } };
-}
-
-function ensureAuditIgnored(root) {
-  const file = path.join(root, '.gitignore');
-  const current = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  if (/^\s*audit\/\*?\s*$/m.test(current)) return;
-  const head = current.replace(/\n*$/, '');
-  writeFileSync(file, `${head}${head ? '\n\n' : ''}# serio-focus session ledger\naudit/\n`, 'utf8');
-}
+const RUNS = ['git add .', 'git commit -m x', 'git push origin main', 'git checkout main', 'git switch main', 'git branch x', 'git merge main',
+  'git rebase main', 'git stash push', 'git tag v1', 'git revert HEAD', 'git cherry-pick HEAD', 'git remote add o u', 'gh pr create'];
+const matches = (rule, command) => {
+  const glob = /^Bash\((.*)\)$/.exec(rule)?.[1];
+  return glob !== undefined && new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(command);
+};
 
 function sync(args) {
-  const scope = args.scope || 'user';
-  if (!['user', 'project'].includes(scope)) fail(`unknown scope "${scope}"`);
-  const target = path.resolve(args.target
-    || (scope === 'project' ? path.join(REPO, '.claude', 'settings.json') : path.join(CONFIG_DIR, 'settings.json')));
+  const target = path.resolve(args.target || path.join(CONFIG_DIR, 'settings.json'));
   const before = readJsonFile(target, {});
-  const after = releaseLocks(merge(before, policyFor(scope, args.without)));
+  const baseline = readJson('.claude', 'settings.json').permissions;
+  const deny = (before.permissions?.deny ?? []).filter((rule) => !baseline.ask.includes(rule) && !RUNS.some((command) => matches(rule, command)));
+  const after = merge({ ...before, permissions: { ...before.permissions, deny } }, { permissions: baseline });
   if (!args.dryRun) writeJson(target, after);
-  if (scope === 'project' && !args.dryRun) {
-    const dir = path.dirname(path.resolve(target));
-    if (dir.endsWith(`${path.sep}.claude`)) ensureAuditIgnored(path.dirname(dir));
-  }
   const counts = RULE_LISTS
-    .map((key) => `${key}+=${(after.permissions?.[key] ?? []).filter((r) => !(before.permissions?.[key] ?? []).includes(r)).length}`);
-  row(`settings (${scope})`, `${target} ${counts.join(' ')}${args.dryRun ? ' DRY RUN' : ''}`);
+    .map((key) => `${key}+=${(after.permissions?.[key] ?? []).filter((r) => !(before.permissions?.[key] ?? []).includes(r)).length}`)
+    .concat(`deny-=${(before.permissions?.deny ?? []).filter((r) => !after.permissions.deny.includes(r)).length}`);
+  row('settings', `${target} ${counts.join(' ')}${args.dryRun ? ' DRY RUN' : ''}`);
   return after;
 }
 
@@ -158,10 +143,10 @@ function upkeep() {
   writeJson(path.join(REPO, 'package.json'), { ...readJson('package.json'), description: plugin.description });
   writeJson(path.join(REPO, '.claude-plugin', 'marketplace.json'), { ...marketplace, description: plugin.description,
     plugins: marketplace.plugins.map((entry) => entry.name === plugin.name ? { ...entry, description: plugin.description } : entry) });
-  const { cases, recall, fpRate } = score();
+  const { cases, gaps, recall, fpRate } = score();
   const { contextTokens } = inventory();
   writeBlock(path.join(REPO, 'docs', 'BENCHMARK.md'), '<!-- serio-scores -->', '<!-- /serio-scores -->', table(['Measure', 'Value'], [
-    `| Labelled cases | ${cases} |`, `| Recall: blocks held | ${recall}% |`, `| False blocks: allows held | ${fpRate}% |`, `| Startup context | ~${contextTokens} tokens |`,
+    `| Labelled cases | ${cases} |`, `| Known gaps held out | ${gaps} |`, `| Recall: blocks held | ${recall}% |`, `| False blocks: allows held | ${fpRate}% |`, `| Startup context | ~${contextTokens} tokens |`,
   ]).split('\n'));
   row('figures', `${writeFigures().length} file(s)`);
   writeJson(path.join(PLUGIN, '.codex-plugin', 'plugin.json'), {
@@ -183,9 +168,7 @@ function check(before) {
   if (changed.length) fail(`generated artefacts are stale: ${changed.join(', ')}`);
 }
 
-const BLOCKED = 2;
-const held = (run) => run.status === BLOCKED
-  || (() => { try { return ['ask', 'deny'].includes(JSON.parse(run.stdout || '').hookSpecificOutput?.permissionDecision); } catch { return false; } })();
+const held = (run) => { try { return ['ask', 'deny'].includes(JSON.parse(run.stdout || '').hookSpecificOutput?.permissionDecision); } catch { return false; } };
 function doctor(args = {}) {
   const host = hostOf(args);
   const key = registryKey();
@@ -198,10 +181,12 @@ function doctor(args = {}) {
 
   if (host === 'claude') {
     const native = path.join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
-    const run = spawnSync(process.env.CLAUDE_CODE_EXECPATH || (existsSync(native) ? native : 'claude'), ['plugin', 'list', '--json'], { encoding: 'utf8' });
+    const claude = process.env.CLAUDE_CODE_EXECPATH || (existsSync(native) ? native : 'claude');
+    const run = spawnSync(claude, ['plugin', 'list', '--json'], { encoding: 'utf8' });
     let installed = [];
     try { installed = JSON.parse(run.stdout); } catch { }
     check('native Claude installation is current and enabled', installed.some((plugin) => plugin.id === key && plugin.enabled && (plugin.folderVersion || plugin.version) === pluginVersion()));
+    check('plugin and marketplace pass strict validation', [PLUGIN, REPO].every((dir) => spawnSync(claude, ['plugin', 'validate', '--strict', dir]).status === 0));
   } else {
     const run = spawnSync('codex', ['plugin', 'list', '--marketplace', marketplace.name, '--json'], { encoding: 'utf8' });
     let installed = [];
@@ -209,6 +194,8 @@ function doctor(args = {}) {
     check('native Codex installation is current and enabled', installed.some((plugin) => plugin.pluginId === key && plugin.enabled && plugin.version === pluginVersion()));
     check('Codex role agents are current', codexRoles().every((role) => existsSync(path.join(CODEX_AGENTS, role.file)) && readFileSync(path.join(CODEX_AGENTS, role.file), 'utf8') === role.text));
   }
+
+  check('node resolves through the shell', spawnSync('node', ['--version'], { shell: true }).status === 0, 'hooks call bare node');
 
   const probe = mkdtempSync(path.join(tmpdir(), 'serio-doctor-'));
   const at = (dir, script, payload) => spawnSync(process.execPath, [path.join(dir, 'scripts', script)], {

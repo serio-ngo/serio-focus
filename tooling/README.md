@@ -7,7 +7,6 @@
 | `cli/` | Maintainer CLI and the generators behind every generated block | `npm run setup` · `upkeep` · `doctor` · `release` · `prove` |
 | `corpus/` | `guard-corpus.jsonl` labelled cases | hand-edited; one line per case; `npm run eval` |
 | `test/` | `guard.test.mjs`, the only suite | `npm test` |
-| `settings/` | `policy.json`, the permission `deny` list a plugin cannot ship | `npm run sync` |
 
 | Rule | Value |
 |---|---|
