@@ -24,6 +24,6 @@ function claimSlot(dir, bucket, cap) {
 
 export function fanOutCap(payload) {
   const cap = waveCap();
-  const slot = claimSlot(waveDir(rootOf(payload), sessionOf(payload)), Math.floor(Date.now() / waveWindow()), cap);
+  const slot = claimSlot(waveDir(rootOf(), sessionOf(payload)), Math.floor(Date.now() / waveWindow()), cap);
   if (slot > cap) throw new Blocked(`FAN-OUT CAP: subagent ${slot} held. Next: wait one wave`);
 }

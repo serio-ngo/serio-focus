@@ -48,10 +48,10 @@ Warnings and irreversible steps stay in full sentences.
 |---|---|
 | `git commit`, `git push` | Run |
 | Delete of tracked, clean files, a temp path or an ignored build folder | Runs: git or a rebuild restores it |
-| Delete of untracked, modified or outside-repo data; `git reset --hard`; `git clean -f` | Claude asks you. Codex and OpenCode hold the call and show you the command |
+| Delete of untracked, modified or outside-repo data; `git reset --hard`; `git clean -f` | Claude asks you. Codex holds the call and shows you the command |
 | More than 3 direct subagent starts in 60 s | The next one waits for the next wave (`SERIO_MAX_PER_WAVE`, `SERIO_WAVE_MS`) |
 | Every hold | One line in `audit/YYYY-MM.jsonl`, without the command text |
-| Every turn end | One `session` line in the same file: project, branch, title, API calls, tokens, edited files; read from the transcript, no agent action |
+| Every Claude turn end | One `session` line in the same file: project, branch, title, API calls, tokens, edited files; read from the transcript, no agent action |
 
 The guard is a seatbelt, not a sandbox: [SECURITY.md](SECURITY.md).
 
@@ -71,7 +71,7 @@ In Codex, setup also writes the four agents to `~/.codex/agents/`; open `/hooks`
 <div align="center">
 <sub>
 
-[CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [docs/WORKFLOW.md](docs/WORKFLOW.md) · [docs/BENCHMARK.md](docs/BENCHMARK.md) · [docs/MANIFEST.md](docs/MANIFEST.md) · [docs/HOST_FACTS.md](docs/HOST_FACTS.md) · [Apache-2.0](LICENSE) · Built by [Serio NGO](https://serio.org.pl)
+[CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [docs/WORKFLOW.md](docs/WORKFLOW.md) · [docs/BENCHMARK.md](docs/BENCHMARK.md) · [docs/MANIFEST.md](docs/MANIFEST.md) · [Apache-2.0](LICENSE) · Built by [Serio NGO](https://serio.org.pl)
 
 </sub>
 </div>

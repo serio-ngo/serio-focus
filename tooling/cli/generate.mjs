@@ -18,18 +18,6 @@ export const walk = (dir, base = '') => (existsSync(dir) ? readdirSync(dir, { wi
     return entry.isDirectory() ? walk(path.join(dir, entry.name), rel) : [rel];
   });
 
-const SCOPES = {
-  user: ({ deny, ask }) => ({ permissions: { deny, ask } }),
-  project: ({ deny }) => ({ permissions: { deny } }),
-};
-
-export function policyFor(scope, without = [], policy = readJson('tooling', 'settings', 'policy.json')) {
-  const drop = (rules) => without.length
-    ? rules.filter((rule) => !without.some((token) => rule.toLowerCase().includes(token)))
-    : rules;
-  return SCOPES[scope]({ deny: drop(policy.deny), ask: drop(policy.ask) });
-}
-
 export const table = (header, rows) => [
   `| ${header.join(' | ')} |`,
   `|${header.map(() => '---').join('|')}|`,
@@ -134,8 +122,8 @@ export function score() {
   }
   spawnSync('git', ['-C', box, 'add', 'lib/a.js']);
   spawnSync('git', ['-C', box, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'fixture']);
-  const rows = read('tooling', 'corpus', 'guard-corpus.jsonl').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
-    .filter((c) => !c.known_gap).map((c) => {
+  const corpus = read('tooling', 'corpus', 'guard-corpus.jsonl').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+  const rows = corpus.filter((c) => !c.known_gap).map((c) => {
       const run = spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'guard.mjs')], {
       input: JSON.stringify({ session_id: `corpus-${c.id}`, cwd: box, tool_name: c.tool, tool_input: c.input || {} }), encoding: 'utf8',
       env: { ...process.env, SERIO_OS_DIR: box },
@@ -148,6 +136,7 @@ export function score() {
   const pct = (part, whole) => (whole ? Math.round((100 * part) / whole) : 0);
   return {
     cases: rows.length,
+    gaps: corpus.length - rows.length,
     recall: pct(n(true, true), n(true, true) + n(true, false)),
     fpRate: pct(n(false, true), n(false, true) + n(false, false)),
     misses: rows.filter((row) => row.block !== row.held).map((row) => row.id),

@@ -1,7 +1,7 @@
 ---
 name: architect
 description: Use when a change spans several files, needs a design choice or has unclear scope. Read-only planner that returns one plan with tasks, paths and acceptance checks.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
 color: green
 ---
 

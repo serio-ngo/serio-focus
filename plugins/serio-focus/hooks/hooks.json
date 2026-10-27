@@ -8,7 +8,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "^(Bash|PowerShell|Agent|Task|spawn_agent)$",
+        "matcher": "^(Bash|PowerShell|Agent|spawn_agent)$",
         "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs\"", "timeout": 10, "statusMessage": "Serio guard" }]
       }
     ],
