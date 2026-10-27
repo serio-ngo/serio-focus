@@ -26,7 +26,7 @@
 | Boundary | Rule |
 |---|---|
 | Surface | Runs only where Claude Code or Codex executes plugin hooks (`SessionStart`, `PreToolUse`, `Stop`). Claude cloud sessions do not install plugins; Codex cloud tasks are undocumented. |
-| Shape | A seatbelt on the agent's tool calls: deletes git cannot restore ask first in Claude and are held in Codex. It is not a sandbox. It does not confine code that was already written, processes the agent spawned, or network calls made by a connector itself. |
+| Shape | A seatbelt on the agent's tool calls: deletes git cannot restore ask first in Claude and are held in Codex and in Claude bypass-permission sessions, where an ask would auto-approve. It is not a sandbox. It does not confine code that was already written, processes the agent spawned, or network calls made by a connector itself. |
 | Strength | Shell matching is pattern-based and does not hold against a determined adversary. Use it together with operating system permissions and Claude Code `permissions.deny` rules, not instead of them. |
 
 ## Known gaps

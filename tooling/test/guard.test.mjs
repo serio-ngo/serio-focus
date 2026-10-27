@@ -131,6 +131,7 @@ it('audits every hold and every session receipt', () => {
     encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: box } }).stdout).hookSpecificOutput;
   assert.equal(codex.permissionDecision, DENY);
   assert.match(codex.permissionDecisionReason, /Held: give the user the exact command/);
+  assert.equal(guard({ cwd: box, permission_mode: 'bypassPermissions', ...bash('rm -rf docs') }), DENY);
   const transcript = path.join(box, 'transcript.jsonl');
   writeFileSync(transcript, [{ customTitle: 'T', gitBranch: 'b' }, 'x', ...[1, 1].map(() => ({ type: 'assistant',
     message: { id: 'm', usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 4 }, content: [{ type: 'tool_use', id: 'u1', name: 'Edit', input: { file_path: 'a.js' } }] } })),

@@ -25,7 +25,7 @@ const reasonOf = (error, decision) => (error.ask
 
 function hold(payload, error) {
   if (!(error instanceof Blocked)) throw error;
-  const decision = error.ask && !('turn_id' in payload) ? 'ask' : 'deny';
+  const decision = error.ask && !('turn_id' in payload) && payload.permission_mode !== 'bypassPermissions' ? 'ask' : 'deny';
   const reason = reasonOf(error, decision);
   append(rootOf(), entry(payload, reason, decision));
   process.stdout.write(JSON.stringify({ hookSpecificOutput: {
