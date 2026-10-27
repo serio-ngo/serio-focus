@@ -10,12 +10,34 @@ import { judgeShell } from './lib/shell-danger.mjs';
 export const SPAWN_TOOLS = ['Agent', 'spawn_agent'];
 const CHOICE = { Agent: ['model', 'effort'], spawn_agent: ['model', 'reasoning_effort'], Workflow: [] };
 const scriptOf = (input) => { try { return input.script ?? readFileSync(input.scriptPath, 'utf8'); } catch { return 'agent('; } };
+const code = (src) => String(src).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|(['"`])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, (hit, quote) => (quote ? '""' : ' '));
+
+function optionKeys(src, from) {
+  let depth = 1;
+  let arg = 0;
+  let own = '';
+  for (let i = from; i < src.length && depth; i += 1) {
+    if ('([{'.includes(src[i])) depth += 1;
+    else if (')]}'.includes(src[i])) depth -= 1;
+    else if (src[i] === ',' && depth === 1) arg += 1;
+    else if (arg === 1 && depth === 2) own += src[i];
+  }
+  return own.split(',').map((entry) => entry.split(':')[0].trim());
+}
+
+function bareFlow(input) {
+  const src = code(scriptOf(input));
+  return [...src.matchAll(/\bagent\s*\(/g)].some((hit) => {
+    const keys = optionKeys(src, hit.index + hit[0].length);
+    return !keys.includes('model') || !keys.includes('effort');
+  });
+}
 
 function judge(payload) {
   const tool = String(payload.tool_name || '');
   const input = payload.tool_input || {};
   const missing = (CHOICE[tool] || []).filter((key) => !String(input[key] ?? '').trim());
-  if (tool === 'Workflow' && String(scriptOf(input)).split(/\bagent\s*\(/).slice(1).some((call) => !/\bmodel\s*:/.test(call) || !/\beffort\s*:/.test(call))) missing.push('model', 'effort');
+  if (tool === 'Workflow' && bareFlow(input)) missing.push('model', 'effort');
   if (missing.length) throw new Blocked(`MODEL CHOICE: name ${missing.join(' and ')} in the subagent call`);
   if (SPAWN_TOOLS.includes(tool)) fanOutCap(payload);
   if (tool !== 'Bash' && tool !== 'PowerShell') return;
