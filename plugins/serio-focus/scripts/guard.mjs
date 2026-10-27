@@ -8,10 +8,15 @@ import { rootOf } from './lib/runtime.mjs';
 import { judgeShell } from './lib/shell-danger.mjs';
 
 export const SPAWN_TOOLS = ['Agent', 'spawn_agent'];
+const CHOICE = { Agent: ['model', 'effort'], spawn_agent: ['model', 'reasoning_effort'], Workflow: [] };
+const scriptOf = (input) => { try { return input.script ?? readFileSync(input.scriptPath, 'utf8'); } catch { return 'agent('; } };
 
 function judge(payload) {
   const tool = String(payload.tool_name || '');
   const input = payload.tool_input || {};
+  const missing = (CHOICE[tool] || []).filter((key) => !String(input[key] ?? '').trim());
+  if (tool === 'Workflow' && String(scriptOf(input)).split(/\bagent\s*\(/).slice(1).some((call) => !/\bmodel\s*:/.test(call) || !/\beffort\s*:/.test(call))) missing.push('model', 'effort');
+  if (missing.length) throw new Blocked(`MODEL CHOICE: name ${missing.join(' and ')} in the subagent call`);
   if (SPAWN_TOOLS.includes(tool)) fanOutCap(payload);
   if (tool !== 'Bash' && tool !== 'PowerShell') return;
   if (typeof (input.command ?? '') !== 'string') throw new Blocked('BLOCKED: shell command must be a string');
@@ -37,7 +42,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const raw = readFileSync(0, 'utf8');
   let payload = null;
   try { payload = JSON.parse(raw); } catch {
-    const tool = /"tool_name"\s*:\s*"(Bash|PowerShell|Agent|spawn_agent)"/.exec(raw)?.[1];
+    const tool = /"tool_name"\s*:\s*"(Bash|PowerShell|Agent|spawn_agent|Workflow)"/.exec(raw)?.[1];
     if (tool) hold({ tool_name: tool }, new Blocked('BLOCKED: tool payload could not be parsed'));
   }
   if (payload && typeof payload === 'object') try { judge(payload); } catch (error) { hold(payload, error); }

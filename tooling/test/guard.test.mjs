@@ -62,8 +62,8 @@ const ask = (payload, env) => {
   assert.match(run.stdout, /"permissionDecision":"(?:ask|deny)"/, payload.tool_input?.command);
   return JSON.parse(run.stdout).hookSpecificOutput.permissionDecision;
 };
-const blocks = (label, cases, payload) => it(label, () => {
-  for (const c of cases) assert.equal(ask(payload(c)), ASK, c);
+const blocks = (label, cases, payload, want = ASK) => it(label, () => {
+  for (const c of cases) assert.equal(ask(payload(c)), want, c);
 });
 
 it('rejects stale generated artefacts and product descriptions', () => {
@@ -170,12 +170,12 @@ it('keeps denials observable when the audit directory cannot be written', () => 
 
 it('sync drops superseded denies and keeps the user rules', () => {
   const target = path.join(sandbox('sync-'), 'settings.json');
-  writeFileSync(target, JSON.stringify({ model: 'x', permissions: { deny: ['Bash(git push *)', 'Bash(gh issue create *)', 'Bash(curl *)'] } }));
+  writeFileSync(target, JSON.stringify({ model: 'x', permissions: { deny: ['Bash(git checkout *)', 'Bash(gh issue create *)', 'Bash(curl *)'] } }));
   const run = spawnSync(process.execPath, [path.join(REPO, 'tooling', 'cli', 'serio.mjs'), 'sync', '--target', target], { encoding: 'utf8' });
   assert.equal(run.status, ALLOWED, run.stderr);
   const { model, permissions } = JSON.parse(readFileSync(target, 'utf8'));
   assert.equal(model, 'x');
-  assert(!permissions.deny.includes('Bash(git push *)') && !permissions.deny.includes('Bash(gh issue create *)'), permissions.deny);
+  assert(!permissions.deny.includes('Bash(git checkout *)') && !permissions.deny.includes('Bash(gh issue create *)'), permissions.deny);
   assert(permissions.deny.includes('Bash(curl *)') && permissions.ask.includes('Bash(gh issue create *)'));
 });
 
@@ -213,7 +213,6 @@ it('allows git work and deletes git can restore, in the guard and in the committ
   for (const command of ['git status', 'git log --oneline', 'git diff --stat', 'git fetch origin',
     'git checkout main', 'git stash push -m wip', 'git branch feat/x', 'git merge main',
     'git push --dry-run origin main', 'git push --help', 'git branch -a', 'git branch --show-current', 'git tag -l', 'git stash list',
-    'git commit -m x', 'git push origin main', 'git push --force origin main',
     'git checkout -- src/a.ts', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null',
     'rm -rf dist/tracked.txt', 'rm -rf node_modules >/dev/null',
     `rm -rf ${shellTemp}/serio-probe-x`,
@@ -226,43 +225,29 @@ it('allows git work and deletes git can restore, in the guard and in the committ
 });
 
 blocks('holds deletes and wipes git cannot restore', [
-  'rm -rf -- --valuable node_modules',
-  'rm -rf 123 node_modules',
-  '(rm -rf docs)',
-  'cd missing || rm -rf docs',
-  'Remove-Item -Recurse docs,src',
-  'rm -rf hid',
-  'echo $(rm -rf docs)',
-  'rm -rf ~/docs',
-  'rm -rf docs # --dry-run',
-  'rm -rf /',
-  'rm -rf .',
-  'rm -rf mod',
-  'ri -r docs',
-  'Remove-Item -rec docs',
-  'del /s /q docs',
-  '/bin/rm -rf docs',
-  '\\rm -rf docs',
-  'env rm -rf docs',
-  'powershell -Command "Remove-Item -Recurse docs"',
-  "cat >> CHANGELOG.md <<'EOF'\ndon't crash\nEOF\nrm -rf docs",
-  "bash <<'EOF'\n# don't\nrm -rf docs\nEOF",
-  'cd child; bash -c "rm -rf notes"',
-  'git clean --force',
-  'git.exe -C sub reset --hard HEAD~1',
-  'rm -rf dist/escape',
-  'rm -rf {docs,src}',
-  'rm -rf [d]ocs',
-  'rm -rf ~root',
-  ...(process.platform === 'linux' ? [] : ['rm -rf DOCS']),
-  'rm -rf "$D"; D=/tmp',
-  'D=/tmp; D=/home; rm -rf "$D"',
-  'true && D=/tmp; rm -rf "$D"',
-  'test $D = /tmp || rm -rf $D',
-  'D=/tmp; for D in /home; do rm -rf "$D"; done',
-  'for d in a; do rm -rf docs; done',
-  'D="dist/ src"; rm -rf "$D"',
+  'rm -rf -- --valuable node_modules', 'rm -rf 123 node_modules', '(rm -rf docs)', 'cd missing || rm -rf docs',
+  'Remove-Item -Recurse docs,src', 'rm -rf hid', 'echo $(rm -rf docs)', 'rm -rf ~/docs', 'rm -rf docs # --dry-run',
+  'rm -rf /', 'rm -rf .', 'rm -rf mod', 'ri -r docs', 'Remove-Item -rec docs', 'del /s /q docs', '/bin/rm -rf docs',
+  '\\rm -rf docs', 'env rm -rf docs', 'powershell -Command "Remove-Item -Recurse docs"',
+  "cat >> CHANGELOG.md <<'EOF'\ndon't crash\nEOF\nrm -rf docs", "bash <<'EOF'\n# don't\nrm -rf docs\nEOF",
+  'cd child; bash -c "rm -rf notes"', 'git clean --force', 'git.exe -C sub reset --hard HEAD~1', 'rm -rf dist/escape',
+  'rm -rf {docs,src}', 'rm -rf [d]ocs', 'rm -rf ~root', ...(process.platform === 'linux' ? [] : ['rm -rf DOCS']),
+  'rm -rf "$D"; D=/tmp', 'D=/tmp; D=/home; rm -rf "$D"', 'true && D=/tmp; rm -rf "$D"', 'test $D = /tmp || rm -rf $D',
+  'D=/tmp; for D in /home; do rm -rf "$D"; done', 'for d in a; do rm -rf docs; done', 'D="dist/ src"; rm -rf "$D"',
 ], (command) => ({ cwd: box, ...bash(command) }));
+
+blocks('asks before commit and push', ['git commit -m x', 'git -C sub commit -m x',
+  'git push origin main', 'git.exe push --force origin main', 'bash -c "git push origin main"', 'cd sub && git commit -am x'],
+(command) => ({ cwd: box, ...bash(command) }));
+
+it('holds subagents that pick no model or effort, before they take a wave slot', () => {
+  const flow = path.join(box, 'flow.js');
+  writeFileSync(flow, "await agent('a', { model: 'm' })");
+  for (const [tool_name, tool_input] of [['Agent', { prompt: 'p', model: 'm' }], ['Workflow', { scriptPath: flow }], ['Workflow', { scriptPath: path.join(box, 'none.js') }]]) {
+    assert.equal(at('choice', { tool_name, tool_input }), DENY, JSON.stringify(tool_input));
+  }
+  for (let n = 0; n < 3; n += 1) assert.equal(at('choice', { tool_name: 'Agent', tool_input: { prompt: `p${n}`, model: 'm', effort: 'low' } }), ALLOWED);
+});
 
 it('judges deletes through a symlinked cwd', () => {
   const link = path.join(sandbox('link-'), 'link');
@@ -277,24 +262,24 @@ describe('fan-out cap', () => {
   const held = (session, tool_input, tool_name = 'Agent') => ask({ cwd: box, session_id: session, tool_name, tool_input });
 
   it('runs three agents per wave and holds the fourth', () => {
-    for (let n = 0; n < 3; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku' }), ALLOWED);
-    assert.equal(held('wave', { prompt: 'fourth', model: 'haiku' }), DENY);
+    for (let n = 0; n < 3; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku', effort: 'low' }), ALLOWED);
+    assert.equal(held('wave', { prompt: 'fourth', model: 'haiku', effort: 'low' }), DENY);
   });
   it('runs agents when the state path cannot be created, without deleting it', () => {
     const target = path.join(box, '.claude', '.wave-state-file');
     writeFileSync(target, 'keep');
-    assert.equal(spawn('state-file', { prompt: 'probe' }), ALLOWED);
+    assert.equal(spawn('state-file', { prompt: 'probe', model: 'm', effort: 'low' }), ALLOWED);
     assert.equal(readFileSync(target, 'utf8'), 'keep');
-    assert.equal(guard({ session_id: 'file-root', tool_name: 'Agent', tool_input: { prompt: 'probe' } }, { ...process.env, SERIO_OS_DIR: target }), ALLOWED);
+    assert.equal(guard({ session_id: 'file-root', tool_name: 'Agent', tool_input: { prompt: 'probe', model: 'm', effort: 'low' } }, { ...process.env, SERIO_OS_DIR: target }), ALLOWED);
   });
   it('passes explicit native agent choices untouched and keeps to-do tools out of the wave', () => {
-    for (const tool_input of [{ model: 'best-available', subagent_type: 'Plan' }, { prompt: 'review', effort: 'max' }]) {
+    for (const tool_input of [{ model: 'best-available', effort: 'max', subagent_type: 'Plan' }, { prompt: 'review', model: 'opus', effort: 'low' }]) {
       const result = spawnSync(process.execPath, [script('guard.mjs')], { encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: box },
         input: JSON.stringify({ cwd: box, session_id: JSON.stringify(tool_input).replace(/\W/g, ''), tool_name: 'Agent', tool_input }) });
       assert.equal(result.status, ALLOWED);
       assert.equal(result.stdout, '');
     }
     const { matcher } = JSON.parse(readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks.PreToolUse[0];
-    for (const tool of ['TaskCreate', 'TaskUpdate', 'TaskList', 'Workflow', 'Read']) assert.doesNotMatch(tool, new RegExp(matcher));
+    for (const tool of ['TaskCreate', 'TaskUpdate', 'TaskList', 'Read']) assert.doesNotMatch(tool, new RegExp(matcher));
   });
 });

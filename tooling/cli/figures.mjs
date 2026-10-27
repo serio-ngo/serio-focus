@@ -65,7 +65,7 @@ function probe() {
     ['tester · red: widget test fails as expected'],
     ['coder · Bash · rm -rf src/old-widget', ''],
     ['reviewer · verdict ready'],
-    ['Bash · git push -u origin feat/drop-widget', ''],
+    ['Bash · git push -u origin feat/drop-widget', 'ask'],
     ['Bash · rm -rf ~/notes', 'ask'],
   ].map(([label, want]) => {
     if (want === undefined) return { label };
@@ -76,7 +76,7 @@ function probe() {
   const answer = [
     'Shipped: old widget removed, PR open.',
     '- src/old-widget deleted — tracked, git can restore it',
-    '- push ran — merge stays with you',
+    '- push asked first — merge stays with you',
     'Next: allow or skip rm -rf ~/notes — outside the repo, no undo.',
   ];
   const holds = readdirSync(path.join(root, 'audit')).reduce((n, name) => n + readFileSync(path.join(root, 'audit', name), 'utf8').trim().split('\n').length, 0);

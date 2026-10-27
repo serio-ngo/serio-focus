@@ -16,7 +16,7 @@ architect · tester · coder · reviewer · a guard that asks before deletes git
 [![license](https://img.shields.io/github/license/serio-ngo/serio-focus?color=1f6feb)](LICENSE)
 
 <!-- serio-demo -->
-<img src="docs/demo.svg" width="807" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git push -u origin feat/drop-widget ✓ · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Allow only if you asked for it. · SERIO FOCUS · 1 hold written to the audit log">
+<img src="docs/demo.svg" width="856" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git push -u origin feat/drop-widget → GIT WRITE: &quot;git push -u origin feat/drop-widget&quot; commits or pushes. Allow only if you asked for it. · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Allow only if you asked for it. · SERIO FOCUS · 2 holds written to the audit log">
 <!-- /serio-demo -->
 
 <sub>[Agents](#agents) · [Install](#install) · [Safety net](#safety-net) · [Workflow](docs/WORKFLOW.md) · [Contributing](CONTRIBUTING.md)</sub>
@@ -46,7 +46,8 @@ Warnings and irreversible steps stay in full sentences.
 
 | Call | What happens |
 |---|---|
-| `git commit`, `git push` | Run |
+| `git commit`, `git push` | Claude asks you; runs only on your request |
+| Subagent call without model and effort | Held |
 | Delete of tracked, clean files, a temp path or an ignored build folder | Runs: git or a rebuild restores it |
 | Delete of untracked, modified or outside-repo data; `git reset --hard`; `git clean -f` | Claude asks you. Codex and bypass-permission sessions hold the call and show you the command |
 | More than 3 direct subagent starts in 60 s | The next one waits for the next wave (`SERIO_MAX_PER_WAVE`, `SERIO_WAVE_MS`) |

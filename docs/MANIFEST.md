@@ -6,7 +6,7 @@
 
 | Event | Matcher | Script | Native host |
 |---|---|---|---|
-| `PreToolUse` | `^(Bash\|PowerShell\|Agent\|spawn_agent)$` | `scripts/guard.mjs` | Claude, Codex |
+| `PreToolUse` | `^(Bash\|PowerShell\|Agent\|spawn_agent\|Workflow)$` | `scripts/guard.mjs` | Claude, Codex |
 | `SessionStart` | `startup\|resume\|clear\|compact` | `scripts/card.mjs` | Claude, Codex |
 | `Stop` | `*` | `scripts/receipt.mjs` | Claude, Codex |
 
@@ -30,10 +30,10 @@
 
 | What ships | Count |
 |---|---|
-| Script lines | **342** across 9 files |
+| Script lines | **351** across 9 files |
 | Hook events | **3** |
 | Skills | **2** |
 | Subagents | **4** |
-| Startup context: card, agent and skill descriptions | **~453** tokens |
+| Startup context: card, agent and skill descriptions | **~466** tokens |
 | Third-party packages | **0** |
 | Network calls, API keys, model calls | **0** |
