@@ -53,3 +53,5 @@
 {"id":"discard-b02","category":"discard","tool":"Bash","input":{"command":"git checkout -b feat/x"},"want":"allow","origin":"cc-safety-net","note":"creates a branch; no file changes"}
 {"id":"discard-b03","category":"discard","tool":"Bash","input":{"command":"git worktree remove ../wt"},"want":"allow","origin":"cc-safety-net","note":"git refuses when the worktree has edits"}
 {"id":"discard-b04","category":"discard","tool":"Bash","input":{"command":"find . -name '*.log'"},"want":"allow","origin":"cc-safety-net","note":"lists files only"}
+{"id":"git-p01","category":"git","tool":"Bash","input":{"command":"/usr/bin/git push origin main"},"want":"block","origin":"regression","note":"git called by path still asks first"}
+{"id":"git-p02","category":"git","tool":"Bash","input":{"command":"git -C \"repo dir\" commit -m x"},"want":"block","origin":"regression","note":"quoted -C path still asks first"}

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { bodiless, segments, strip, tokens, unwrap } from './shell-parse.mjs';
 
-const GIT = String.raw`^git(?:\.exe)?\b(?:\s+(?:-[Cc]\s+\S+|--\S+(?:[=\s]\S+)?))*\s+`;
+const GIT = String.raw`^(?:\S*[/\\])?git(?:\.exe)?\b(?:\s+(?:-[Cc]\s+(?:"[^"]*"|'[^']*'|\S+)|--\S+(?:[=\s]\S+)?))*\s+`;
 const git = (tail) => new RegExp(GIT + tail, 'i');
 
 const COMMIT_OR_PUSH = git(String.raw`(?:commit|push)\b`);
