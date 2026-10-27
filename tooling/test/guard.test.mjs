@@ -192,6 +192,17 @@ it('keeps denials observable when the audit directory cannot be written', () => 
   assert.equal(readFileSync(path.join(root, 'audit'), 'utf8'), 'keep');
 });
 
+it('sync drops superseded denies and keeps the user rules', () => {
+  const target = path.join(sandbox('sync-'), 'settings.json');
+  writeFileSync(target, JSON.stringify({ model: 'x', permissions: { deny: ['Bash(git push *)', 'Bash(gh issue create *)', 'Bash(curl *)'] } }));
+  const run = spawnSync(process.execPath, [path.join(REPO, 'tooling', 'cli', 'serio.mjs'), 'sync', '--target', target], { encoding: 'utf8' });
+  assert.equal(run.status, ALLOWED, run.stderr);
+  const { model, permissions } = JSON.parse(readFileSync(target, 'utf8'));
+  assert.equal(model, 'x');
+  assert(!permissions.deny.includes('Bash(git push *)') && !permissions.deny.includes('Bash(gh issue create *)'), permissions.deny);
+  assert(permissions.deny.includes('Bash(curl *)') && permissions.ask.includes('Bash(gh issue create *)'));
+});
+
 it('keeps state out of the project when no state root is set', () => {
   const home = sandbox('home-');
   const project = sandbox('project-');

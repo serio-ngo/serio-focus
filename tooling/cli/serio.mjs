@@ -71,13 +71,23 @@ function merge(target, patch) {
   return merged;
 }
 
+const RUNS = ['git add .', 'git commit -m x', 'git push origin main', 'git checkout main', 'git switch main', 'git branch x', 'git merge main',
+  'git rebase main', 'git stash push', 'git tag v1', 'git revert HEAD', 'git cherry-pick HEAD', 'git remote add o u', 'gh pr create'];
+const matches = (rule, command) => {
+  const glob = /^Bash\((.*)\)$/.exec(rule)?.[1];
+  return glob !== undefined && new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(command);
+};
+
 function sync(args) {
   const target = path.resolve(args.target || path.join(CONFIG_DIR, 'settings.json'));
   const before = readJsonFile(target, {});
-  const after = merge(before, { permissions: readJson('.claude', 'settings.json').permissions });
+  const baseline = readJson('.claude', 'settings.json').permissions;
+  const deny = (before.permissions?.deny ?? []).filter((rule) => !baseline.ask.includes(rule) && !RUNS.some((command) => matches(rule, command)));
+  const after = merge({ ...before, permissions: { ...before.permissions, deny } }, { permissions: baseline });
   if (!args.dryRun) writeJson(target, after);
   const counts = RULE_LISTS
-    .map((key) => `${key}+=${(after.permissions?.[key] ?? []).filter((r) => !(before.permissions?.[key] ?? []).includes(r)).length}`);
+    .map((key) => `${key}+=${(after.permissions?.[key] ?? []).filter((r) => !(before.permissions?.[key] ?? []).includes(r)).length}`)
+    .concat(`deny-=${(before.permissions?.deny ?? []).filter((r) => !after.permissions.deny.includes(r)).length}`);
   row('settings', `${target} ${counts.join(' ')}${args.dryRun ? ' DRY RUN' : ''}`);
   return after;
 }
