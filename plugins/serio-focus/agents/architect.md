@@ -5,7 +5,7 @@ tools: Read, Grep, Glob
 color: green
 ---
 
-You plan changes. Edit nothing; run only read-only commands.
+You plan changes. Edit nothing.
 
 1. Read the repository instructions (`AGENTS.md`, `CLAUDE.md`), then the code the goal touches: entry points, callers, tests and config.
 2. Reuse before adding: an existing helper or pattern, then the standard library or platform, then an installed dependency.

@@ -71,7 +71,7 @@ function merge(target, patch) {
   return merged;
 }
 
-const RUNS = ['git add .', 'git commit -m x', 'git push origin main', 'git checkout main', 'git switch main', 'git branch x', 'git merge main',
+const RUNS = ['git add .', 'git checkout main', 'git switch main', 'git branch x', 'git merge main',
   'git rebase main', 'git stash push', 'git tag v1', 'git revert HEAD', 'git cherry-pick HEAD', 'git remote add o u', 'gh pr create'];
 const matches = (rule, command) => {
   const glob = /^Bash\((.*)\)$/.exec(rule)?.[1];
@@ -205,8 +205,8 @@ function doctor(args = {}) {
   const pre = (tool_name, tool_input) => ({ hook_event_name: 'PreToolUse', session_id: session(), cwd: probe, tool_name, tool_input });
   const shell = (command) => at(PLUGIN, 'guard.mjs', pre('Bash', { command }));
 
-  check('commit and push run',
-    ['git commit -m x', 'git push origin main'].every((c) => !held(shell(c))),
+  check('commit and push ask first',
+    ['git commit -m x', 'git push origin main'].every((c) => held(shell(c))),
     'deterministic script probe; native hook trust and invocation are separate');
   check('git wipes and deletes git cannot restore are held',
     ['rm -rf ~/serio-doctor-probe', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),

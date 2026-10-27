@@ -9,7 +9,7 @@
 | 1. Fork and clone | `git clone <your fork>` |
 | 2. Prove the suite is green first | `npm test` |
 | 3. Add one case | a line in `tooling/corpus/guard-corpus.jsonl`: `id`, `category`, `tool`, `input`, `want`, `origin`, `note` |
-| 4. Add the same call to the suite | the matching list in `tooling/test/guard.test.mjs`, one entry, never a new `describe` |
+| 4. Only when the case needs the suite fixture | one entry in the matching list in `tooling/test/guard.test.mjs`, never a new `describe` |
 | 5. Score it | `npm run eval` — exits 1 on a miss |
 | 6. Open the PR | the checklist in `.github/PULL_REQUEST_TEMPLATE.md` |
 

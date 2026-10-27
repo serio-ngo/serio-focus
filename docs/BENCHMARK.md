@@ -17,11 +17,11 @@
 <!-- serio-scores -->
 | Measure | Value |
 |---|---|
-| Labelled cases | 42 |
+| Labelled cases | 52 |
 | Known gaps held out | 9 |
 | Recall: blocks held | 100% |
 | False blocks: allows held | 0% |
-| Startup context | ~451 tokens |
+| Startup context | ~466 tokens |
 <!-- /serio-scores -->
 
 ## Cost and limits
