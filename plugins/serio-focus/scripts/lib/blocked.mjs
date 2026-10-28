@@ -1,6 +1,6 @@
 export class Blocked extends Error {
-  constructor(message, ask = false) {
+  constructor(message, held = false) {
     super(message);
-    this.ask = ask;
+    this.held = held;
   }
 }

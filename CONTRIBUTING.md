@@ -102,5 +102,5 @@ npm run release patch "one-line note"
 |---|---|
 | Setup | `--host claude` by default, `--host codex` for Codex; `npm run sync` merges the `.claude/settings.json` permissions into user settings, only when requested |
 | Reports | [SECURITY.md](SECURITY.md) |
-| Git | Commit and push run; deletes git cannot restore and git wipes ask first |
-| Connectors | no connector rule ships |
+| Git | Commit runs; push, worktree add, deletes git cannot restore and git wipes are denied once with a note |
+| Connectors | MCP send-like tools and `EnterWorktree` are denied once; drafts run |

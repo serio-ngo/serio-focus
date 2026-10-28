@@ -72,7 +72,7 @@ function merge(target, patch) {
 }
 
 const RUNS = ['git add .', 'git checkout main', 'git switch main', 'git branch x', 'git merge main',
-  'git rebase main', 'git stash push', 'git tag v1', 'git revert HEAD', 'git cherry-pick HEAD', 'git remote add o u', 'gh pr create'];
+  'git rebase main', 'git stash push', 'git tag v1', 'git revert HEAD', 'git cherry-pick HEAD', 'git remote add o u', 'gh pr create', 'gh issue create x'];
 const matches = (rule, command) => {
   const glob = /^Bash\((.*)\)$/.exec(rule)?.[1];
   return glob !== undefined && new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(command);
@@ -82,12 +82,12 @@ function sync(args) {
   const target = path.resolve(args.target || path.join(CONFIG_DIR, 'settings.json'));
   const before = readJsonFile(target, {});
   const baseline = readJson('.claude', 'settings.json').permissions;
-  const deny = (before.permissions?.deny ?? []).filter((rule) => !baseline.ask.includes(rule) && !RUNS.some((command) => matches(rule, command)));
-  const after = merge({ ...before, permissions: { ...before.permissions, deny } }, { permissions: baseline });
+  const keep = (key) => (before.permissions?.[key] ?? []).filter((rule) => !RUNS.some((command) => matches(rule, command)));
+  const after = merge({ ...before, permissions: { ...before.permissions, deny: keep('deny'), ask: keep('ask') } }, { permissions: baseline });
   if (!args.dryRun) writeJson(target, after);
   const counts = RULE_LISTS
     .map((key) => `${key}+=${(after.permissions?.[key] ?? []).filter((r) => !(before.permissions?.[key] ?? []).includes(r)).length}`)
-    .concat(`deny-=${(before.permissions?.deny ?? []).filter((r) => !after.permissions.deny.includes(r)).length}`);
+    .concat(['deny', 'ask'].map((key) => `${key}-=${(before.permissions?.[key] ?? []).filter((r) => !after.permissions[key].includes(r)).length}`));
   row('settings', `${target} ${counts.join(' ')}${args.dryRun ? ' DRY RUN' : ''}`);
   return after;
 }
@@ -168,7 +168,7 @@ function check(before) {
   if (changed.length) fail(`generated artefacts are stale: ${changed.join(', ')}`);
 }
 
-const held = (run) => { try { return ['ask', 'deny'].includes(JSON.parse(run.stdout || '').hookSpecificOutput?.permissionDecision); } catch { return false; } };
+const held = (run) => { try { return JSON.parse(run.stdout || '').hookSpecificOutput?.permissionDecision === 'deny'; } catch { return false; } };
 function doctor(args = {}) {
   const host = hostOf(args);
   const key = registryKey();
@@ -205,8 +205,8 @@ function doctor(args = {}) {
   const pre = (tool_name, tool_input) => ({ hook_event_name: 'PreToolUse', session_id: session(), cwd: probe, tool_name, tool_input });
   const shell = (command) => at(PLUGIN, 'guard.mjs', pre('Bash', { command }));
 
-  check('commit and push ask first',
-    ['git commit -m x', 'git push origin main'].every((c) => held(shell(c))),
+  check('push stops once, commit runs',
+    held(shell('git push origin main')) && !held(shell('git commit -m x')),
     'deterministic script probe; native hook trust and invocation are separate');
   check('git wipes and deletes git cannot restore are held',
     ['rm -rf ~/serio-doctor-probe', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),

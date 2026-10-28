@@ -9,14 +9,14 @@
 
 **Four specialist agents take a change from plan to pull request. Short replies, built for neurodivergent focus.**
 
-architect · tester · coder · reviewer · a guard that asks before deletes git cannot undo
+architect · tester · coder · reviewer · a guard that stops pushes, sends and deletes git cannot undo once
 
 [![version](https://img.shields.io/github/package-json/v/serio-ngo/serio-focus?label=version&color=1f6feb)](plugins/serio-focus/.claude-plugin/plugin.json)
 [![verify](https://github.com/serio-ngo/serio-focus/actions/workflows/verify.yml/badge.svg)](https://github.com/serio-ngo/serio-focus/actions/workflows/verify.yml)
 [![license](https://img.shields.io/github/license/serio-ngo/serio-focus?color=1f6feb)](LICENSE)
 
 <!-- serio-demo -->
-<img src="docs/demo.svg" width="856" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git push -u origin feat/drop-widget → GIT WRITE: &quot;git push -u origin feat/drop-widget&quot; commits or pushes. Allow only if you asked for it. · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Allow only if you asked for it. · SERIO FOCUS · 2 holds written to the audit log">
+<img src="docs/demo.svg" width="864" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git push -u origin feat/drop-widget → OUTWARD: &quot;git push -u origin feat/drop-widget&quot; pushes, files an issue or opens a worktree. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · SERIO FOCUS · 2 holds written to the audit log">
 <!-- /serio-demo -->
 
 <sub>[Agents](#agents) · [Install](#install) · [Safety net](#safety-net) · [Workflow](docs/WORKFLOW.md) · [Contributing](CONTRIBUTING.md)</sub>
@@ -46,10 +46,11 @@ Warnings and irreversible steps stay in full sentences.
 
 | Call | What happens |
 |---|---|
-| `git commit`, `git push` | Claude asks you; runs only on your request |
+| `git commit` | Runs: git can undo it |
+| `git push`, `git worktree add`, `EnterWorktree`, `gh issue create`, MCP send, reply, forward, post, publish, schedule, share, submit, invite or respond (drafts run) | Denied once with "Held: give the user the exact command"; the same call retried within 10 minutes runs and is audited as `retry` |
 | Subagent call without model and effort | Held |
 | Delete of tracked, clean files, a temp path or an ignored build folder | Runs: git or a rebuild restores it |
-| Delete of untracked, modified or outside-repo data; `git reset --hard`; `git clean -f` | Claude asks you; bypass mode approves the ask. Codex holds the call and shows you the command |
+| Delete of untracked, modified or outside-repo data; `git reset --hard`; `git clean -f` | Denied once, the same in every permission mode and in Codex; the same call retried runs |
 | More than 3 direct subagent starts in 60 s | The next one waits for the next wave (`SERIO_MAX_PER_WAVE`, `SERIO_WAVE_MS`) |
 | Every hold | One line in `audit/YYYY-MM.jsonl`, without the command text |
 | Every Claude turn end | One `session` line in the same file: project, branch, title, API calls, tokens, edited files; read from the transcript, no agent action |

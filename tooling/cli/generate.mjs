@@ -129,7 +129,7 @@ export function score() {
       env: { ...process.env, SERIO_OS_DIR: box },
       });
       if (run.error || run.status !== 0) throw new Error(`guard execution failed: ${c.id}`);
-      return { id: c.id, block: c.want === 'block', held: /"permissionDecision":"(?:ask|deny)"/.test(run.stdout) };
+      return { id: c.id, block: c.want === 'block', held: /"permissionDecision":"deny"/.test(run.stdout) };
     });
   rmSync(box, { recursive: true, force: true });
   const n = (block, held) => rows.filter((row) => row.block === block && row.held === held).length;

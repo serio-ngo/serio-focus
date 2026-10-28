@@ -3,7 +3,7 @@
   "name": "serio-focus",
   "displayName": "Serio Focus",
   "version": "1.27.0",
-  "description": "Serio NGO's neurodivergent focus tool for Claude Code and Codex: architect, tester, coder and reviewer agents that take a change from plan to pull request, short focused replies, and a guard that asks before deletes git cannot undo. No model calls, API keys or runtime dependencies.",
+  "description": "Serio NGO's neurodivergent focus tool for Claude Code and Codex: architect, tester, coder and reviewer agents that take a change from plan to pull request, short focused replies, and a guard that stops pushes, sends and deletes git cannot undo once. No model calls, API keys or runtime dependencies.",
   "author": {
     "name": "Serio NGO",
     "url": "https://serio.org.pl"
