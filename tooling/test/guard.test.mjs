@@ -133,6 +133,7 @@ it('audits every hold and every session receipt', () => {
   for (const name of readdirSync(path.join(box, '.claude', '.wave-unknown'))) utimesSync(path.join(box, '.claude', '.wave-unknown', name), 0, 0);
   assert.equal(guard({ cwd: box, ...bash('rm -rf docs') }), DENY);
   assert.equal(guard({ cwd: box, agent_id: 'a1', ...bash('rm -rf docs') }), DENY);
+  for (const cwd of [box, outside]) assert.equal(guard({ cwd, session_id: 'cwd', ...bash('rm -rf ~/x') }), DENY);
   assert.equal(guard({ cwd: box, permission_mode: 'bypassPermissions', ...bash('rm -rf docs') }), ALLOWED);
   assert.equal(JSON.parse(readFileSync(ledger(), 'utf8').trim().split('\n').at(-1)).result, 'retry');
   assert.equal(guard({ cwd: box, ...bash('rm -rf docs') }), DENY);
@@ -250,6 +251,7 @@ it('holds subagents that pick no model or effort, before they take a wave slot',
   for (const [tool_name, tool_input] of [['Agent', { prompt: 'p', model: 'm' }], ['Workflow', { scriptPath: flow }], ['Workflow', { scriptPath: path.join(box, 'none.js') }]]) {
     assert.equal(at('choice', { tool_name, tool_input }), DENY, JSON.stringify(tool_input));
   }
+  assert.equal(at('choice', { tool_name: 'Workflow', tool_input: { name: 'review' } }), ALLOWED);
   for (let n = 0; n < 3; n += 1) assert.equal(at('choice', { tool_name: 'Agent', tool_input: { prompt: `p${n}`, model: 'm', effort: 'low' } }), ALLOWED);
 });
 

@@ -11,7 +11,7 @@ import { judgeShell } from './lib/shell-danger.mjs';
 
 export const SPAWN_TOOLS = ['Agent', 'spawn_agent'];
 const CHOICE = { Agent: ['model', 'effort'], spawn_agent: ['model', 'reasoning_effort'], Workflow: [] };
-const scriptOf = (input) => { try { return input.script ?? readFileSync(input.scriptPath, 'utf8'); } catch { return 'agent('; } };
+const scriptOf = (input) => { try { return input.script ?? (input.scriptPath == null ? '' : readFileSync(input.scriptPath, 'utf8')); } catch { return 'agent('; } };
 const code = (src) => String(src).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|(['"`])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, (hit, quote) => (quote ? '""' : ' '));
 
 function optionKeys(src, from) {
@@ -51,7 +51,7 @@ function judge(payload) {
 
 function firstTry(payload) {
   const dir = waveDir(rootOf(), sessionOf(payload));
-  const mark = path.join(dir, `held-${createHash('sha256').update(JSON.stringify([payload.agent_id, payload.tool_name, payload.tool_input])).digest('hex').slice(0, 16)}`);
+  const mark = path.join(dir, `held-${createHash('sha256').update(JSON.stringify([payload.cwd, payload.agent_id, payload.tool_name, payload.tool_input])).digest('hex').slice(0, 16)}`);
   try { mkdirSync(dir, { recursive: true }); closeSync(openSync(mark, 'wx')); return true; } catch (error) { if (error.code !== 'EEXIST') return true; }
   try {
     if (Date.now() - statSync(mark).mtimeMs > 6e5) { utimesSync(mark, new Date(), new Date()); return true; }
