@@ -1,14 +1,13 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { walk } from '../cli/generate.mjs';
 
 const ALLOWED = 0;
-const ASK = 'ask';
 const DENY = 'deny';
 const PLUGIN = fileURLToPath(new URL('../../plugins/serio-focus/', import.meta.url));
 const REPO = path.resolve(PLUGIN, '..', '..');
@@ -47,23 +46,23 @@ symlinkSync(path.join(outside, 'data'), path.join(box, 'dist', 'escape'), proces
 process.env.SERIO_WAVE_MS = String(864e5);
 const fire = (file, payload, env = { ...process.env, SERIO_OS_DIR: box }) => {
   const run = spawnSync(process.execPath, [file], { input: typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}), encoding: 'utf8', env });
-  return /"permissionDecision":"(ask|deny)"/.exec(run.stdout)?.[1] ?? run.status;
+  return /"permissionDecision":"(deny)"/.exec(run.stdout)?.[1] ?? run.status;
 };
 
 const guard = (payload, env) => fire(script('guard.mjs'), payload, env);
 const at = (session, payload) => guard({ cwd: box, session_id: session, ...payload },
   { ...process.env, SERIO_OS_DIR: box });
 const bash = (command) => ({ tool_name: 'Bash', tool_input: { command } });
-const ask = (payload, env) => {
+const stopped = (payload, env) => {
   const run = spawnSync(process.execPath, [script('guard.mjs')], {
     input: JSON.stringify(payload), encoding: 'utf8', env: env ?? { ...process.env, SERIO_OS_DIR: box },
   });
   assert.equal(run.status, ALLOWED);
-  assert.match(run.stdout, /"permissionDecision":"(?:ask|deny)"/, payload.tool_input?.command);
+  assert.match(run.stdout, /"permissionDecision":"deny"/, payload.tool_input?.command);
   return JSON.parse(run.stdout).hookSpecificOutput.permissionDecision;
 };
-const blocks = (label, cases, payload, want = ASK) => it(label, () => {
-  for (const c of cases) assert.equal(ask(payload(c)), want, c);
+const blocks = (label, cases, payload) => it(label, () => {
+  for (const c of cases) assert.equal(stopped({ session_id: label, ...payload(c) }), DENY, c);
 });
 
 it('rejects stale generated artefacts and product descriptions', () => {
@@ -123,15 +122,21 @@ it('corpus: every labelled case gets its verdict', async () => {
 });
 
 it('audits every hold and every session receipt', () => {
-  assert.equal(guard({ cwd: box, session_id: 'git-open', ...bash('rm -rf docs') }), ASK);
+  assert.equal(guard({ cwd: box, session_id: 'git-open', ...bash('rm -rf docs') }), DENY);
   const rows = readFileSync(ledger(), 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(Object.entries(rows.at(-1)).filter(([key]) => ['session', 'action', 'target', 'rule', 'result'].includes(key)),
-    [['session', 'git-open'], ['action', 'Bash'], ['rule', 'DELETE'], ['result', ASK]]);
+    [['session', 'git-open'], ['action', 'Bash'], ['rule', 'DELETE'], ['result', DENY]]);
   const codex = JSON.parse(spawnSync(process.execPath, [script('guard.mjs')], { input: JSON.stringify({ cwd: box, turn_id: 'turn-1', ...bash('rm -rf docs') }),
     encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: box } }).stdout).hookSpecificOutput;
   assert.equal(codex.permissionDecision, DENY);
   assert.match(codex.permissionDecisionReason, /Held: give the user the exact command/);
-  assert.equal(guard({ cwd: box, permission_mode: 'bypassPermissions', ...bash('rm -rf docs') }), ASK);
+  for (const name of readdirSync(path.join(box, '.claude', '.wave-unknown'))) utimesSync(path.join(box, '.claude', '.wave-unknown', name), 0, 0);
+  assert.equal(guard({ cwd: box, ...bash('rm -rf docs') }), DENY);
+  assert.equal(guard({ cwd: box, agent_id: 'a1', ...bash('rm -rf docs') }), DENY);
+  for (const cwd of [box, outside]) assert.equal(guard({ cwd, session_id: 'cwd', ...bash('rm -rf ~/x') }), DENY);
+  assert.equal(guard({ cwd: box, permission_mode: 'bypassPermissions', ...bash('rm -rf docs') }), ALLOWED);
+  assert.equal(JSON.parse(readFileSync(ledger(), 'utf8').trim().split('\n').at(-1)).result, 'retry');
+  assert.equal(guard({ cwd: box, ...bash('rm -rf docs') }), DENY);
   const transcript = path.join(box, 'transcript.jsonl');
   writeFileSync(transcript, [{ customTitle: 'T', gitBranch: 'b' }, 'x', ...[1, 1].map(() => ({ type: 'assistant',
     message: { id: 'm', usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 4 }, content: [{ type: 'tool_use', id: 'u1', name: 'Edit', input: { file_path: 'a.js' } }] } })),
@@ -150,12 +155,12 @@ it('audits every hold and every session receipt', () => {
 
 it('never persists shell secrets or descriptions in denial records', () => {
   const secret = 'private-token-123';
-  ask({ cwd: box, session_id: 'private-command', agent_type: 'coder', agent_id: 'agent-1', tool_use_id: 'call-1',
+  stopped({ cwd: box, session_id: 'private-command', agent_type: 'coder', agent_id: 'agent-1', tool_use_id: 'call-1',
     ...bash(`rm -rf ~/${secret}`) });
   const saved = readFileSync(ledger(), 'utf8');
   assert(!saved.includes(secret));
   const row = JSON.parse(saved.trim().split('\n').at(-1));
-  assert.deepEqual([row.agent, row.call, row.actor, row.result], ['agent-1', 'call-1', 'coder', ASK]);
+  assert.deepEqual([row.agent, row.call, row.actor, row.result], ['agent-1', 'call-1', 'coder', DENY]);
 });
 
 it('keeps denials observable when the audit directory cannot be written', () => {
@@ -163,20 +168,20 @@ it('keeps denials observable when the audit directory cannot be written', () => 
   writeFileSync(path.join(root, 'audit'), 'keep');
   const run = spawnSync(process.execPath, [script('guard.mjs')], { input: JSON.stringify(bash('rm -rf ~/private-token-123')),
     encoding: 'utf8', env: { ...process.env, SERIO_OS_DIR: root } });
-  assert.match(run.stdout, /"permissionDecision":"ask"/);
+  assert.match(run.stdout, /"permissionDecision":"deny"/);
   assert.match(run.stderr, /SERIO AUDIT: could not persist denial/);
   assert.equal(readFileSync(path.join(root, 'audit'), 'utf8'), 'keep');
 });
 
 it('sync drops superseded denies and keeps the user rules', () => {
   const target = path.join(sandbox('sync-'), 'settings.json');
-  writeFileSync(target, JSON.stringify({ model: 'x', permissions: { deny: ['Bash(git checkout *)', 'Bash(gh issue create *)', 'Bash(curl *)'] } }));
+  writeFileSync(target, JSON.stringify({ model: 'x', permissions: { deny: ['Bash(git checkout *)', 'Bash(gh issue create *)', 'Bash(curl *)'], ask: ['Bash(gh issue create *)', 'mcp__x'] } }));
   const run = spawnSync(process.execPath, [path.join(REPO, 'tooling', 'cli', 'serio.mjs'), 'sync', '--target', target], { encoding: 'utf8' });
   assert.equal(run.status, ALLOWED, run.stderr);
   const { model, permissions } = JSON.parse(readFileSync(target, 'utf8'));
   assert.equal(model, 'x');
   assert(!permissions.deny.includes('Bash(git checkout *)') && !permissions.deny.includes('Bash(gh issue create *)'), permissions.deny);
-  assert(permissions.deny.includes('Bash(curl *)') && permissions.ask.includes('Bash(gh issue create *)'));
+  assert(permissions.deny.includes('Bash(curl *)') && permissions.ask.includes('mcp__x') && !permissions.ask.includes('Bash(gh issue create *)'));
 });
 
 it('keeps state out of the project when no state root is set', () => {
@@ -186,7 +191,7 @@ it('keeps state out of the project when no state root is set', () => {
   for (const key of ['SERIO_OS_DIR', 'CLAUDE_PLUGIN_DATA', 'PLUGIN_DATA', 'CLAUDE_PROJECT_DIR']) delete env[key];
   const run = spawnSync(process.execPath, [script('guard.mjs')], { cwd: project, encoding: 'utf8', env,
     input: JSON.stringify({ cwd: project, session_id: 'home-root', ...bash('rm -rf ~/private-token-123') }) });
-  assert.match(run.stdout, /"permissionDecision":"ask"/);
+  assert.match(run.stdout, /"permissionDecision":"deny"/);
   assert.deepEqual(readdirSync(project), []);
   assert.equal(readdirSync(path.join(home, '.serio-focus', 'audit')).length, 1);
   const data = sandbox('plugin-data-');
@@ -210,7 +215,7 @@ it('allows git work and deletes git can restore, in the guard and in the committ
     .map((glob) => new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
   const [shellTemp, shellTempReal] = [tmpdir(), realpathSync(tmpdir())]
     .map((dir) => dir.replace(/^([A-Za-z]):/, (hit, drive) => `/${drive.toLowerCase()}`).replace(/\\/g, '/'));
-  for (const command of ['git status', 'git log --oneline', 'git diff --stat', 'git fetch origin',
+  for (const command of ['git status', 'git log --oneline', 'git commit -m x', 'git -C sub commit -am x', 'git diff --stat', 'git fetch origin',
     'git checkout main', 'git stash push -m wip', 'git branch feat/x', 'git merge main',
     'git push --dry-run origin main', 'git push --help', 'git branch -a', 'git branch --show-current', 'git tag -l', 'git stash list',
     'git checkout -- src/a.ts', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null',
@@ -236,8 +241,8 @@ blocks('holds deletes and wipes git cannot restore', [
   'D=/tmp; for D in /home; do rm -rf "$D"; done', 'for d in a; do rm -rf docs; done', 'D="dist/ src"; rm -rf "$D"',
 ], (command) => ({ cwd: box, ...bash(command) }));
 
-blocks('asks before commit and push', ['git commit -m x', 'git -C sub commit -m x',
-  'git push origin main', 'git.exe push --force origin main', 'bash -c "git push origin main"', 'cd sub && git commit -am x'],
+blocks('stops push, worktrees and issues once', ['git -C sub push', 'git worktree add ../wt', 'gh issue create -t x',
+  'git push origin main', 'git.exe push --force origin main', 'bash -c "git push origin main"', 'cd sub && git push'],
 (command) => ({ cwd: box, ...bash(command) }));
 
 it('holds subagents that pick no model or effort, before they take a wave slot', () => {
@@ -246,6 +251,7 @@ it('holds subagents that pick no model or effort, before they take a wave slot',
   for (const [tool_name, tool_input] of [['Agent', { prompt: 'p', model: 'm' }], ['Workflow', { scriptPath: flow }], ['Workflow', { scriptPath: path.join(box, 'none.js') }]]) {
     assert.equal(at('choice', { tool_name, tool_input }), DENY, JSON.stringify(tool_input));
   }
+  assert.equal(at('choice', { tool_name: 'Workflow', tool_input: { name: 'review' } }), ALLOWED);
   for (let n = 0; n < 3; n += 1) assert.equal(at('choice', { tool_name: 'Agent', tool_input: { prompt: `p${n}`, model: 'm', effort: 'low' } }), ALLOWED);
 });
 
@@ -253,13 +259,13 @@ it('judges deletes through a symlinked cwd', () => {
   const link = path.join(sandbox('link-'), 'link');
   symlinkSync(box, link, process.platform === 'win32' ? 'junction' : 'dir');
   const run = (command) => guard({ cwd: link, session_id: 'link-cwd', ...bash(command) });
-  assert.equal(run('rm -rf docs'), ASK);
+  assert.equal(run('rm -rf docs'), DENY);
   assert.equal(run('rm -rf dist-x'), ALLOWED);
 });
 
 describe('fan-out cap', () => {
   const spawn = (session, tool_input, tool_name = 'Agent') => at(session, { tool_name, tool_input });
-  const held = (session, tool_input, tool_name = 'Agent') => ask({ cwd: box, session_id: session, tool_name, tool_input });
+  const held = (session, tool_input, tool_name = 'Agent') => stopped({ cwd: box, session_id: session, tool_name, tool_input });
 
   it('runs three agents per wave and holds the fourth', () => {
     for (let n = 0; n < 3; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku', effort: 'low' }), ALLOWED);
@@ -280,6 +286,7 @@ describe('fan-out cap', () => {
       assert.equal(result.stdout, '');
     }
     const { matcher } = JSON.parse(readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks.PreToolUse[0];
-    for (const tool of ['TaskCreate', 'TaskUpdate', 'TaskList', 'Read']) assert.doesNotMatch(tool, new RegExp(matcher));
+    for (const tool of ['TaskCreate', 'TaskList', 'Read', 'mcp__gmail__create_draft', 'mcp__s__slack_send_message_draft', 'mcp__gmail__get_thread', 'mcp__x__get_post']) assert.doesNotMatch(tool, new RegExp(matcher));
+    for (const tool of ['EnterWorktree', 'mcp__gmail__send_message', 'mcp__s__slack_send_message', 'mcp__c__reply-to-comment']) assert.match(tool, new RegExp(matcher));
   });
 });

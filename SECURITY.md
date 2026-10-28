@@ -26,7 +26,7 @@
 | Boundary | Rule |
 |---|---|
 | Surface | Runs only where Claude Code or Codex executes plugin hooks (`SessionStart`, `PreToolUse`, `Stop`). Claude cloud sessions do not install plugins; Codex cloud tasks are undocumented. |
-| Shape | A seatbelt on the agent's tool calls: deletes git cannot restore ask first in Claude (bypass mode approves the ask) and are held in Codex. It is not a sandbox. It does not confine code that was already written, processes the agent spawned, or network calls made by a connector itself. |
+| Shape | A seatbelt on the agent's tool calls: pushes, sends, worktrees and deletes git cannot restore are denied once with a note; the agent may retry the same call when the user asked for exactly that. It is not a sandbox. It does not confine code that was already written, processes the agent spawned, or network calls made by a connector itself. |
 | Strength | Shell matching is pattern-based and does not hold against a determined adversary. Use it together with operating system permissions and Claude Code `permissions.deny` rules, not instead of them. |
 
 ## Known gaps
@@ -35,7 +35,8 @@
 
 | Gap | Probe | Verdict |
 |---|---|---|
-| No connector coverage. `judge()` has no `mcp__` branch, so every MCP call passes. | `mcp__gmail__send_message` | Allowed. |
+| Connector coverage is by tool name only. MCP tools whose name has no send-like verb pass, whatever they do. | `mcp__x__create_event` with attendees | Allowed. |
+| A held call runs on its second identical try within 10 minutes, per session and agent; the guard cannot prove the user asked. An unwritable state root denies every try. | `git push` twice | Second runs, audited as `retry`. |
 | No read, edit, write, search or web coverage. The `PreToolUse` matcher admits `Bash`, `PowerShell` and spawn tools only. | `Read`, `Write`, `Edit`, `Grep`, `WebFetch` | Allowed. |
 | A binary name held in a shell variable is not resolved. | `X=rm; $X -rf docs` | Allowed. |
 | A payload decoded inside a pipeline is not followed. | `echo … \| base64 -d \| bash` | Allowed. |

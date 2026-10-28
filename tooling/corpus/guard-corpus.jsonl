@@ -9,8 +9,12 @@
 {"id":"budget-c02","category":"budget","tool":"spawn_agent","input":{"message":"scan the repo","model":"gpt-x"},"want":"block","origin":"spec","note":"Codex spawn without reasoning_effort is held"}
 {"id":"budget-w01","category":"budget","tool":"Workflow","input":{"script":"export const meta = {name: 'x', description: 'x'}\nawait agent('scan (src)', {model: 'haiku', effort: 'low'})"},"want":"allow","origin":"spec","note":"every workflow agent() names model and effort"}
 {"id":"budget-w02","category":"budget","tool":"Workflow","input":{"script":"export const meta = {name: 'x', description: 'x'}\nawait agent('scan', {model: 'haiku', effort: 'low'})\nawait agent('judge', {schema: S})"},"want":"block","origin":"spec","note":"one workflow agent() without model and effort holds the run"}
-{"id":"git-d01","category":"git","tool":"Bash","input":{"command":"git commit -m x"},"want":"block","origin":"spec","note":"commit asks first"}
-{"id":"git-d03","category":"git","tool":"Bash","input":{"command":"git push origin main"},"want":"block","origin":"spec","note":"push asks first"}
+{"id":"git-d01","category":"git","tool":"Bash","input":{"command":"git commit -m x"},"want":"allow","origin":"spec","note":"a local commit is reversible"}
+{"id":"git-d03","category":"git","tool":"Bash","input":{"command":"git push origin main"},"want":"block","origin":"spec","note":"push stops once"}
+{"id":"out-d01","category":"outward","tool":"Bash","input":{"command":"git worktree add ../wt"},"want":"block","origin":"spec","note":"a worktree stops once"}
+{"id":"out-d02","category":"outward","tool":"Bash","input":{"command":"gh issue create -R o/r -t x -b y"},"want":"block","origin":"spec","note":"filing an issue publishes"}
+{"id":"out-d03","category":"outward","tool":"mcp__gmail__send_message","input":{"to":"a@b.c"},"want":"block","origin":"spec","note":"sending mail stops once"}
+{"id":"out-d04","category":"outward","tool":"EnterWorktree","input":{},"want":"block","origin":"spec","note":"a worktree stops once"}
 {"id":"git-b01","category":"git","tool":"Bash","input":{"command":"git status"},"want":"allow","origin":"spec","note":"read-only status"}
 {"id":"git-b02","category":"git","tool":"Bash","input":{"command":"git log --oneline"},"want":"allow","origin":"spec","note":"read-only log"}
 {"id":"git-b03","category":"git","tool":"Bash","input":{"command":"git diff --stat"},"want":"allow","origin":"spec","note":"read-only diff"}
@@ -53,8 +57,8 @@
 {"id":"discard-b02","category":"discard","tool":"Bash","input":{"command":"git checkout -b feat/x"},"want":"allow","origin":"cc-safety-net","note":"creates a branch; no file changes"}
 {"id":"discard-b03","category":"discard","tool":"Bash","input":{"command":"git worktree remove ../wt"},"want":"allow","origin":"cc-safety-net","note":"git refuses when the worktree has edits"}
 {"id":"discard-b04","category":"discard","tool":"Bash","input":{"command":"find . -name '*.log'"},"want":"allow","origin":"cc-safety-net","note":"lists files only"}
-{"id":"git-p01","category":"git","tool":"Bash","input":{"command":"/usr/bin/git push origin main"},"want":"block","origin":"regression","note":"git called by path still asks first"}
-{"id":"git-p02","category":"git","tool":"Bash","input":{"command":"git -C \"repo dir\" commit -m x"},"want":"block","origin":"regression","note":"quoted -C path still asks first"}
+{"id":"git-p01","category":"git","tool":"Bash","input":{"command":"/usr/bin/git push origin main"},"want":"block","origin":"regression","note":"git called by path still stops once"}
+{"id":"git-p02","category":"git","tool":"Bash","input":{"command":"git -C \"repo dir\" push"},"want":"block","origin":"regression","note":"quoted -C path still stops once"}
 {"id":"budget-w03","category":"budget","tool":"Workflow","input":{"script":"export const meta = {name: 'x', description: 'x'}\nawait agent('scan model: effort:')"},"want":"block","origin":"regression","note":"option names inside the prompt text do not count"}
 {"id":"budget-w04","category":"budget","tool":"Workflow","input":{"script":"export const meta = {name: 'x', description: 'x'}\nawait agent('scan') // model: 'm', effort: 'low'"},"want":"block","origin":"regression","note":"option names in a comment do not count"}
 {"id":"budget-w05","category":"budget","tool":"Workflow","input":{"script":"export const meta = {name: 'x', description: 'x'}\nawait agent('scan', {schema: {properties: {model: {}, effort: {}}}})"},"want":"block","origin":"regression","note":"nested schema property names do not count"}

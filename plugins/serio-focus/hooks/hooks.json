@@ -8,7 +8,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "^(Bash|PowerShell|Agent|spawn_agent|Workflow)$",
+        "matcher": "^(Bash|PowerShell|Agent|spawn_agent|Workflow|EnterWorktree|mcp__.+__(?!.*(?:draft|(?:get|list|read|search|fetch)[_-]))(?:.*[_-])?(?:send|reply|forward|post|publish|schedule|share|submit|invite|respond)(?:[_-].*)?)$",
         "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs\"", "timeout": 10, "statusMessage": "Serio guard" }]
       }
     ],

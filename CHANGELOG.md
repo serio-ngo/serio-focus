@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.28.0 | 2026-10-28 | guard denies once with a note, never asks; the identical retry within 10 minutes runs and is audited; commit runs; push, worktrees, gh issue create and MCP sends stop once; named workflows run |
 | 1.27.0 | 2026-10-27 | neurodivergent wording; pr-loop works with any reviewer, bot or CI; suite cut to 300 lines of core checks; subagent calls must name model and effort; commit and push ask first |
 | 1.26.0 | 2026-10-27 | Committed permission baseline, state root ~/.serio-focus, architect read-only, doctor checks, OpenCode adapter removed, empty Codex receipts skipped, CI actions pinned |
 | 1.25.0 | 2026-10-14 | Stop hook receipt.mjs writes one session row per turn to audit/: project, branch, title, API calls, tokens, edited files; read from the transcript, no agent action |

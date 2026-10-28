@@ -17,11 +17,11 @@
 <!-- serio-scores -->
 | Measure | Value |
 |---|---|
-| Labelled cases | 52 |
+| Labelled cases | 56 |
 | Known gaps held out | 9 |
 | Recall: blocks held | 100% |
 | False blocks: allows held | 0% |
-| Startup context | ~466 tokens |
+| Startup context | ~478 tokens |
 <!-- /serio-scores -->
 
 ## Cost and limits
@@ -30,5 +30,5 @@
 |---|---|
 | Corpus | Proves the listed calls only; not a claim of complete coverage |
 | Cloud sessions | Claude cloud sessions do not install plugins, so the hooks do not run |
-| Codex | Hook trust is per hash; review it in `/hooks` after every update. `ask` fails open there, so the guard sends `deny` |
+| Codex | Hook trust is per hash; review it in `/hooks` after every update. The guard sends only `deny`, so Codex and Claude behave the same |
 | Known gaps | [SECURITY.md](../SECURITY.md) |

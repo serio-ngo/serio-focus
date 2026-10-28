@@ -1,12 +1,12 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.27.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.28.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Hooks
 
 | Event | Matcher | Script | Native host |
 |---|---|---|---|
-| `PreToolUse` | `^(Bash\|PowerShell\|Agent\|spawn_agent\|Workflow)$` | `scripts/guard.mjs` | Claude, Codex |
+| `PreToolUse` | `^(Bash\|PowerShell\|Agent\|spawn_agent\|Workflow\|EnterWorktree\|mcp__.+__(?!.*(?:draft\|(?:get\|list\|read\|search\|fetch)[_-]))(?:.*[_-])?(?:send\|reply\|forward\|post\|publish\|schedule\|share\|submit\|invite\|respond)(?:[_-].*)?)$` | `scripts/guard.mjs` | Claude, Codex |
 | `SessionStart` | `startup\|resume\|clear\|compact` | `scripts/card.mjs` | Claude, Codex |
 | `Stop` | `*` | `scripts/receipt.mjs` | Claude, Codex |
 
@@ -30,10 +30,10 @@
 
 | What ships | Count |
 |---|---|
-| Script lines | **373** across 9 files |
+| Script lines | **383** across 9 files |
 | Hook events | **3** |
 | Skills | **2** |
 | Subagents | **4** |
-| Startup context: card, agent and skill descriptions | **~466** tokens |
+| Startup context: card, agent and skill descriptions | **~478** tokens |
 | Third-party packages | **0** |
 | Network calls, API keys, model calls | **0** |
