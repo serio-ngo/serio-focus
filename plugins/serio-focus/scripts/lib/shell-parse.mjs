@@ -9,13 +9,14 @@ const RUNS_BODY = /\b(?:bash|sh|zsh|dash|ksh|pwsh|powershell|cmd|ssh|eval|source
 export const bodiless = (command) => command.replace(HEREDOC, (hit, head, quote, word, tail, body = '') =>
   `${head}<<${word}${tail}\n${RUNS_BODY.test(head + tail) ? body.replace(/['"]/g, '') : `: ${body.replace(/[\s;&|'"`$]+/g, ' ')}`}`);
 
-export function segments(command) {
+export function segments(command, shell = 'Bash') {
   const out = [];
   let buffer = '';
   let quote = null;
+  const bash = /^(?:bash|sh|zsh|dash|ksh)$/i.test(shell);
   for (let i = 0; i < command.length; i += 1) {
     const char = command[i];
-    if (char === '\\' && quote !== "'") { buffer += command.slice(i, i + 2); i += 1; continue; }
+    if (bash && char === '\\' && quote !== "'") { buffer += command.slice(i, i + 2); i += 1; continue; }
     if (quote !== "'" && (char === '`' || (char === '$' && command[i + 1] === '('))) return null;
     if (quote) {
       if (char === quote) quote = null;

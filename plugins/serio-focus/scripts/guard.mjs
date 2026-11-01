@@ -46,7 +46,7 @@ function judge(payload) {
     !/(?:^|[_-])(?:gmail|outlook|email|mail)(?:[_-]|$)/i.test(tool) || !/(?:^|[_-])(?:send|reply|forward)(?:[_-]|$)/i.test(tool));
   if (tool !== 'Bash' && tool !== 'PowerShell') return;
   if (typeof (input.command ?? '') !== 'string') throw new Blocked('BLOCKED: shell command must be a string');
-  const verdict = judgeShell(input.command || '', 0, payload.cwd);
+  const verdict = judgeShell(input.command || '', 0, payload.cwd, tool);
   if (verdict) throw new Blocked(verdict, true);
 }
 
