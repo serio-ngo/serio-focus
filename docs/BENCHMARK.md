@@ -17,7 +17,7 @@
 <!-- serio-scores -->
 | Measure | Value |
 |---|---|
-| Labelled cases | 56 |
+| Labelled cases | 67 |
 | Known gaps held out | 9 |
 | Recall: blocks held | 100% |
 | False blocks: allows held | 0% |

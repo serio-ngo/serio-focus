@@ -15,7 +15,7 @@ const REMOVE_ITEM_RECURSE = /^(?:(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b[^\n]
 
 const DISPOSABLE = /(?:^|\/)(?:node_modules|dist(?:-[\w.-]+)?|build|out|coverage|target|vendor|tmp|temp|\.next|\.nuxt|\.turbo|\.cache|\.wrangler|\.venv|\.pytest_cache|__pycache__)(?:\/|$)|\.(?:log|tmp|pyc|o|class|tsbuildinfo)$/;
 const ABSOLUTE = /^(?:[/\\~$%]|[A-Za-z]:)/;
-const CD = /^(?:cd|pushd|Set-Location)\s+(\S.*)$/i;
+const CD = /^(?:cd|Set-Location)\s+(\S.*)$/i;
 const drive = (token) => (process.platform === 'win32'
   ? token.replace(/^\/tmp(?=\/|$)/, () => tmpdir()).replace(/^\/([a-z])(?=\/|$)/i, (hit, letter) => `${letter.toUpperCase()}:`)
   : token);
@@ -64,7 +64,7 @@ function allRestorable(segment, dir, cwd) {
   return operands.length > 0 && operands.every((token) => restorable(token, cwd));
 }
 
-const SHELLS = /^(?:sudo\s+)?(?:bash|sh|zsh|dash|ksh|pwsh|powershell|cmd)\b/i;
+const SHELLS = /^(?:sudo\s+)?(bash|sh|zsh|dash|ksh|pwsh|powershell|cmd)\b/i;
 const SHELL_INNER = /(?:^|\s)(?:-{1,2}(?:command|[a-z]*c)|\/(?:command|c))\s+(['"])([\s\S]*)\1\s*$/i;
 const SHELL_INNER_BARE = /(?:^|\s)(?:-{1,2}(?:command|[a-z]*c)|\/(?:command|c))\s+()(?!['"])([\s\S]+)$/i;
 
@@ -72,20 +72,24 @@ function innerCommand(segment) {
   return (SHELL_INNER.exec(segment) || SHELL_INNER_BARE.exec(segment) || [])[2];
 }
 
-export function judgeShell(command, depth = 0, cwd = process.cwd()) {
-  let dir = '';
-  for (const segment of segments(bodiless(command)).map(unwrap)) {
+export function judgeShell(command, depth = 0, cwd = process.cwd(), shell = 'Bash') {
+  let dir = cwd === null ? null : '';
+  const parts = segments(bodiless(command), shell);
+  if (!parts) return 'SHELL: executable command substitution needs review';
+  for (const segment of parts.map(unwrap)) {
+    if (/^(?:pushd|popd)\b/i.test(segment)) dir = null;
     const cd = strip((CD.exec(segment) || [])[1] || '');
-    if (cd) dir = ABSOLUTE.test(cd) || !dir ? cd : `${dir}/${cd}`;
+    if (cd && dir !== null) dir = ABSOLUTE.test(cd) || !dir ? cd : `${dir}/${cd}`;
     if (GIT_PREVIEW.test(segment)) continue;
     if (OUTWARD.test(segment)) return `OUTWARD: "${segment.slice(0, 80)}" pushes, files an issue or opens a worktree`;
     if (GIT_WIPE.test(segment)) return `WIPE: "${segment.slice(0, 80)}" discards work git cannot restore`;
-    if ((RM_RECURSIVE.test(segment) || REMOVE_ITEM_RECURSE.test(segment)) && !allRestorable(segment, dir, cwd)) {
+    if ((RM_RECURSIVE.test(segment) || REMOVE_ITEM_RECURSE.test(segment)) && (dir === null || !allRestorable(segment, dir, cwd))) {
       return `DELETE: "${segment.slice(0, 80)}" removes data git cannot restore`;
     }
-    if (depth < 2 && SHELLS.test(segment)) {
+    const nested = depth < 2 && SHELLS.exec(segment);
+    if (nested) {
       const inner = innerCommand(segment);
-      const verdict = inner && judgeShell(inner, depth + 1, path.resolve(cwd, drive(dir)));
+      const verdict = inner && judgeShell(inner, depth + 1, dir === null ? null : path.resolve(cwd, drive(dir)), nested[1]);
       if (verdict) return verdict;
     }
   }

@@ -9,21 +9,23 @@ const RUNS_BODY = /\b(?:bash|sh|zsh|dash|ksh|pwsh|powershell|cmd|ssh|eval|source
 export const bodiless = (command) => command.replace(HEREDOC, (hit, head, quote, word, tail, body = '') =>
   `${head}<<${word}${tail}\n${RUNS_BODY.test(head + tail) ? body.replace(/['"]/g, '') : `: ${body.replace(/[\s;&|'"`$]+/g, ' ')}`}`);
 
-export function segments(command) {
+export function segments(command, shell = 'Bash') {
   const out = [];
   let buffer = '';
   let quote = null;
+  const bash = /^(?:bash|sh|zsh|dash|ksh)$/i.test(shell);
   for (let i = 0; i < command.length; i += 1) {
     const char = command[i];
+    if (bash && char === '\\' && quote !== "'") { buffer += command.slice(i, i + 2); i += 1; continue; }
+    if (quote !== "'" && (char === '`' || (char === '$' && command[i + 1] === '('))) return null;
     if (quote) {
-      if (char === quote && command[i - 1] !== '\\') quote = null;
+      if (char === quote) quote = null;
       buffer += char;
       continue;
     }
     if (char === '"' || char === "'") { quote = char; buffer += char; continue; }
     if (char === '&' && REDIRECT_AMP(command[i - 1], command[i + 1])) { buffer += char; continue; }
-    if (';\n&|`'.includes(char)) { out.push(buffer); buffer = ''; continue; }
-    if (char === '$' && command[i + 1] === '(') { out.push(buffer); buffer = ''; i += 1; continue; }
+    if (';\n&|'.includes(char)) { out.push(buffer); buffer = ''; continue; }
     buffer += char;
   }
   out.push(buffer);

@@ -47,13 +47,16 @@ Warnings and irreversible steps stay in full sentences.
 | Call | What happens |
 |---|---|
 | `git commit` | Runs: git can undo it |
-| `git push`, `git worktree add`, `EnterWorktree`, `gh issue create`, MCP send, reply, forward, post, publish, schedule, share, submit, invite or respond (drafts run) | Denied once with "Held: give the user the exact command"; the same call retried within 10 minutes runs and is audited as `retry` |
+| `git push`, `git worktree add`, `EnterWorktree`, `gh issue create`, other MCP send, reply, forward, post, publish, schedule, share, submit, invite or respond (drafts run) | Denied once with a short note; the same call retried within 10 minutes runs and is audited as `retry` |
+| Email sending, including sending a saved draft | Denied on every attempt; no retry bypass |
 | Subagent call without model and effort | Held |
 | Delete of tracked, clean files, a temp path or an ignored build folder | Runs: git or a rebuild restores it |
 | Delete of untracked, modified or outside-repo data; `git reset --hard`; `git clean -f` | Denied once, the same in every permission mode and in Codex; the same call retried runs |
 | More than 3 direct subagent starts in 60 s | The next one waits for the next wave (`SERIO_MAX_PER_WAVE`, `SERIO_WAVE_MS`) |
 | Every hold | One line in `audit/YYYY-MM.jsonl`, without the command text |
 | Every Claude turn end | One `session` line in the same file: project, branch, title, API calls, tokens, edited files; read from the transcript, no agent action |
+
+When you specifically request a held action, the AI retries the identical call through the action-scoped bypass. Existing specific authorization is enough; you do not need to approve it again or run the command manually. This bypass never overrides project prohibitions or native permissions.
 
 The guard is a seatbelt, not a sandbox: [SECURITY.md](SECURITY.md).
 

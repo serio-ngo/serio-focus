@@ -36,58 +36,32 @@ export function markdown(text) {
   let fence = false;
   let frontmatter = lines[0] === '---';
 
-  const blankBefore = () => {
-    if (out.length && out[out.length - 1].trim() !== '') out.push('');
-  };
-  const continues = (i) => {
-    const next = lines[i + 1];
-    return next !== undefined && (LIST_ITEM.test(next) || /^\s+\S/.test(next) || next.trim() === '');
-  };
-
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    if (frontmatter) {
+    if (frontmatter || fence || FENCE.test(line)) {
+      if (frontmatter) { if (i > 0 && line === '---') frontmatter = false; }
+      else if (FENCE.test(line)) fence = !fence;
       out.push(line);
-      if (i > 0 && line === '---') frontmatter = false;
       continue;
     }
-    if (FENCE.test(line)) { fence = !fence; out.push(line); continue; }
-    if (fence) { out.push(line); continue; }
-
-    if (line.trim() === '') {
-      if (out.length && out[out.length - 1].trim() === '') continue;
-      out.push('');
-      continue;
-    }
-    if (HEADING.test(line)) {
-      blankBefore();
-      out.push(line);
-      if (lines[i + 1] !== undefined && lines[i + 1].trim() !== '') out.push('');
-      continue;
-    }
-    if (LIST_ITEM.test(line)) {
-      const previous = out[out.length - 1] ?? '';
-      if (previous.trim() !== '' && !LIST_ITEM.test(previous) && !/^\s+\S/.test(previous)) blankBefore();
-      out.push(line);
-      if (!continues(i)) out.push('');
-      continue;
-    }
-    out.push(line);
+    const previous = out.at(-1) ?? '';
+    const next = lines[i + 1];
+    if (!line.trim() && out.length && !previous.trim()) continue;
+    const heading = HEADING.test(line);
+    const list = LIST_ITEM.test(line);
+    if (previous.trim() && (heading || (list && !LIST_ITEM.test(previous) && !/^\s+\S/.test(previous)))) out.push('');
+    out.push(line.trim() ? line : '');
+    if ((heading && next !== undefined && next.trim())
+      || (list && !(next !== undefined && (LIST_ITEM.test(next) || /^\s+\S/.test(next) || !next.trim())))) out.push('');
   }
   return `${out.join('\n').replace(/\n+$/, '')}\n`;
 }
 
-export function writeBlock(file, open, close, lines) {
-  let text;
-  try { text = readFileSync(file, 'utf8'); } catch { return `no file at ${file}`; }
+export function block(text, open, close, lines) {
   const all = text.split('\n');
   const a = all.indexOf(open);
   const z = all.indexOf(close);
-  if (a < 0 || z < a) return `no markers in ${file}`;
-  let next = `${[...all.slice(0, a + 1), ...lines, ...all.slice(z)].join('\n').replace(/\n+$/, '')}\n`;
-  if (file.endsWith('.md')) next = markdown(next.replace(/\r\n/g, '\n'));
-  writeFileSync(file, next, 'utf8');
-  return `refreshed ${path.basename(file)}`;
+  return a < 0 || z < a ? text : `${[...all.slice(0, a + 1), ...lines, ...all.slice(z)].join('\n').replace(/\n+$/, '')}\n`;
 }
 
 const documents = (root, folder, pattern) => {
@@ -105,12 +79,12 @@ export const agents = (root = REPO) => documents(root, 'agents', /\.md$/);
 export const startupChars = (root = REPO) => card().length
   + [...skills(root), ...agents(root)].reduce((n, doc) => n + doc.name.length + doc.description.length, 0);
 
-export const codexRoles = (root = REPO) => agents(root).map((agent) => ({
-  file: `serio-${agent.name}.toml`,
-  text: [`name = "serio-${agent.name}"`, `description = ${JSON.stringify(agent.description)}`,
-    ...(/\b(?:Edit|Write)\b/.test(agent.tools) ? [] : ['sandbox_mode = "read-only"']),
-    `developer_instructions = '''\n${agent.body}\n'''`, ''].join('\n'),
-}));
+export const codexRoles = (root = REPO) => agents(root).map((agent) => {
+  const head = `name = "serio-${agent.name}"\ndescription = ${JSON.stringify(agent.description)}\n`;
+  const body = `developer_instructions = '''\n${agent.body}\n'''\n`;
+  return { file: `serio-${agent.name}.toml`, text: head + body,
+    legacy: head + (/\b(?:Edit|Write)\b/.test(agent.tools) ? '' : 'sandbox_mode = "read-only"\n') + body };
+});
 
 export function score() {
   const box = mkdtempSync(path.join(tmpdir(), 'serio-score-'));
@@ -123,7 +97,9 @@ export function score() {
   spawnSync('git', ['-C', box, 'add', 'lib/a.js']);
   spawnSync('git', ['-C', box, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'fixture']);
   const corpus = read('tooling', 'corpus', 'guard-corpus.jsonl').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+  const { matcher } = readJson('plugins', 'serio-focus', 'hooks', 'hooks.json').hooks.PreToolUse[0];
   const rows = corpus.filter((c) => !c.known_gap).map((c) => {
+      if (!new RegExp(matcher).test(c.tool)) return { id: c.id, block: c.want === 'block', held: false };
       const run = spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'guard.mjs')], {
       input: JSON.stringify({ session_id: `corpus-${c.id}`, cwd: box, tool_name: c.tool, tool_input: c.input || {} }), encoding: 'utf8',
       env: { ...process.env, SERIO_OS_DIR: box },
