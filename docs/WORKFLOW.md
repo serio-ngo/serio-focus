@@ -7,9 +7,9 @@
 | Role | Runs as | Writes | Returns |
 |---|---|---|---|
 | Orchestrator | The main session running `deliver`, then `pr-loop` | the plan and the evidence | Status to the owner |
-| Architect | `architect`: Read, Grep and Glob only in Claude. Codex uses `sandbox_mode = "read-only"` | nothing | One plan: tasks, paths, acceptance commands, risks |
+| Architect | `architect`: Read, Grep and Glob only in Claude; canonical role instructions and parent permissions in Codex | nothing | One plan: tasks, paths, acceptance commands, risks |
 | Coder | `coder` agent, one task per dispatch, fresh context | code and tests, never commits | Changed lines, check output, what was not done |
-| Reviewer | `reviewer`: read-only instructions in Claude; Bash remains available. Codex uses a read-only sandbox | nothing | P0–P2 findings at `file:line`, verdict `ready` or `changes needed` |
+| Reviewer | `reviewer`: read-only instructions; Bash remains available; Codex inherits parent permissions | nothing | P0–P2 findings at `file:line`, verdict `ready` or `changes needed` |
 | Tester | `tester` agent, only when behaviour changes and the repository has tests | one failing test | Test path and its failing line for the coder |
 | Owner | A person | merges | The merge |
 

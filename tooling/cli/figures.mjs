@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { PLUGIN, REPO, writeBlock } from './generate.mjs';
+import { PLUGIN, block } from './generate.mjs';
 
 const INK = '#24292f';
 const MUTED = '#57606a';
@@ -14,7 +14,6 @@ const DEMO_CLOSE = '<!-- /serio-demo -->';
 
 const FONT = "system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif";
 const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace";
-const DOCS = (name) => path.join(REPO, 'docs', name);
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -22,7 +21,6 @@ const text = (x, y, s, o = {}) => `<text x="${x}" y="${y}" fill="${o.fill ?? INK
   + `${o.weight ? ` font-weight="${o.weight}"` : ''}`
   + `${o.cls ? ` class="${o.cls}"` : ''}>${esc(s)}</text>`;
 const open = (w, h, label, family = FONT) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)}" font-family="${family}">`;
-const file = (lines) => `${lines.join('\n')}\n`;
 
 function wrap(line, max) {
   const out = [];
@@ -138,7 +136,7 @@ function demoSvg({ steps, answer, receipt } = probe()) {
   const cues = rows.map((row, i) => `.d${i}{animation:k${i} ${loop}s infinite both}`).join('');
   const typeW = Math.ceil(prompt.length * CH);
   const alt = `serio-focus session: ${steps.map((s) => (s.verdict ? `${s.label} → ${s.verdict}` : s.label)).join(' · ')} · ${receipt}`;
-  return { width: W, alt, svg: file([
+  return { width: W, alt, svg: [
     open(W, H, alt, MONO),
     '<style>',
     'text{font-size:13.5px;white-space:pre}',
@@ -156,16 +154,14 @@ function demoSvg({ steps, answer, receipt } = probe()) {
     ...body,
     `<g class="row d${last}"><rect class="cursor" x="${22 + Math.ceil(rows[last].text.length * CH) + 6}" y="${y0 + last * step - 11}" width="7" height="13" fill="${HUE.with}"/></g>`,
     '</svg>',
-  ]) };
+  ].join('\n') + '\n' };
 }
 
-export function writeFigures() {
-  const out = [];
+export function figures(pending) {
   const demo = demoSvg();
-  writeFileSync(DOCS('demo.svg'), demo.svg, 'utf8');
-  out.push('wrote docs/demo.svg');
-  out.push(writeBlock(path.join(REPO, 'README.md'), DEMO_OPEN, DEMO_CLOSE, [
+  pending.set('docs/demo.svg', demo.svg);
+  pending.set('README.md', block(pending.get('README.md'), DEMO_OPEN, DEMO_CLOSE, [
     `<img src="docs/demo.svg" width="${demo.width}" alt="${esc(demo.alt)}">`,
   ]));
-  return out;
+  return 2;
 }

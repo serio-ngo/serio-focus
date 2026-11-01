@@ -15,15 +15,16 @@ export function segments(command) {
   let quote = null;
   for (let i = 0; i < command.length; i += 1) {
     const char = command[i];
+    if (char === '\\' && quote !== "'") { buffer += command.slice(i, i + 2); i += 1; continue; }
+    if (quote !== "'" && (char === '`' || (char === '$' && command[i + 1] === '('))) return null;
     if (quote) {
-      if (char === quote && command[i - 1] !== '\\') quote = null;
+      if (char === quote) quote = null;
       buffer += char;
       continue;
     }
     if (char === '"' || char === "'") { quote = char; buffer += char; continue; }
     if (char === '&' && REDIRECT_AMP(command[i - 1], command[i + 1])) { buffer += char; continue; }
-    if (';\n&|`'.includes(char)) { out.push(buffer); buffer = ''; continue; }
-    if (char === '$' && command[i + 1] === '(') { out.push(buffer); buffer = ''; i += 1; continue; }
+    if (';\n&|'.includes(char)) { out.push(buffer); buffer = ''; continue; }
     buffer += char;
   }
   out.push(buffer);

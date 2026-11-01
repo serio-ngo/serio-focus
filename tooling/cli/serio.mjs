@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
-import { writeFigures } from './figures.mjs';
-import { PLUGIN, REPO, codexRoles, inventory, manifest, markdown, pluginVersion, readJson, score, table, walk, writeBlock } from './generate.mjs';
+import { figures } from './figures.mjs';
+import { PLUGIN, REPO, block, codexRoles, inventory, manifest, markdown, pluginVersion, readJson, score, table, walk } from './generate.mjs';
 
 const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const CODEX_AGENTS = path.join(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'agents');
@@ -71,23 +72,15 @@ function merge(target, patch) {
   return merged;
 }
 
-const RUNS = ['git add .', 'git checkout main', 'git switch main', 'git branch x', 'git merge main',
-  'git rebase main', 'git stash push', 'git tag v1', 'git revert HEAD', 'git cherry-pick HEAD', 'git remote add o u', 'gh pr create', 'gh issue create x'];
-const matches = (rule, command) => {
-  const glob = /^Bash\((.*)\)$/.exec(rule)?.[1];
-  return glob !== undefined && new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(command);
-};
-
 function sync(args) {
   const target = path.resolve(args.target || path.join(CONFIG_DIR, 'settings.json'));
   const before = readJsonFile(target, {});
   const baseline = readJson('.claude', 'settings.json').permissions;
-  const keep = (key) => (before.permissions?.[key] ?? []).filter((rule) => !RUNS.some((command) => matches(rule, command)));
-  const after = merge({ ...before, permissions: { ...before.permissions, deny: keep('deny'), ask: keep('ask') } }, { permissions: baseline });
+  const after = merge(before, { permissions: baseline });
   if (!args.dryRun) writeJson(target, after);
   const counts = RULE_LISTS
     .map((key) => `${key}+=${(after.permissions?.[key] ?? []).filter((r) => !(before.permissions?.[key] ?? []).includes(r)).length}`)
-    .concat(['deny', 'ask'].map((key) => `${key}-=${(before.permissions?.[key] ?? []).filter((r) => !after.permissions[key].includes(r)).length}`));
+    .concat(['deny', 'ask'].map((key) => `${key}-=0`));
   row('settings', `${target} ${counts.join(' ')}${args.dryRun ? ' DRY RUN' : ''}`);
   return after;
 }
@@ -101,6 +94,20 @@ const hostOf = (args) => {
 
 function install(args = {}, remove = false) {
   const host = hostOf(args);
+  const roles = host === 'codex' ? codexRoles() : [];
+  const ownership = path.join(CODEX_AGENTS, '.serio-focus.json');
+  if (roles.length && lstatSync(ownership, { throwIfNoEntry: false })?.isFile() === false) fail(`role collision: ${ownership}`);
+  const digests = roles.length ? readJsonFile(ownership, {}) : {};
+  if (!digests || typeof digests !== 'object' || Array.isArray(digests)) fail(`invalid role ownership: ${ownership}`);
+  const digest = (text) => createHash('sha256').update(text).digest('hex');
+  for (const role of roles) {
+    const file = path.join(CODEX_AGENTS, role.file);
+    const stat = lstatSync(file, { throwIfNoEntry: false });
+    if (!stat) continue;
+    if (!stat.isFile()) fail(`role collision: ${file}`);
+    const text = readFileSync(file, 'utf8');
+    if (digests[role.file] ? digest(text) !== digests[role.file] : text !== role.text && text !== role.legacy) fail(`role collision: ${file}`);
+  }
   const native = path.join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
   const executable = host === 'claude' ? process.env.CLAUDE_CODE_EXECPATH || (existsSync(native) ? native : 'claude') : 'codex';
   const commands = remove ? [[ 'plugin', host === 'claude' ? 'uninstall' : 'remove', registryKey() ]] : host === 'claude'
@@ -112,60 +119,59 @@ function install(args = {}, remove = false) {
   }
   if (host === 'codex') {
     mkdirSync(CODEX_AGENTS, { recursive: true });
-    for (const role of codexRoles()) {
+    for (const role of roles) {
       if (remove) rmSync(path.join(CODEX_AGENTS, role.file), { force: true });
       else writeFileSync(path.join(CODEX_AGENTS, role.file), role.text, 'utf8');
     }
+    if (remove) rmSync(ownership, { force: true });
+    else writeJson(ownership, Object.fromEntries(roles.map((role) => [role.file, digest(role.text)])));
   }
   row('plugin', host + (remove ? ' removed' : ' installed') + ' through native plugin commands');
 }
 
-const sources = (figures = false) => walk(REPO)
-    .filter((file) => TEXT.test(file) || (figures && file.endsWith('.svg')))
+const sources = () => walk(REPO)
+    .filter((file) => TEXT.test(file) || file.endsWith('.svg'))
     .filter((file) => !/(?:^|\/)(?:\.git|\.claude|node_modules|audit)\//.test(file));
 
-function normalise() {
-  const files = sources();
-  let touched = 0;
-  for (const rel of files) {
-    const file = path.join(REPO, rel);
-    const before = readFileSync(file, 'utf8');
-    let after = before.replace(/\r\n/g, '\n');
-    if (rel.endsWith('.md')) after = markdown(after);
-    else after = `${after.replace(/[ \t]+$/gm, '').replace(/\n+$/, '')}\n`;
-    if (after !== before) { writeFileSync(file, after, 'utf8'); touched += 1; }
-  }
-  return touched;
-}
-
-function upkeep() {
+function upkeep(args = {}) {
+  const pending = new Map(sources().map((file) => [file, readFileSync(path.join(REPO, file), 'utf8')]));
+  const json = (file, value) => pending.set(file, `${JSON.stringify(value, null, 2)}\n`);
   const plugin = readJson('plugins', 'serio-focus', '.claude-plugin', 'plugin.json');
-  writeJson(path.join(REPO, 'package.json'), { ...readJson('package.json'), description: plugin.description });
-  writeJson(path.join(REPO, '.claude-plugin', 'marketplace.json'), { ...marketplace, description: plugin.description,
+  json('package.json', { ...readJson('package.json'), description: plugin.description });
+  json('.claude-plugin/marketplace.json', { ...marketplace, description: plugin.description,
     plugins: marketplace.plugins.map((entry) => entry.name === plugin.name ? { ...entry, description: plugin.description } : entry) });
   const { cases, gaps, recall, fpRate } = score();
   const { contextTokens } = inventory();
-  writeBlock(path.join(REPO, 'docs', 'BENCHMARK.md'), '<!-- serio-scores -->', '<!-- /serio-scores -->', table(['Measure', 'Value'], [
+  pending.set('docs/BENCHMARK.md', block(pending.get('docs/BENCHMARK.md'), '<!-- serio-scores -->', '<!-- /serio-scores -->', table(['Measure', 'Value'], [
     `| Labelled cases | ${cases} |`, `| Known gaps held out | ${gaps} |`, `| Recall: blocks held | ${recall}% |`, `| False blocks: allows held | ${fpRate}% |`, `| Startup context | ~${contextTokens} tokens |`,
-  ]).split('\n'));
-  row('figures', `${writeFigures().length} file(s)`);
-  writeJson(path.join(PLUGIN, '.codex-plugin', 'plugin.json'), {
+  ]).split('\n')));
+  row('figures', `${figures(pending)} file(s)`);
+  json('plugins/serio-focus/.codex-plugin/plugin.json', {
     name: plugin.name, version: plugin.version, description: plugin.description, skills: './skills/', hooks: './hooks/hooks.json',
     interface: { displayName: plugin.displayName, developerName: plugin.author.name, category: 'Productivity' },
   });
-  writeJson(path.join(REPO, '.agents', 'plugins', 'marketplace.json'), {
+  json('.agents/plugins/marketplace.json', {
     name: marketplace.name, interface: { displayName: 'Serio Focus' },
     plugins: marketplace.plugins.map((plugin) => ({ name: plugin.name,
       source: { source: 'local', path: plugin.source }, policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
       category: 'Productivity' })),
   });
-  writeFileSync(path.join(REPO, 'docs', 'MANIFEST.md'), manifest(), 'utf8');
-  row('formatted', `${normalise()} file(s)`);
-}
-
-function check(before) {
-  const changed = sources(true).filter((file) => before.get(file) !== readFileSync(path.join(REPO, file), 'utf8'));
-  if (changed.length) fail(`generated artefacts are stale: ${changed.join(', ')}`);
+  pending.set('docs/MANIFEST.md', manifest());
+  let touched = 0;
+  for (const [file, before] of pending) {
+    if (!TEXT.test(file)) continue;
+    const clean = before.replace(/\r\n/g, '\n');
+    const after = file.endsWith('.md') ? markdown(clean) : `${clean.replace(/[ \t]+$/gm, '').replace(/\n+$/, '')}\n`;
+    if (after !== before) touched += 1;
+    pending.set(file, after);
+  }
+  row('formatted', `${touched} file(s)`);
+  const changed = [...pending].filter(([file, text]) => !existsSync(path.join(REPO, file)) || readFileSync(path.join(REPO, file), 'utf8') !== text);
+  if (args.check && changed.length) { report(); fail(`generated artefacts are stale: ${changed.map(([file]) => file).join(', ')}`); }
+  for (const [file, text] of changed) {
+    mkdirSync(path.dirname(path.join(REPO, file)), { recursive: true });
+    writeFileSync(path.join(REPO, file), text, 'utf8');
+  }
 }
 
 const held = (run) => { try { return JSON.parse(run.stdout || '').hookSpecificOutput?.permissionDecision === 'deny'; } catch { return false; } };
@@ -266,7 +272,7 @@ function prove() {
   try {
     if (spawnSync('git', ['-C', REPO, 'archive', '--format=tar', '-o', path.join(box, 'head.tar'), 'HEAD']).status !== 0) throw new Error('cannot archive HEAD');
     if (spawnSync('tar', ['-xf', 'head.tar'], { cwd: box }).status !== 0) throw new Error('cannot unpack HEAD');
-    copyFileSync(path.join(REPO, suite), path.join(box, suite));
+    for (const file of [suite, path.join('tooling', 'corpus', 'guard-corpus.jsonl')]) copyFileSync(path.join(REPO, file), path.join(box, file));
     head = failing(box);
     tree = failing(REPO);
   } finally { rmSync(box, { recursive: true, force: true }); }
@@ -291,10 +297,8 @@ else if (command === 'sync') { sync(args); report(); }
 else if (command === 'install') { install(args); report(); }
 else if (command === 'uninstall') { install(args, true); report(); }
 else if (command === 'upkeep') {
-  const before = args.check ? new Map(sources(true).map((file) => [file, readFileSync(path.join(REPO, file), 'utf8')])) : null;
-  upkeep();
+  upkeep(args);
   report();
-  if (args.check) check(before);
 }
 else if (command === 'doctor') process.exit(doctor(args).failed ? 1 : 0);
 else if (command === 'release') release(args);

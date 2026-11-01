@@ -1,43 +1,35 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { walk } from '../cli/generate.mjs';
-
-const ALLOWED = 0;
-const DENY = 'deny';
+const ALLOWED = 0, DENY = 'deny';
 const PLUGIN = fileURLToPath(new URL('../../plugins/serio-focus/', import.meta.url));
 const REPO = path.resolve(PLUGIN, '..', '..');
 const script = (name) => path.join(PLUGIN, 'scripts', name);
 const ledger = (root = box) => path.join(root, 'audit', `${new Date().toISOString().slice(0, 7)}.jsonl`);
-
 const boxes = [];
 const sandbox = (prefix) => {
   const root = mkdtempSync(path.join(tmpdir(), prefix));
-  boxes.push(root);
-  return root;
+  boxes.push(root); return root;
 };
 after(() => {
-  for (const dir of boxes.splice(0)) {
-    try { rmSync(dir, { recursive: true, force: true }); } catch { }
-  }
+  for (const dir of boxes.splice(0)) try { rmSync(dir, { recursive: true, force: true }); } catch { }
 });
-
 const outside = sandbox('outside-');
 spawnSync('git', ['init', '-q', outside]);
-mkdirSync(path.join(outside, 'data'));
-writeFileSync(path.join(outside, 'data', 'a.txt'), 'keep');
+mkdirSync(path.join(outside, 'data')); writeFileSync(path.join(outside, 'data', 'a.txt'), 'keep');
 const box = sandbox('guard-');
 spawnSync('git', ['init', '-q', box]);
 writeFileSync(path.join(box, '.gitignore'), 'node_modules/\ndist*/\n.wrangler/\n');
-for (const file of ['lib/a.js', 'mod/a.js', 'dist/tracked.txt', 'docs/a.md', 'src/a.ts', 'child/notes/a.md', '123', '--valuable', 'dist-x/a.txt', 'hid/a.js']) {
+for (const file of ['lib/a.js', 'mod/a.js', 'dist/tracked.txt', 'docs/a.md', 'src/a.ts', 'child/notes/a.md', 'child/docs/a.md', '123', '--valuable', 'dist-x/a.txt', 'hid/a.js']) {
   mkdirSync(path.dirname(path.join(box, file)), { recursive: true });
   writeFileSync(path.join(box, file), 'keep');
 }
-spawnSync('git', ['-C', box, 'add', '-f', 'lib', 'mod', 'hid', 'dist/tracked.txt']);
+spawnSync('git', ['-C', box, 'add', '-f', 'lib', 'mod', 'hid', 'dist/tracked.txt', 'child/docs']);
 spawnSync('git', ['-C', box, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'fixture']);
 writeFileSync(path.join(box, 'mod', 'a.js'), 'changed');
 spawnSync('git', ['-C', box, 'update-index', '--assume-unchanged', 'hid/a.js']);
@@ -48,7 +40,6 @@ const fire = (file, payload, env = { ...process.env, SERIO_OS_DIR: box }) => {
   const run = spawnSync(process.execPath, [file], { input: typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}), encoding: 'utf8', env });
   return /"permissionDecision":"(deny)"/.exec(run.stdout)?.[1] ?? run.status;
 };
-
 const guard = (payload, env) => fire(script('guard.mjs'), payload, env);
 const at = (session, payload) => guard({ cwd: box, session_id: session, ...payload },
   { ...process.env, SERIO_OS_DIR: box });
@@ -61,10 +52,7 @@ const stopped = (payload, env) => {
   assert.match(run.stdout, /"permissionDecision":"deny"/, payload.tool_input?.command);
   return JSON.parse(run.stdout).hookSpecificOutput.permissionDecision;
 };
-const blocks = (label, cases, payload) => it(label, () => {
-  for (const c of cases) assert.equal(stopped({ session_id: label, ...payload(c) }), DENY, c);
-});
-
+const blocks = (label, cases, payload) => it(label, () => { for (const c of cases) assert.equal(stopped({ session_id: label, ...payload(c) }), DENY, c); });
 it('rejects stale generated artefacts and product descriptions', () => {
   const repo = sandbox('generation-');
   cpSync(REPO, repo, {
@@ -74,21 +62,25 @@ it('rejects stale generated artefacts and product descriptions', () => {
   const before = spawnSync(process.execPath, [cli, 'upkeep'], { encoding: 'utf8' });
   if (before.status !== 0) throw new Error(before.stderr || 'fixture generation failed');
   const description = JSON.parse(readFileSync(path.join(repo, 'plugins', 'serio-focus', '.claude-plugin', 'plugin.json'), 'utf8')).description;
+  const demo = readFileSync(path.join(repo, 'docs', 'demo.svg'), 'utf8');
   for (const file of ['docs/demo.svg', 'docs/MANIFEST.md', 'plugins/serio-focus/.codex-plugin/plugin.json']) {
     const target = path.join(repo, file);
     const text = readFileSync(target, 'utf8');
     writeFileSync(target, text.includes(description) ? text.replaceAll(description, 'stale description') : `${text}\nstale\n`);
+    const stale = new Map(walk(repo).map((file) => [file, [readFileSync(path.join(repo, file), 'utf8'), statSync(path.join(repo, file)).mtimeMs]]));
     const result = spawnSync(process.execPath, [cli, 'upkeep', '--check'], { encoding: 'utf8' });
     assert.notEqual(result.status, ALLOWED, file);
     assert.match(result.stderr, /generated artefacts are stale:/);
     assert(result.stderr.includes(file), result.stderr);
+    for (const [file, before] of stale) assert.deepEqual([readFileSync(path.join(repo, file), 'utf8'), statSync(path.join(repo, file)).mtimeMs], before, file);
+    assert.equal(spawnSync(process.execPath, [cli, 'upkeep'], { encoding: 'utf8' }).status, ALLOWED);
+    assert.equal(readFileSync(path.join(repo, 'docs', 'demo.svg'), 'utf8'), demo);
+    assert.equal(spawnSync(process.execPath, [cli, 'upkeep', '--check'], { encoding: 'utf8' }).status, ALLOWED);
   }
   writeFileSync(path.join(repo, 'plugins', 'serio-focus', 'scripts', 'guard.mjs'), 'process.exit(1);');
   const failed = spawnSync(process.execPath, [cli, 'upkeep'], { encoding: 'utf8' });
-  assert.notEqual(failed.status, ALLOWED);
-  assert.match(failed.stderr, /guard execution failed:/);
+  assert.notEqual(failed.status, ALLOWED); assert.match(failed.stderr, /guard execution failed:/);
 });
-
 it('holds code to no comments, 300 lines per plugin file and one suite file of 300 lines', () => {
   for (const file of [...walk(PLUGIN).map((f) => path.join(PLUGIN, f)), fileURLToPath(import.meta.url)]) {
     const text = readFileSync(file, 'utf8');
@@ -97,7 +89,6 @@ it('holds code to no comments, 300 lines per plugin file and one suite file of 3
   }
   assert.deepEqual(readdirSync(path.join(REPO, 'tooling', 'test')), ['guard.test.mjs']);
 });
-
 it('keeps startup context small and agents, skills and Codex roles well-formed', async () => {
   const { agents, codexRoles, skills, startupChars } = await import('../cli/generate.mjs');
   const roles = agents();
@@ -108,19 +99,17 @@ it('keeps startup context small and agents, skills and Codex roles well-formed',
   for (const agent of roles) assert.equal(/\bBash\b/.test(agent.tools), agent.name !== 'architect', agent.name);
   for (const [role, agent] of codexRoles().map((role, i) => [role, roles[i]])) {
     assert.match(role.text, new RegExp(`^name = "serio-${agent.name}"\\ndescription = ".+"\\n`));
-    assert.equal(role.text.includes('sandbox_mode = "read-only"'), ['architect', 'reviewer'].includes(agent.name), agent.name);
+    assert.doesNotMatch(role.text, /^sandbox_mode\s*=/m, agent.name);
     assert.ok(role.text.endsWith(`'''\n${agent.body}\n'''\n`) && !agent.body.includes("'''"), agent.name);
   }
   assert.ok(startupChars() < 1950, String(startupChars()));
   const hooks = JSON.parse(readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
   assert.deepEqual(Object.keys(hooks).sort(), ['PreToolUse', 'SessionStart', 'Stop']);
 });
-
 it('corpus: every labelled case gets its verdict', async () => {
   const { score } = await import('../cli/generate.mjs');
   assert.deepEqual(score().misses, []);
 });
-
 it('audits every hold and every session receipt', () => {
   assert.equal(guard({ cwd: box, session_id: 'git-open', ...bash('rm -rf docs') }), DENY);
   const rows = readFileSync(ledger(), 'utf8').trim().split('\n').map(JSON.parse);
@@ -152,7 +141,6 @@ it('audits every hold and every session receipt', () => {
   assert.equal(fire(script('receipt.mjs'), { cwd: box, session_id: 'empty', transcript_path: path.join(box, 'missing.jsonl') }), 0);
   assert.equal(readFileSync(ledger(), 'utf8'), before);
 });
-
 it('never persists shell secrets or descriptions in denial records', () => {
   const secret = 'private-token-123';
   stopped({ cwd: box, session_id: 'private-command', agent_type: 'coder', agent_id: 'agent-1', tool_use_id: 'call-1',
@@ -162,7 +150,6 @@ it('never persists shell secrets or descriptions in denial records', () => {
   const row = JSON.parse(saved.trim().split('\n').at(-1));
   assert.deepEqual([row.agent, row.call, row.actor, row.result], ['agent-1', 'call-1', 'coder', DENY]);
 });
-
 it('keeps denials observable when the audit directory cannot be written', () => {
   const root = sandbox('audit-failure-');
   writeFileSync(path.join(root, 'audit'), 'keep');
@@ -172,21 +159,42 @@ it('keeps denials observable when the audit directory cannot be written', () => 
   assert.match(run.stderr, /SERIO AUDIT: could not persist denial/);
   assert.equal(readFileSync(path.join(root, 'audit'), 'utf8'), 'keep');
 });
-
-it('sync drops superseded denies and keeps the user rules', () => {
+it('sync preserves every user permission rule', () => {
   const target = path.join(sandbox('sync-'), 'settings.json');
-  writeFileSync(target, JSON.stringify({ model: 'x', permissions: { deny: ['Bash(git checkout *)', 'Bash(gh issue create *)', 'Bash(curl *)'], ask: ['Bash(gh issue create *)', 'mcp__x'] } }));
+  const original = { deny: ['Bash(git checkout *)', 'Bash(gh issue create *)', 'Bash(curl *)'], ask: ['Bash(gh issue create *)', 'mcp__x'], allow: ['Bash(git status)', 'mcp__gmail__create_draft'] };
+  writeFileSync(target, JSON.stringify({ model: 'x', permissions: original }));
   const run = spawnSync(process.execPath, [path.join(REPO, 'tooling', 'cli', 'serio.mjs'), 'sync', '--target', target], { encoding: 'utf8' });
   assert.equal(run.status, ALLOWED, run.stderr);
-  const { model, permissions } = JSON.parse(readFileSync(target, 'utf8'));
-  assert.equal(model, 'x');
-  assert(!permissions.deny.includes('Bash(git checkout *)') && !permissions.deny.includes('Bash(gh issue create *)'), permissions.deny);
-  assert(permissions.deny.includes('Bash(curl *)') && permissions.ask.includes('mcp__x') && !permissions.ask.includes('Bash(gh issue create *)'));
+  const { model, permissions } = JSON.parse(readFileSync(target, 'utf8')); assert.equal(model, 'x');
+  for (const [key, rules] of Object.entries(original)) for (const rule of rules) assert(permissions[key].includes(rule), `${key}: ${rule}`);
 });
-
+it('preserves global role collisions before native installation or removal and upgrades owned roles', () => {
+  const root = sandbox('roles-'), repo = path.join(root, 'repo'), home = path.join(root, 'home'), bin = path.join(root, 'bin'), log = path.join(root, 'calls'), preload = path.join(root, 'native.cjs');
+  cpSync(REPO, repo, { recursive: true, filter: (file) => !/(?:^|[/\\])(?:\.git|\.claude|node_modules|audit)(?:[/\\]|$)/.test(file) });
+  mkdirSync(path.join(home, 'agents'), { recursive: true }); mkdirSync(bin);
+  copyFileSync(process.execPath, path.join(bin, process.platform === 'win32' ? 'codex.exe' : 'codex'));
+  writeFileSync(preload, `if (/^codex(?:\\.exe)?$/i.test(require('node:path').basename(process.execPath))) { require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv) + '\\n'); process.exit(0); }`);
+  const env = { ...process.env, CODEX_HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH}`, NODE_OPTIONS: `--require="${preload.replaceAll('\\', '/')}"` };
+  const native = spawnSync('codex', ['fixture'], { encoding: 'utf8', env }); assert.equal(native.status, ALLOWED, native.stderr); assert(existsSync(log)); rmSync(log);
+  const cli = (command) => spawnSync(process.execPath, [path.join(repo, 'tooling', 'cli', 'serio.mjs'), command, '--host', 'codex'], { encoding: 'utf8', env });
+  const target = path.join(home, 'agents', 'serio-reviewer.toml'); writeFileSync(target, 'user role\n');
+  for (const command of ['install', 'uninstall']) {
+    const run = cli(command); assert.notEqual(run.status, ALLOWED, `${command} must refuse a role collision: ${run.stderr}`);
+    assert.equal(readFileSync(target, 'utf8'), 'user role\n'); assert(!existsSync(log), `${command} called native host before collision validation`);
+  }
+  rmSync(target); assert.equal(cli('install').status, ALLOWED);
+  let owned = readFileSync(target, 'utf8'); assert(owned.includes('developer_instructions'));
+  assert.equal(cli('install').status, ALLOWED); assert.equal(readFileSync(target, 'utf8'), owned);
+  const source = path.join(repo, 'plugins', 'serio-focus', 'agents', 'reviewer.md'); writeFileSync(source, `${readFileSync(source, 'utf8')}\n| Fixture | synthetic upgrade |\n`);
+  assert.equal(cli('install').status, ALLOWED); owned = readFileSync(target, 'utf8'); assert(owned.includes('synthetic upgrade'));
+  writeFileSync(target, `${owned}user edit\n`);
+  for (const command of ['install', 'uninstall']) {
+    const calls = readFileSync(log, 'utf8'); assert.notEqual(cli(command).status, ALLOWED, `${command} must preserve edited roles`);
+    assert.equal(readFileSync(target, 'utf8'), `${owned}user edit\n`); assert.equal(readFileSync(log, 'utf8'), calls);
+  }
+});
 it('keeps state out of the project when no state root is set', () => {
-  const home = sandbox('home-');
-  const project = sandbox('project-');
+  const home = sandbox('home-'), project = sandbox('project-');
   const env = { ...process.env, HOME: home, USERPROFILE: home };
   for (const key of ['SERIO_OS_DIR', 'CLAUDE_PLUGIN_DATA', 'PLUGIN_DATA', 'CLAUDE_PROJECT_DIR']) delete env[key];
   const run = spawnSync(process.execPath, [script('guard.mjs')], { cwd: project, encoding: 'utf8', env,
@@ -194,12 +202,10 @@ it('keeps state out of the project when no state root is set', () => {
   assert.match(run.stdout, /"permissionDecision":"deny"/);
   assert.deepEqual(readdirSync(project), []);
   assert.equal(readdirSync(path.join(home, '.serio-focus', 'audit')).length, 1);
-  const data = sandbox('plugin-data-');
-  spawnSync(process.execPath, [script('guard.mjs')], { cwd: project, encoding: 'utf8', env: { ...env, PLUGIN_DATA: data },
+  const data = sandbox('plugin-data-'); spawnSync(process.execPath, [script('guard.mjs')], { cwd: project, encoding: 'utf8', env: { ...env, PLUGIN_DATA: data },
     input: JSON.stringify({ cwd: project, session_id: 'data-root', ...bash('rm -rf ~/private-token-123') }) });
   assert.equal(readdirSync(path.join(data, 'audit')).length, 1);
 });
-
 it('audits malformed protected payload denials', () => {
   const root = sandbox('audit-malformed-');
   const run = spawnSync(process.execPath, [script('guard.mjs')], { input: '{"tool_name":"Bash",', encoding: 'utf8',
@@ -208,7 +214,6 @@ it('audits malformed protected payload denials', () => {
   const row = JSON.parse(readFileSync(ledger(root), 'utf8'));
   assert.deepEqual([row.action, row.rule, row.result], ['Bash', 'BLOCKED', 'deny']);
 });
-
 it('allows git work and deletes git can restore, in the guard and in the committed settings', () => {
   const policy = JSON.parse(readFileSync(new URL('../../.claude/settings.json', import.meta.url), 'utf8'));
   const denied = policy.permissions.deny.map((rule) => /^Bash\((.*)\)$/.exec(rule)?.[1]).filter(Boolean)
@@ -216,6 +221,7 @@ it('allows git work and deletes git can restore, in the guard and in the committ
   const [shellTemp, shellTempReal] = [tmpdir(), realpathSync(tmpdir())]
     .map((dir) => dir.replace(/^([A-Za-z]):/, (hit, drive) => `/${drive.toLowerCase()}`).replace(/\\/g, '/'));
   for (const command of ['git status', 'git log --oneline', 'git commit -m x', 'git -C sub commit -am x', 'git diff --stat', 'git fetch origin',
+    "echo '$(git push origin main)'", "echo '$(rm -rf docs)'", 'echo "\\$(git push origin main)"', 'echo "\\$(rm -rf docs)"',
     'git checkout main', 'git stash push -m wip', 'git branch feat/x', 'git merge main',
     'git push --dry-run origin main', 'git push --help', 'git branch -a', 'git branch --show-current', 'git tag -l', 'git stash list',
     'git checkout -- src/a.ts', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null',
@@ -228,8 +234,8 @@ it('allows git work and deletes git can restore, in the guard and in the committ
     if (/^git (?!push --force)/.test(command)) assert(!denied.some((rx) => rx.test(command)), `settings deny ${command}`);
   }
 });
-
 blocks('holds deletes and wipes git cannot restore', [
+  'pushd child; popd; rm -rf docs', 'echo "$(rm -rf docs)"',
   'rm -rf -- --valuable node_modules', 'rm -rf 123 node_modules', '(rm -rf docs)', 'cd missing || rm -rf docs',
   'Remove-Item -Recurse docs,src', 'rm -rf hid', 'echo $(rm -rf docs)', 'rm -rf ~/docs', 'rm -rf docs # --dry-run',
   'rm -rf /', 'rm -rf .', 'rm -rf mod', 'ri -r docs', 'Remove-Item -rec docs', 'del /s /q docs', '/bin/rm -rf docs',
@@ -240,11 +246,10 @@ blocks('holds deletes and wipes git cannot restore', [
   'rm -rf "$D"; D=/tmp', 'D=/tmp; D=/home; rm -rf "$D"', 'true && D=/tmp; rm -rf "$D"', 'test $D = /tmp || rm -rf $D',
   'D=/tmp; for D in /home; do rm -rf "$D"; done', 'for d in a; do rm -rf docs; done', 'D="dist/ src"; rm -rf "$D"',
 ], (command) => ({ cwd: box, ...bash(command) }));
-
 blocks('stops push, worktrees and issues once', ['git -C sub push', 'git worktree add ../wt', 'gh issue create -t x',
+  'echo "$(git push origin main)"',
   'git push origin main', 'git.exe push --force origin main', 'bash -c "git push origin main"', 'cd sub && git push'],
 (command) => ({ cwd: box, ...bash(command) }));
-
 it('holds subagents that pick no model or effort, before they take a wave slot', () => {
   const flow = path.join(box, 'flow.js');
   writeFileSync(flow, "await agent('a', { model: 'm' })");
@@ -254,19 +259,15 @@ it('holds subagents that pick no model or effort, before they take a wave slot',
   assert.equal(at('choice', { tool_name: 'Workflow', tool_input: { name: 'review' } }), ALLOWED);
   for (let n = 0; n < 3; n += 1) assert.equal(at('choice', { tool_name: 'Agent', tool_input: { prompt: `p${n}`, model: 'm', effort: 'low' } }), ALLOWED);
 });
-
 it('judges deletes through a symlinked cwd', () => {
   const link = path.join(sandbox('link-'), 'link');
   symlinkSync(box, link, process.platform === 'win32' ? 'junction' : 'dir');
   const run = (command) => guard({ cwd: link, session_id: 'link-cwd', ...bash(command) });
-  assert.equal(run('rm -rf docs'), DENY);
-  assert.equal(run('rm -rf dist-x'), ALLOWED);
+  assert.equal(run('rm -rf docs'), DENY); assert.equal(run('rm -rf dist-x'), ALLOWED);
 });
-
 describe('fan-out cap', () => {
   const spawn = (session, tool_input, tool_name = 'Agent') => at(session, { tool_name, tool_input });
   const held = (session, tool_input, tool_name = 'Agent') => stopped({ cwd: box, session_id: session, tool_name, tool_input });
-
   it('runs three agents per wave and holds the fourth', () => {
     for (let n = 0; n < 3; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku', effort: 'low' }), ALLOWED);
     assert.equal(held('wave', { prompt: 'fourth', model: 'haiku', effort: 'low' }), DENY);
@@ -286,7 +287,14 @@ describe('fan-out cap', () => {
       assert.equal(result.stdout, '');
     }
     const { matcher } = JSON.parse(readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks.PreToolUse[0];
-    for (const tool of ['TaskCreate', 'TaskList', 'Read', 'mcp__gmail__create_draft', 'mcp__s__slack_send_message_draft', 'mcp__gmail__get_thread', 'mcp__x__get_post']) assert.doesNotMatch(tool, new RegExp(matcher));
-    for (const tool of ['EnterWorktree', 'mcp__gmail__send_message', 'mcp__s__slack_send_message', 'mcp__c__reply-to-comment']) assert.match(tool, new RegExp(matcher));
+    for (const tool of ['TaskCreate', 'TaskList', 'Read', 'mcp__gmail__create_draft', 'mcp__gmail__update_draft', 'mcp__s__slack_send_message_draft', 'mcp__gmail__get_thread', 'mcp__x__get_post']) assert.doesNotMatch(tool, new RegExp(matcher));
+    for (const tool of ['EnterWorktree', 'mcp__gmail__send_message', 'mcp__gmail__send_draft', 'mcp__s__slack_send_message', 'mcp__c__reply-to-comment']) assert.match(tool, new RegExp(matcher));
+  });
+  it('keeps email sends denied on identical retries and preserves ordinary retries', () => {
+    for (const payload of [bash('git push origin retry-fixture'), { tool_name: 'mcp__slack__send_message', tool_input: { text: 'synthetic' } }]) {
+      assert.equal(at('ordinary-retry', payload), DENY); assert.equal(at('ordinary-retry', payload), ALLOWED);
+    }
+    for (const tool of ['mcp__gmail__send_message', 'mcp__gmail__send_draft', 'mcp__gmail__reply_email', 'mcp__gmail__forward_email', 'mcp__email__send_email', 'mcp__email__reply_email', 'mcp__email__forward_email', 'mcp__outlook__send_mail', 'mcp__outlook__reply_email', 'mcp__outlook__forward_email'])
+      for (let n = 0; n < 3; n += 1) assert.equal(at(tool, { tool_name: tool, tool_input: { id: 'synthetic' } }), DENY, tool);
   });
 });
