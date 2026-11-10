@@ -128,12 +128,19 @@ jobs:
             echo "prompt=$prompt"
             echo "args=--max-turns $TURNS ${model:+--model $model }--allowedTools \"$tools\" $extra"
           } >> "$GITHUB_OUTPUT"
+      - id: seat
+        env:
+          TOKEN: ${{ secrets[needs.route.outputs.secret] }}
+        run: |
+          token="$(printf '%s' "$TOKEN" | tr -d '[:space:]')"
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
       - id: claude
         uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         with:
-          claude_code_oauth_token: ${{ secrets[needs.route.outputs.secret] }}
+          claude_code_oauth_token: ${{ steps.seat.outputs.token }}
           github_token: ${{ steps.app.outputs.token }}
           bot_name: ${{ steps.app.outputs.app-slug }}[bot]
           bot_id: ${{ steps.bot.outputs.id }}
