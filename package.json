@@ -17,7 +17,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test && node plugins/serio-focus/scripts/lifecycle/route.mjs --self-test && node plugins/serio-focus/scripts/lifecycle/lock.mjs --self-test && node plugins/serio-focus/scripts/lifecycle/acceptance.mjs --self-test && node plugins/serio-focus/scripts/lifecycle/publish.mjs --self-test",
     "prove": "node tooling/cli/serio.mjs prove",
     "setup": "node tooling/cli/serio.mjs setup",
     "sync": "node tooling/cli/serio.mjs sync",

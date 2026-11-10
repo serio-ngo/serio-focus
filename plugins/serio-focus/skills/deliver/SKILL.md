@@ -19,3 +19,26 @@ Deliver $ARGUMENTS. Agents: this plugin's `architect`, `tester`, `coder` and `re
 - Agents never edit the same files in parallel.
 - The main session keeps the plan and the evidence; agents return only their sections.
 - After the pull request opens, continue with `pr-loop`.
+
+On a task pull request - branch `agent/<N>-…` with a review that starts with `tests-ok` - the tests are locked:
+
+| Rule | Value |
+|---|---|
+| Skip | The tester; the tests exist |
+| Never edit | Any test path or test runner config; a wrong test is a finding for a person |
+| Before the push | The repository gates, unit tests and e2e pass locally |
+| Ship | Push the branch, set the body to the card below and mark the pull request ready. Never approve or merge |
+
+```markdown
+Fixes #N
+
+| Card | Value |
+|---|---|
+| Spec | <issue title>; criteria AC1…ACn |
+| Tests | <path>: AC1, AC2 · <path>: AC3 |
+| Change | at most 3 lines |
+| Size | code +a −b, tests +c −d, docs +e −f |
+| Outside `src/` | every changed file that is not source or a test, or "none" |
+| Review | fresh-context reviewer `ready` for <head SHA> |
+| Not checked | <list> |
+```
