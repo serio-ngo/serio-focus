@@ -1,0 +1,183 @@
+name: lifecycle agent
+
+on:
+  workflow_call:
+    inputs:
+      focus_ref:
+        description: serio-focus ref that holds the trusted scripts
+        type: string
+        default: lifecycle-v1
+      models:
+        description: JSON map of stage to model; a missing stage uses the host default
+        type: string
+        default: "{}"
+      plugin_marketplaces:
+        type: string
+        default: https://github.com/serio-ngo/serio-focus.git
+      plugins:
+        type: string
+        default: serio-focus@serio-ngo
+      node:
+        type: string
+        default: "22"
+
+permissions: {}
+
+jobs:
+  route:
+    name: route
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      actions: read
+    outputs:
+      stage: ${{ steps.route.outputs.stage }}
+      issue: ${{ steps.route.outputs.issue }}
+      pr: ${{ steps.route.outputs.pr }}
+      ref: ${{ steps.route.outputs.ref }}
+      sha: ${{ steps.route.outputs.sha }}
+      spec: ${{ steps.route.outputs.spec }}
+      secret: ${{ steps.route.outputs.secret }}
+      bot: ${{ steps.route.outputs.bot }}
+      turns: ${{ steps.route.outputs.turns }}
+      timeout: ${{ steps.route.outputs.timeout }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: serio-ngo/serio-focus
+          ref: ${{ inputs.focus_ref }}
+          persist-credentials: false
+      - id: route
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node plugins/serio-focus/scripts/lifecycle/route.mjs
+
+  agent:
+    name: ${{ needs.route.outputs.stage }}
+    needs: route
+    if: needs.route.outputs.stage != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(needs.route.outputs.timeout) }}
+    permissions:
+      contents: read
+      packages: read
+      issues: read
+      pull-requests: read
+      actions: read
+    outputs:
+      structured_output: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_KEY }}
+      - id: bot
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: gh api "users/${SLUG}%5Bbot%5D" --jq '"id=\(.id)"' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.route.outputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: ${{ inputs.node }}
+      - name: Install dependencies
+        if: hashFiles('package-lock.json') != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm ci
+      - name: Install browsers
+        if: needs.route.outputs.stage != 'spec-review' && hashFiles('playwright.config.*') != ''
+        run: npx playwright install --with-deps chromium
+      - name: Save the spec text
+        if: needs.route.outputs.stage == 'spec-review'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ needs.route.outputs.issue }}
+        run: |
+          mkdir -p .lifecycle
+          gh issue view "$ISSUE" --json title,body --jq '"# " + .title + "\n\n" + .body' > .lifecycle/issue.md
+      - id: args
+        env:
+          STAGE: ${{ needs.route.outputs.stage }}
+          ISSUE: ${{ needs.route.outputs.issue }}
+          PR: ${{ needs.route.outputs.pr }}
+          TURNS: ${{ needs.route.outputs.turns }}
+          MODELS: ${{ inputs.models }}
+          NOTE: Automated task run - the commit, the push of this agent branch and its pull request are requested, so repeat a held push once.
+          SCHEMA: '{"type":"object","required":["verdict","criteria","questions"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}}}}'
+          WRITE: Read,Glob,Grep,Edit,Write,Agent,Task,Skill,Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr edit:*),Bash(gh pr ready:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh run view:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(npm:*),Bash(npx:*),Bash(node:*)
+        run: |
+          tools="$WRITE"; extra=""
+          case "$STAGE" in
+            spec-review) prompt="/serio-focus:spec-review $ISSUE"; tools="Read,Glob,Grep"; extra="--json-schema '$SCHEMA'" ;;
+            write-tests) prompt="/serio-focus:write-tests $ISSUE. $NOTE" ;;
+            deliver) prompt="/serio-focus:deliver task issue #$ISSUE on pull request #$PR. $NOTE" ;;
+            pr-loop) prompt="/serio-focus:pr-loop $PR. $NOTE" ;;
+            *) exit 1 ;;
+          esac
+          model="$(jq -r --arg stage "$STAGE" '.[$stage] // empty' <<< "$MODELS")"
+          {
+            echo "prompt=$prompt"
+            echo "args=--max-turns $TURNS ${model:+--model $model }--allowedTools \"$tools\" $extra"
+          } >> "$GITHUB_OUTPUT"
+      - id: claude
+        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets[needs.route.outputs.secret] }}
+          github_token: ${{ steps.app.outputs.token }}
+          bot_name: ${{ steps.app.outputs.app-slug }}[bot]
+          bot_id: ${{ steps.bot.outputs.id }}
+          allowed_bots: ${{ needs.route.outputs.bot == 'true' && steps.app.outputs.app-slug || '' }}
+          plugin_marketplaces: ${{ inputs.plugin_marketplaces }}
+          plugins: ${{ inputs.plugins }}
+          prompt: ${{ steps.args.outputs.prompt }}
+          claude_args: ${{ steps.args.outputs.args }}
+
+  publish:
+    name: publish
+    needs: [route, agent]
+    if: always() && needs.route.outputs.stage != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: serio-ngo/serio-focus
+          ref: ${{ inputs.focus_ref }}
+          persist-credentials: false
+      - name: Publish the spec review
+        if: needs.route.outputs.stage == 'spec-review' && needs.agent.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ needs.route.outputs.issue }}
+          SPEC_SHA: ${{ needs.route.outputs.spec }}
+          STRUCTURED_OUTPUT: ${{ needs.agent.outputs.structured_output }}
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE"
+      - name: Park a run without a push
+        if: needs.route.outputs.stage != 'spec-review' && needs.agent.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ needs.route.outputs.issue }}
+          BEFORE_SHA: ${{ needs.route.outputs.sha }}
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE" --pushed
+      - name: Park a failed run
+        if: needs.agent.result != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGE: ${{ needs.route.outputs.stage }}
+          TARGET: ${{ needs.route.outputs.pr || needs.route.outputs.issue }}
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$TARGET" --failed "$STAGE"

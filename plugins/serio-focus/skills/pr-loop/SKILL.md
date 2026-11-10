@@ -17,3 +17,5 @@ Bring pull request $ARGUMENTS (default: the current branch) to a clean head. Req
 | 7. Repeat | Return to step 1. After three rounds on the same finding, stop and report it | Round count |
 
 Done when required checks pass on the head, no review thread or change request is open and the newest review covers the head. The owner merges.
+
+On a task pull request - branch `agent/<N>-…` - in an automated run: one round, then stop and report. Never edit a locked test path; refresh the decision card in the body after the push.

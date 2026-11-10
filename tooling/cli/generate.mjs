@@ -69,7 +69,7 @@ const documents = (root, folder, pattern) => {
   return walk(dir).filter((file) => pattern.test(file)).map((file) => {
     const [, head = '', body = ''] = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(readFileSync(path.join(dir, file), 'utf8').replace(/\r\n/g, '\n')) || [];
     const field = (key) => (new RegExp(`^${key}:\\s*(.*)$`, 'm').exec(head) || [])[1] || '';
-    return { dir: path.dirname(file), name: field('name'), description: field('description'), tools: field('tools'), body: body.trim() };
+    return { dir: path.dirname(file), name: field('name'), description: field('description'), tools: field('tools'), manual: field('disable-model-invocation') === 'true', body: body.trim() };
   }).sort((a, b) => (a.name < b.name ? -1 : 1));
 };
 
@@ -77,7 +77,7 @@ export const skills = (root = REPO) => documents(root, 'skills', /(?:^|\/)SKILL\
 export const agents = (root = REPO) => documents(root, 'agents', /\.md$/);
 
 export const startupChars = (root = REPO) => card().length
-  + [...skills(root), ...agents(root)].reduce((n, doc) => n + doc.name.length + doc.description.length, 0);
+  + [...skills(root), ...agents(root)].filter((doc) => !doc.manual).reduce((n, doc) => n + doc.name.length + doc.description.length, 0);
 
 export const codexRoles = (root = REPO) => agents(root).map((agent) => {
   const head = `name = "serio-${agent.name}"\ndescription = ${JSON.stringify(agent.description)}\n`;
