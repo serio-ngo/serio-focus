@@ -9,6 +9,7 @@ const LOCKED = /(^|\/)(tests?|__tests__|e2e)\/|[._-](test|spec)\.[^/]+$|(^|\/)te
 export function check({ pr, issue, comments, reviews, own, changed }) {
   const fail = (note) => ({ ok: false, locked: false, note });
   if (!taskOf(pr)) return { ok: true, locked: false, note: 'not a lifecycle pull request' };
+  if (!own.size) return fail('CODEOWNERS names no person; team owners are not resolved');
   const mark = specMarker(comments, own);
   if (mark?.verdict !== 'ready' || !issue.labels.some((l) => l.name === 'spec-ok')) return fail('the spec has no ready review with spec-ok');
   if (mark.sha !== specSha(issue)) return fail('the spec changed after its review');
@@ -37,6 +38,7 @@ function selfTest() {
     ['bot review', { reviews: [lock(app)] }, false, /without a tests-ok/],
     ['stranger review', { reviews: [lock({ login: 'eve', type: 'User' })] }, false, /without a tests-ok/],
     ['draft', { pr: { draft: true, head, base: { repo } }, reviews: [] }, true, /^not locked$/],
+    ['team-only code owners', { own: owners('* @o/team\n') }, false, /names no person/],
     ['ready without a lock', { reviews: [] }, false, /without a tests-ok/],
     ['edited spec', { issue: { ...issue, body: 'AC1 and more' } }, false, /spec changed/],
     ['no spec-ok', { issue: { ...issue, labels: [] } }, false, /spec-ok/],

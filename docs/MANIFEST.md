@@ -33,7 +33,7 @@
 
 | What ships | Count |
 |---|---|
-| Script lines | **753** across 14 files |
+| Script lines | **757** across 14 files |
 | Hook events | **3** |
 | Skills | **5** |
 | Subagents | **4** |

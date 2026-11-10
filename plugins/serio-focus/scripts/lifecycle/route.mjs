@@ -13,6 +13,7 @@ export function route(name, ev, s) {
     return login ? { stage, issue, assignee: login, ...extra } : stop('the issue has no assignee');
   };
   if (!s.guarded) return stop('the default branch has no ruleset that restricts updates');
+  if (!s.own.size) return stop('CODEOWNERS names no person; team owners are not resolved');
   if (name === 'issues' && ev.action === 'labeled') {
     const n = ev.issue.number;
     if (!person(ev.sender) || ev.issue.pull_request) return stop('label is not from a person on an issue');
@@ -86,6 +87,7 @@ function selfTest() {
     ['second red CI', 'workflow_run', ci(), state({ failures: () => [fail(4), fail(5)] }), 'pr-loop'],
     ['red CI from before the lock', 'workflow_run', ci(), state({ failures: () => [fail(2, '2026-01-01'), fail(3, '2026-01-01'), fail(5)] }), 'pr-loop'],
     ['third red CI', 'workflow_run', ci(), state({ failures: () => [fail(3), fail(4), fail(5)] }), undefined],
+    ['team-only code owners', 'pull_request_review', review('tests-ok', 'commented'), state({ own: owners('* @o/team\n') }), undefined],
     ['no ruleset', 'issues', label('spec-review'), state({ guarded: false }), undefined],
     ['edited marker', 'issues', label('spec-ok'), state({ comments: () => [{ ...ready, created_at: 'a', updated_at: 'b' }] }), undefined],
     ['unknown event', 'push', {}, state(), undefined],
