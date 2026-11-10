@@ -30,6 +30,7 @@ Layout, commands, releases: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 - Trace changed guards through their callers and native host payloads.
 - Block permission bypasses, unsafe delete exceptions, missing failure proof and unsupported host claims.
+- Report a finding only with proven harm: the concrete cases where it fails and what each costs in time, money or data. Prefer no change; a fix adds the fewest lines.
 - Preserve explicit model/role choices and complete instruction access.
 - Keep agents and skills generic: no model names, no repository paths, descriptions under 300 characters.
 - Verify the current PR head; retain unresolved findings and failed checks.
