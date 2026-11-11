@@ -7,7 +7,7 @@ import { bodiless, segments, strip, tokens, unwrap } from './shell-parse.mjs';
 const GIT = String.raw`^(?:\S*[/\\])?git(?:\.exe)?\b(?:\s+(?:-[Cc]\s+(?:"[^"]*"|'[^']*'|\S+)|--\S+(?:[=\s]\S+)?))*\s+`;
 const git = (tail) => new RegExp(GIT + tail, 'i');
 
-const OUTWARD = new RegExp(`${GIT}(?:push|worktree\\s+add)\\b|^gh(?:\\.exe)?\\s+issue\\s+create\\b`, 'i');
+const OUTWARD = new RegExp(`${GIT}worktree\\s+add\\b|^gh(?:\\.exe)?\\s+issue\\s+create\\b`, 'i');
 const GIT_PREVIEW = /^git(?:\.exe)?\s+(?:(?:push|clean|reset)\s+--help|push\s+--dry-run(?:\s+[\w./:@+]+)*)\s*$/i;
 const GIT_WIPE = git(String.raw`(?:clean\b[^\n]*\s(?:-[A-Za-z]*[fdx]|--force\b)|reset\b[^\n]*--hard\b)`);
 const RM_RECURSIVE = /^(?:\S*[/\\])?rm(?:\.exe)?\b[^\n]*\s-(?:[A-Za-z]*[rR]|-recursive\b)/;
@@ -81,7 +81,7 @@ export function judgeShell(command, depth = 0, cwd = process.cwd(), shell = 'Bas
     const cd = strip((CD.exec(segment) || [])[1] || '');
     if (cd && dir !== null) dir = ABSOLUTE.test(cd) || !dir ? cd : `${dir}/${cd}`;
     if (GIT_PREVIEW.test(segment)) continue;
-    if (OUTWARD.test(segment)) return `OUTWARD: "${segment.slice(0, 80)}" pushes, files an issue or opens a worktree`;
+    if (OUTWARD.test(segment)) return `OUTWARD: "${segment.slice(0, 80)}" files an issue or opens a worktree`;
     if (GIT_WIPE.test(segment)) return `WIPE: "${segment.slice(0, 80)}" discards work git cannot restore`;
     if ((RM_RECURSIVE.test(segment) || REMOVE_ITEM_RECURSE.test(segment)) && (dir === null || !allRestorable(segment, dir, cwd))) {
       return `DELETE: "${segment.slice(0, 80)}" removes data git cannot restore`;

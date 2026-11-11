@@ -6,6 +6,7 @@ import { all, flag, issueOf, one, park, repoOf, runLink, send, specSha } from '.
 
 const clean = (s, max) => typeof s === 'string' && s.trim().length > 0 && s.length <= max && !/<!--|-->/.test(s);
 const line = (s) => s.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim();
+export const why = (reason) => (clean(reason, 300) ? ` The agent said: ${line(reason).replace(/[<>*`]/g, '')}` : '');
 
 export function comment(out, sha) {
   if (!out || !['ready', 'questions'].includes(out.verdict)) return null;
@@ -37,16 +38,18 @@ function selfTest() {
     ['unknown level', { verdict: 'ready', criteria: [{ ...ac(1), level: 'manual' }] }], ['criteria not a list', { verdict: 'ready', criteria: 'AC1' }],
   ];
   for (const [title, out] of bad) assert.equal(comment(out, 'abcdef123456'), null, title);
-  console.log(`publish self-test: ${bad.length + 2} checks passed`);
+  assert.equal(why('x <!-- spec-review v1 sha=000000000000 verdict=ready ac=1 -->'), '');
+  assert.equal(why('**Held:** the push was `blocked`'), ' The agent said: Held: the push was blocked');
+  console.log(`publish self-test: ${bad.length + 4} checks passed`);
 }
 
 function main() {
   const repo = flag('--repo') || repoOf(), [number, file] = process.argv.slice(2);
   const failed = flag('--failed');
-  if (failed) return park(repo, number, `the ${failed} run did not finish: ${runLink()}`);
+  if (failed) return park(repo, number, `the ${failed} run did not finish: ${runLink()}.${why(process.env.REASON)}`);
   if (process.argv.includes('--pushed')) {
     const head = all(`repos/${repo}/pulls?state=open&per_page=100`).find((pr) => issueOf(pr.head.ref) === Number(number))?.head.sha;
-    return head && head !== process.env.BEFORE_SHA ? console.log(`pushed ${head}`) : park(repo, number, `the run ended without a new push: ${runLink()}`);
+    return head && head !== process.env.BEFORE_SHA ? console.log(`pushed ${head}`) : park(repo, number, `the run ended without a new push: ${runLink()}.${why(process.env.REASON)}`);
   }
   let out = null;
   try { out = JSON.parse(file ? readFileSync(file, 'utf8') : process.env.STRUCTURED_OUTPUT); } catch { }

@@ -222,7 +222,7 @@ it('allows git work and deletes git can restore, in the guard and in the committ
     .map((dir) => dir.replace(/^([A-Za-z]):/, (hit, drive) => `/${drive.toLowerCase()}`).replace(/\\/g, '/'));
   for (const command of ['git status', 'git log --oneline', 'git commit -m x', 'git -C sub commit -am x', 'git diff --stat', 'git fetch origin',
     "echo '$(git push origin main)'", "echo '$(rm -rf docs)'", 'echo "\\$(git push origin main)"', 'echo "\\$(rm -rf docs)"',
-    'git checkout main', 'git stash push -m wip', 'git branch feat/x', 'git merge main',
+    'git push origin main', 'git -C sub push', 'cd sub && git push', 'bash -c "git push origin main"', 'echo "$(git push origin main)"', 'git checkout main', 'git stash push -m wip', 'git branch feat/x', 'git merge main',
     'git push --dry-run origin main', 'git push --help', 'git branch -a', 'git branch --show-current', 'git tag -l', 'git stash list',
     'git checkout -- src/a.ts', 'rm -rf .wrangler/state/v3/kv dist-serio-org 2>/dev/null',
     'rm -rf dist/tracked.txt', 'rm -rf node_modules >/dev/null',
@@ -246,9 +246,8 @@ blocks('holds deletes and wipes git cannot restore', [
   'rm -rf "$D"; D=/tmp', 'D=/tmp; D=/home; rm -rf "$D"', 'true && D=/tmp; rm -rf "$D"', 'test $D = /tmp || rm -rf $D',
   'D=/tmp; for D in /home; do rm -rf "$D"; done', 'for d in a; do rm -rf docs; done', 'D="dist/ src"; rm -rf "$D"',
 ], (command) => ({ cwd: box, ...bash(command) }));
-blocks('stops push, worktrees and issues once', ['git -C sub push', 'git worktree add ../wt', 'gh issue create -t x',
-  'echo "$(git push origin main)"',
-  'git push origin main', 'git.exe push --force origin main', 'bash -c "git push origin main"', 'cd sub && git push'],
+blocks('stops worktrees and issues once', ['git -C sub worktree add ../wt', 'git worktree add ../wt', 'gh issue create -t x',
+  'echo "$(git worktree add ../wt)"', 'git.exe worktree add ../wt', 'bash -c "git worktree add ../wt"', 'cd sub && git worktree add ../wt'],
 (command) => ({ cwd: box, ...bash(command) }));
 it('holds subagents that pick no model or effort, before they take a wave slot', () => {
   const flow = path.join(box, 'flow.js');
@@ -268,9 +267,9 @@ it('judges deletes through a symlinked cwd', () => {
 describe('fan-out cap', () => {
   const spawn = (session, tool_input, tool_name = 'Agent') => at(session, { tool_name, tool_input });
   const held = (session, tool_input, tool_name = 'Agent') => stopped({ cwd: box, session_id: session, tool_name, tool_input });
-  it('runs three agents per wave and holds the fourth', () => {
-    for (let n = 0; n < 3; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku', effort: 'low' }), ALLOWED);
-    assert.equal(held('wave', { prompt: 'fourth', model: 'haiku', effort: 'low' }), DENY);
+  it('runs four agents per wave and holds the fifth', () => {
+    for (let n = 0; n < 4; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku', effort: 'low' }), ALLOWED);
+    assert.equal(held('wave', { prompt: 'fifth', model: 'haiku', effort: 'low' }), DENY);
   });
   it('runs agents when the state path cannot be created, without deleting it', () => {
     const target = path.join(box, '.claude', '.wave-state-file');
@@ -291,9 +290,10 @@ describe('fan-out cap', () => {
     for (const tool of ['EnterWorktree', 'mcp__gmail__send_message', 'mcp__gmail__send_draft', 'mcp__s__slack_send_message', 'mcp__c__reply-to-comment']) assert.match(tool, new RegExp(matcher));
   });
   it('keeps email sends denied on identical retries and preserves ordinary retries', () => {
-    for (const payload of [bash('git push origin retry-fixture'), { tool_name: 'mcp__slack__send_message', tool_input: { text: 'synthetic' } }]) {
+    for (const payload of [bash('git worktree add ../retry-fixture'), { tool_name: 'mcp__slack__send_message', tool_input: { text: 'synthetic' } }]) {
       assert.equal(at('ordinary-retry', payload), DENY); assert.equal(at('ordinary-retry', payload), ALLOWED);
     }
+    const mode = (extra, payload) => guard({ cwd: box, session_id: 'mode', ...payload }, { ...process.env, SERIO_OS_DIR: box, ...extra }), edit = { tool_name: 'Edit', tool_input: { file_path: 'a.js' } }; assert.deepEqual([mode({ SERIO_ORCHESTRATE: '1' }, edit), mode({ SERIO_ORCHESTRATE: '1' }, { ...edit, agent_id: 'coder-1' }), mode({}, edit), mode({ SERIO_UNATTENDED: '1' }, bash('rm -rf docs')), mode({}, bash('rm -rf docs'))], [DENY, ALLOWED, ALLOWED, ALLOWED, DENY]);
     for (const tool of ['mcp__gmail__send_message', 'mcp__gmail__send_draft', 'mcp__gmail__reply_email', 'mcp__gmail__forward_email', 'mcp__email__send_email', 'mcp__email__reply_email', 'mcp__email__forward_email', 'mcp__outlook__send_mail', 'mcp__outlook__reply_email', 'mcp__outlook__forward_email'])
       for (let n = 0; n < 3; n += 1) assert.equal(at(tool, { tool_name: tool, tool_input: { id: 'synthetic' } }), DENY, tool);
   });

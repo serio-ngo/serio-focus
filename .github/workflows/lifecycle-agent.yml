@@ -8,12 +8,17 @@ on:
         type: string
         default: lifecycle-v1
       models:
-        description: JSON map of stage to model; a missing stage uses the host default
+        description: Ignored. The main session is the orchestrator; it names a model for each subagent it starts
         type: string
         default: "{}"
-      plugin_marketplaces:
+      orchestrator:
+        description: Model of the main session of every stage
         type: string
-        default: https://github.com/serio-ngo/serio-focus.git
+        default: opus
+      plugin_marketplaces:
+        description: Empty means serio-focus at focus_ref, so skills, hooks and scripts come from one ref
+        type: string
+        default: ""
       plugins:
         type: string
         default: serio-focus@serio-ngo
@@ -69,6 +74,7 @@ jobs:
       actions: read
     outputs:
       structured_output: ${{ steps.claude.outputs.structured_output }}
+      reason: ${{ steps.trace.outputs.reason }}
     steps:
       - id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
@@ -110,23 +116,21 @@ jobs:
           ISSUE: ${{ needs.route.outputs.issue }}
           PR: ${{ needs.route.outputs.pr }}
           TURNS: ${{ needs.route.outputs.turns }}
-          MODELS: ${{ inputs.models }}
-          NOTE: Automated task run - the commit, the push of this agent branch and its pull request are requested, so repeat a held push once.
+          MODEL: ${{ inputs.orchestrator }}
           SCHEMA: '{"type":"object","required":["verdict","criteria","questions"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}}}}'
           WRITE: Read,Glob,Grep,Edit,Write,Agent,Task,Skill,Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr edit:*),Bash(gh pr ready:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh run view:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(npm:*),Bash(npx:*),Bash(node:*)
         run: |
           tools="$WRITE"; extra=""
           case "$STAGE" in
             spec-review) prompt="/serio-focus:spec-review $ISSUE"; tools="Read,Glob,Grep"; extra="--json-schema '$SCHEMA'" ;;
-            write-tests) prompt="/serio-focus:write-tests $ISSUE. $NOTE" ;;
-            deliver) prompt="/serio-focus:deliver task issue #$ISSUE on pull request #$PR. $NOTE" ;;
-            pr-loop) prompt="/serio-focus:pr-loop $PR. $NOTE" ;;
+            write-tests) prompt="/serio-focus:write-tests $ISSUE" ;;
+            deliver) prompt="/serio-focus:deliver task issue #$ISSUE on pull request #$PR" ;;
+            pr-loop) prompt="/serio-focus:pr-loop $PR" ;;
             *) exit 1 ;;
           esac
-          model="$(jq -r --arg stage "$STAGE" '.[$stage] // empty' <<< "$MODELS")"
           {
             echo "prompt=$prompt"
-            echo "args=--max-turns $TURNS ${model:+--model $model }--allowedTools \"$tools\" $extra"
+            echo "args=--max-turns $TURNS --model $MODEL --allowedTools \"$tools\" $extra"
           } >> "$GITHUB_OUTPUT"
       - id: seat
         env:
@@ -139,26 +143,34 @@ jobs:
         uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          SERIO_UNATTENDED: "1"
+          SERIO_ORCHESTRATE: ${{ needs.route.outputs.stage != 'spec-review' && '1' || '' }}
         with:
           claude_code_oauth_token: ${{ steps.seat.outputs.token }}
           github_token: ${{ steps.app.outputs.token }}
           bot_name: ${{ steps.app.outputs.app-slug }}[bot]
           bot_id: ${{ steps.bot.outputs.id }}
           allowed_bots: ${{ needs.route.outputs.bot == 'true' && steps.app.outputs.app-slug || '' }}
-          plugin_marketplaces: ${{ inputs.plugin_marketplaces }}
+          plugin_marketplaces: ${{ inputs.plugin_marketplaces || format('https://github.com/serio-ngo/serio-focus.git#{0}', inputs.focus_ref) }}
           plugins: ${{ inputs.plugins }}
           prompt: ${{ steps.args.outputs.prompt }}
           claude_args: ${{ steps.args.outputs.args }}
       - name: Trace
+        id: trace
         if: always() && steps.claude.outputs.execution_file != ''
         env:
           LOG: ${{ steps.claude.outputs.execution_file }}
         run: |
-          jq -r '.[] |
-            if .type == "assistant" then (.message.content[]? | select(.type == "tool_use") | "trace: call \(.name) \(.input | tostring | .[0:300])")
-            elif .type == "user" then (.message.content[]? | select(.type == "tool_result" and .is_error == true) | "trace: error \(.content | tostring | .[0:400])")
-            elif .type == "result" then "trace: result turns=\(.num_turns) \((.result // "") | .[0:800])", (.permission_denials[]? | "trace: denied \(.tool_name) \(.tool_input | tostring | .[0:300])")
-            else empty end' "$LOG" || true
+          {
+            echo '```text'
+            jq -r '.[] |
+              if .type == "assistant" then (if .parent_tool_use_id then "agent" else "main" end) as $who | (.message.content[]? | select(.type == "tool_use") | "trace: \($who) call \(.name) \(.input | tostring | .[0:300])")
+              elif .type == "user" then (.message.content[]? | select(.type == "tool_result" and .is_error == true) | "trace: error \(.content | tostring | .[0:400])")
+              elif .type == "result" then "trace: result turns=\(.num_turns) \((.result // "") | .[0:800])", (.permission_denials[]? | "trace: denied \(.tool_name) \(.tool_input | tostring | .[0:300])")
+              else empty end' "$LOG" || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "reason=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
 
   publish:
     name: publish
@@ -190,6 +202,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ needs.route.outputs.issue }}
           BEFORE_SHA: ${{ needs.route.outputs.sha }}
+          REASON: ${{ needs.agent.outputs.reason }}
         run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE" --pushed
       - name: Park a failed run
         if: needs.agent.result != 'success'
@@ -197,4 +210,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           STAGE: ${{ needs.route.outputs.stage }}
           TARGET: ${{ needs.route.outputs.pr || needs.route.outputs.issue }}
+          REASON: ${{ needs.agent.outputs.reason }}
         run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$TARGET" --failed "$STAGE"

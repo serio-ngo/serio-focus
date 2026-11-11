@@ -16,7 +16,7 @@ architect · tester · coder · reviewer · a guard that stops pushes, sends and
 [![license](https://img.shields.io/github/license/serio-ngo/serio-focus?color=1f6feb)](LICENSE)
 
 <!-- serio-demo -->
-<img src="docs/demo.svg" width="864" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git push -u origin feat/drop-widget → OUTWARD: &quot;git push -u origin feat/drop-widget&quot; pushes, files an issue or opens a worktree. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · SERIO FOCUS · 2 holds written to the audit log">
+<img src="docs/demo.svg" width="864" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git worktree add ../drop-widget → OUTWARD: &quot;git worktree add ../drop-widget&quot; files an issue or opens a worktree. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · SERIO FOCUS · 2 holds written to the audit log">
 <!-- /serio-demo -->
 
 <sub>[Agents](#agents) · [Install](#install) · [Safety net](#safety-net) · [Workflow](docs/WORKFLOW.md) · [Contributing](CONTRIBUTING.md)</sub>
@@ -47,12 +47,12 @@ Warnings and irreversible steps stay in full sentences.
 | Call | What happens |
 |---|---|
 | `git commit` | Runs: git can undo it |
-| `git push`, `git worktree add`, `EnterWorktree`, `gh issue create`, other MCP send, reply, forward, post, publish, schedule, share, submit, invite or respond (drafts run) | Denied once with a short note; the same call retried within 10 minutes runs and is audited as `retry` |
+| `git worktree add`, `EnterWorktree`, `gh issue create`, other MCP send, reply, forward, post, publish, schedule, share, submit, invite or respond (drafts run) | Denied once with a short note; the same call retried within 10 minutes runs and is audited as `retry` |
 | Email sending, including sending a saved draft | Denied on every attempt; no retry bypass |
 | Subagent call without model and effort | Held |
 | Delete of tracked, clean files, a temp path or an ignored build folder | Runs: git or a rebuild restores it |
 | Delete of untracked, modified or outside-repo data; `git reset --hard`; `git clean -f` | Denied once, the same in every permission mode and in Codex; the same call retried runs |
-| More than 3 direct subagent starts in 60 s | The next one waits for the next wave (`SERIO_MAX_PER_WAVE`, `SERIO_WAVE_MS`) |
+| More than 4 direct subagent starts in 60 s | The next one waits for the next wave (`SERIO_MAX_PER_WAVE`, `SERIO_WAVE_MS`) |
 | Every hold | One line in `audit/YYYY-MM.jsonl`, without the command text |
 | Every Claude turn end | One `session` line in the same file: project, branch, title, API calls, tokens, edited files; read from the transcript, no agent action |
 

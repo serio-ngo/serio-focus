@@ -15,6 +15,7 @@ Deliver $ARGUMENTS. Agents: this plugin's `architect`, `tester`, `coder` and `re
 | 5. Fix | coder | Send every P0 and P1 back with its `file:line`, then review again. Stop after three rounds on one finding and report it | Verdict `ready` |
 | 6. Ship | none | Run the repository checks on the whole diff, then commit, push the branch and open the pull request. When repository rules or permissions hold a step, list its exact command instead | Check output, then the pull request or the held commands |
 
+- The main session orchestrates: it plans, dispatches and ships, and edits no file itself. Every edit goes to the tester or coder; at most four agents run at once.
 - Run every step without asking. Ask only when a missing fact changes the design, with the default you would ship.
 - Agents never edit the same files in parallel.
 - The main session keeps the plan and the evidence; agents return only their sections.
