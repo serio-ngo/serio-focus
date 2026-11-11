@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 864 498" width="864" height="498" role="img" aria-label="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git push -u origin feat/drop-widget → OUTWARD: &quot;git push -u origin feat/drop-widget&quot; pushes, files an issue or opens a worktree. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · SERIO FOCUS · 2 holds written to the audit log" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 864 498" width="864" height="498" role="img" aria-label="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git worktree add ../drop-widget → OUTWARD: &quot;git worktree add ../drop-widget&quot; files an issue or opens a worktree. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · SERIO FOCUS · 2 holds written to the audit log" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
 <style>
 text{font-size:13.5px;white-space:pre}
 .row{opacity:0}
@@ -19,17 +19,17 @@ text{font-size:13.5px;white-space:pre}
 <text x="22" y="132" fill="#24292f" font-size="12" font-weight="600" class="row d3">⏺  tester · red: widget test fails as expected</text>
 <text x="22" y="156" fill="#24292f" font-size="12" font-weight="600" class="row d4">⏺  coder · Bash · rm -rf src/old-widget ✓</text>
 <text x="22" y="180" fill="#24292f" font-size="12" font-weight="600" class="row d5">⏺  reviewer · verdict ready</text>
-<text x="22" y="204" fill="#24292f" font-size="12" font-weight="600" class="row d6">⏺  Bash · git push -u origin feat/drop-widget</text>
+<text x="22" y="204" fill="#24292f" font-size="12" font-weight="600" class="row d6">⏺  Bash · git worktree add ../drop-widget</text>
 <rect class="row d7" x="14" y="212" width="836" height="46" rx="4" fill="#ffebe9" stroke="#cf222e" stroke-opacity=".45"/>
-<text x="22" y="228" fill="#cf222e" font-size="12" class="row d7">?  OUTWARD: &quot;git push -u origin feat/drop-widget&quot; pushes, files an issue or opens a worktree. Held:</text>
-<text x="22" y="252" fill="#cf222e" font-size="12" class="row d8">   give the user the exact command. Retry the same call only if the user asked for exactly this</text>
+<text x="22" y="228" fill="#cf222e" font-size="12" class="row d7">?  OUTWARD: &quot;git worktree add ../drop-widget&quot; files an issue or opens a worktree. Held: give the</text>
+<text x="22" y="252" fill="#cf222e" font-size="12" class="row d8">   user the exact command. Retry the same call only if the user asked for exactly this</text>
 <text x="22" y="276" fill="#24292f" font-size="12" font-weight="600" class="row d9">⏺  Bash · rm -rf ~/notes</text>
 <rect class="row d10" x="14" y="284" width="836" height="142" rx="4" fill="#ffebe9" stroke="#cf222e" stroke-opacity=".45"/>
 <text x="22" y="300" fill="#cf222e" font-size="12" class="row d10">?  DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command.</text>
 <text x="22" y="324" fill="#cf222e" font-size="12" class="row d11">   Retry the same call only if the user asked for exactly this</text>
 <text x="22" y="348" fill="#24292f" font-size="12" font-weight="600" class="row d12">Shipped: old widget removed, PR open.</text>
 <text x="22" y="372" fill="#24292f" font-size="12" class="row d13">   - src/old-widget deleted — tracked, git can restore it</text>
-<text x="22" y="396" fill="#24292f" font-size="12" class="row d14">   - push stopped once — runs only on your exact request</text>
+<text x="22" y="396" fill="#24292f" font-size="12" class="row d14">   - worktree stopped once — runs only on your exact request</text>
 <text x="22" y="420" fill="#0969da" font-size="12" font-weight="600" class="row d15">Next: say &quot;rm -rf ~/notes&quot; to allow it — outside the repo, no undo.</text>
 <rect class="row d16" x="14" y="427" width="836" height="30" rx="4" fill="none" stroke="#d0d7de"/>
 <text x="22" y="444" fill="#57606a" font-size="12" font-weight="600" class="row d16">SERIO FOCUS · 2 holds written to the audit log</text>

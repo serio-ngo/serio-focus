@@ -6,7 +6,7 @@
 
 | Event | Matcher | Script | Native host |
 |---|---|---|---|
-| `PreToolUse` | `^(Bash\|PowerShell\|Agent\|spawn_agent\|Workflow\|EnterWorktree\|mcp__.+__(?:(?:.*[_-])?send[_-]draft\|(?!.*(?:draft\|(?:get\|list\|read\|search\|fetch)[_-]))(?:.*[_-])?(?:send\|reply\|forward\|post\|publish\|schedule\|share\|submit\|invite\|respond)(?:[_-].*)?))$` | `scripts/guard.mjs` | Claude, Codex |
+| `PreToolUse` | `^(Bash\|PowerShell\|Edit\|Write\|MultiEdit\|NotebookEdit\|Agent\|spawn_agent\|Workflow\|EnterWorktree\|mcp__.+__(?:(?:.*[_-])?send[_-]draft\|(?!.*(?:draft\|(?:get\|list\|read\|search\|fetch)[_-]))(?:.*[_-])?(?:send\|reply\|forward\|post\|publish\|schedule\|share\|submit\|invite\|respond)(?:[_-].*)?))$` | `scripts/guard.mjs` | Claude, Codex |
 | `SessionStart` | `startup\|resume\|clear\|compact` | `scripts/card.mjs` | Claude, Codex |
 | `Stop` | `*` | `scripts/receipt.mjs` | Claude, Codex |
 
@@ -33,10 +33,10 @@
 
 | What ships | Count |
 |---|---|
-| Script lines | **757** across 14 files |
+| Script lines | **777** across 14 files |
 | Hook events | **3** |
 | Skills | **5** |
 | Subagents | **4** |
-| Startup context: card, agent and skill descriptions | **~478** tokens |
+| Startup context: card, agent and skill descriptions | **~477** tokens |
 | Third-party packages | **0** |
 | Network calls, API keys, model calls | **0** |

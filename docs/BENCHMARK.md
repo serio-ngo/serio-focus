@@ -21,7 +21,7 @@
 | Known gaps held out | 9 |
 | Recall: blocks held | 100% |
 | False blocks: allows held | 0% |
-| Startup context | ~478 tokens |
+| Startup context | ~477 tokens |
 <!-- /serio-scores -->
 
 ## Cost and limits
