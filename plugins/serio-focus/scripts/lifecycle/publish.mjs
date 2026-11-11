@@ -49,6 +49,7 @@ function main() {
   if (failed) return park(repo, number, `the ${failed} run did not finish: ${runLink()}.${why(process.env.REASON)}`);
   if (process.argv.includes('--pushed')) {
     const head = all(`repos/${repo}/pulls?state=open&per_page=100`).find((pr) => issueOf(pr.head.ref) === Number(number))?.head.sha;
+    if (head && head !== process.env.BEFORE_SHA) try { send('DELETE', `repos/${repo}/issues/${number}/labels/needs-human`, {}); } catch { }
     return head && head !== process.env.BEFORE_SHA ? console.log(`pushed ${head}`) : park(repo, number, `the run ended without a new push: ${runLink()}.${why(process.env.REASON)}`);
   }
   let out = null;
