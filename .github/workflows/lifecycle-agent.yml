@@ -149,6 +149,16 @@ jobs:
           plugins: ${{ inputs.plugins }}
           prompt: ${{ steps.args.outputs.prompt }}
           claude_args: ${{ steps.args.outputs.args }}
+      - name: Trace
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          LOG: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          jq -r '.[] |
+            if .type == "assistant" then (.message.content[]? | select(.type == "tool_use") | "trace: call \(.name) \(.input | tostring | .[0:300])")
+            elif .type == "user" then (.message.content[]? | select(.type == "tool_result" and .is_error == true) | "trace: error \(.content | tostring | .[0:400])")
+            elif .type == "result" then "trace: result turns=\(.num_turns) \((.result // "") | .[0:800])", (.permission_denials[]? | "trace: denied \(.tool_name) \(.tool_input | tostring | .[0:300])")
+            else empty end' "$LOG" || true
 
   publish:
     name: publish
