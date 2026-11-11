@@ -139,6 +139,11 @@ jobs:
           token="$(printf '%s' "$TOKEN" | tr -d '[:space:]')"
           echo "::add-mask::$token"
           echo "token=$token" >> "$GITHUB_OUTPUT"
+      - name: Plugin at the pinned ref
+        if: inputs.plugin_marketplaces == ''
+        env:
+          REF: ${{ inputs.focus_ref }}
+        run: git clone --quiet --depth 1 --branch "$REF" https://github.com/serio-ngo/serio-focus.git "$RUNNER_TEMP/serio-focus"
       - id: claude
         uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed
         env:
@@ -151,7 +156,7 @@ jobs:
           bot_name: ${{ steps.app.outputs.app-slug }}[bot]
           bot_id: ${{ steps.bot.outputs.id }}
           allowed_bots: ${{ needs.route.outputs.bot == 'true' && steps.app.outputs.app-slug || '' }}
-          plugin_marketplaces: ${{ inputs.plugin_marketplaces || format('https://github.com/serio-ngo/serio-focus.git#{0}', inputs.focus_ref) }}
+          plugin_marketplaces: ${{ inputs.plugin_marketplaces || format('{0}/serio-focus', runner.temp) }}
           plugins: ${{ inputs.plugins }}
           prompt: ${{ steps.args.outputs.prompt }}
           claude_args: ${{ steps.args.outputs.args }}
