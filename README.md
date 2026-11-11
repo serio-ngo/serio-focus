@@ -16,7 +16,7 @@ architect · tester · coder · reviewer · a guard that stops pushes, sends and
 [![license](https://img.shields.io/github/license/serio-ngo/serio-focus?color=1f6feb)](LICENSE)
 
 <!-- serio-demo -->
-<img src="docs/demo.svg" width="864" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git worktree add ../drop-widget → OUTWARD: &quot;git worktree add ../drop-widget&quot; files an issue or opens a worktree. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · SERIO FOCUS · 2 holds written to the audit log">
+<img src="docs/demo.svg" width="864" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git push -u origin feat/drop-widget → OUTWARD: &quot;git push -u origin feat/drop-widget&quot; pushes, files an issue or opens a worktree. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · SERIO FOCUS · 2 holds written to the audit log">
 <!-- /serio-demo -->
 
 <sub>[Agents](#agents) · [Install](#install) · [Safety net](#safety-net) · [Workflow](docs/WORKFLOW.md) · [Contributing](CONTRIBUTING.md)</sub>

@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.30.0 | 2026-11-11 | One lifecycle flow for manual and automatic runs; push stops once again locally; lifecycle workflows default to main, accept a SHA and keep the host model |
 | 1.29.0 | 2026-11-01 | Preserve native permissions and owned Codex roles; make upkeep checks read-only; deny repeated email sends; fix shell substitution and PowerShell guard bypasses |
 | 1.28.0 | 2026-10-28 | guard denies once with a note, never asks; the identical retry within 10 minutes runs and is audited; commit runs; push, worktrees, gh issue create and MCP sends stop once; named workflows run |
 | 1.27.0 | 2026-10-27 | neurodivergent wording; pr-loop works with any reviewer, bot or CI; suite cut to 300 lines of core checks; subagent calls must name model and effort; commit and push ask first |

@@ -1,6 +1,6 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.29.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.30.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Hooks
 

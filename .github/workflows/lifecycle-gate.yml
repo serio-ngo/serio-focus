@@ -6,7 +6,7 @@ on:
       focus_ref:
         description: serio-focus ref that holds the trusted scripts
         type: string
-        default: lifecycle-v1
+        default: main
       node:
         type: string
         default: "22"

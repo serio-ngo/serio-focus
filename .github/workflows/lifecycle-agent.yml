@@ -6,15 +6,15 @@ on:
       focus_ref:
         description: serio-focus ref that holds the trusted scripts
         type: string
-        default: lifecycle-v1
+        default: main
       models:
         description: Ignored. The main session is the orchestrator; it names a model for each subagent it starts
         type: string
         default: "{}"
       orchestrator:
-        description: Model of the main session of every stage
+        description: Model of the main session of every stage; empty keeps the host default
         type: string
-        default: opus
+        default: ""
       plugin_marketplaces:
         description: Empty means serio-focus at focus_ref, so skills, hooks and scripts come from one ref
         type: string
@@ -120,7 +120,8 @@ jobs:
           SCHEMA: '{"type":"object","required":["verdict","criteria","questions"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}}}}'
           WRITE: Read,Glob,Grep,Edit,Write,Agent,Task,Skill,Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr edit:*),Bash(gh pr ready:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh run view:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(npm:*),Bash(npx:*),Bash(node:*)
         run: |
-          tools="$WRITE"; extra=""
+          tools="$WRITE"; extra=""; model=""
+          if [ -n "$MODEL" ]; then model="--model $MODEL"; fi
           case "$STAGE" in
             spec-review) prompt="/serio-focus:spec-review $ISSUE"; tools="Read,Glob,Grep"; extra="--json-schema '$SCHEMA'" ;;
             write-tests) prompt="/serio-focus:write-tests $ISSUE" ;;
@@ -130,7 +131,7 @@ jobs:
           esac
           {
             echo "prompt=$prompt"
-            echo "args=--max-turns $TURNS --model $MODEL --allowedTools \"$tools\" $extra"
+            echo "args=--max-turns $TURNS $model --allowedTools \"$tools\" $extra"
           } >> "$GITHUB_OUTPUT"
       - id: seat
         env:
@@ -143,7 +144,10 @@ jobs:
         if: inputs.plugin_marketplaces == ''
         env:
           REF: ${{ inputs.focus_ref }}
-        run: git clone --quiet --depth 1 --branch "$REF" https://github.com/serio-ngo/serio-focus.git "$RUNNER_TEMP/serio-focus"
+        run: |
+          d="$RUNNER_TEMP/serio-focus"; git init -q "$d"
+          git -C "$d" fetch -q --depth 1 https://github.com/serio-ngo/serio-focus.git "$REF"
+          git -C "$d" checkout -q FETCH_HEAD
       - id: claude
         uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed
         env:
