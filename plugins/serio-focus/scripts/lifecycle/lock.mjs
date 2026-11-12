@@ -4,7 +4,7 @@ import { appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { all, flag, lockOf, one, owners, ownersOf, repoOf, specMarker, specSha, taskOf } from '../lib/lifecycle.mjs';
 
-const LOCKED = /^\.claude\/skills\/|(^|\/)(tests?|__tests__|e2e)\/|[._-](test|spec)\.[^/]+$|(^|\/)test-[^/]+$|(^|\/)(playwright|vitest|jest)\.config\.[^/]+$/;
+const LOCKED = /^\.(claude|agents)\/skills\/|(^|\/)(tests?|__tests__|e2e)\/|[._-](test|spec)\.[^/]+$|(^|\/)test-[^/]+$|(^|\/)(playwright|vitest|jest)\.config\.[^/]+$/;
 
 export function check({ pr, issue, comments, reviews, own, changed }) {
   const fail = (note) => ({ ok: false, locked: false, note });
@@ -32,7 +32,7 @@ function selfTest() {
     ['locked', {}, true, /^locked at aaaaaaa/],
     ['moved lock', { reviews: [lock(), lock(ada, 'bbbbbbbb')] }, true, /^locked at bbbbbbb/],
     ['test edited after the lock', { changed: () => ['tests/sum.test.mjs'] }, false, /tests\/sum\.test\.mjs/],
-    ['skill edited after the lock', { changed: () => ['.claude/skills/api/SKILL.md'] }, false, /locked paths changed after the lock: \.claude\/skills\/api\/SKILL\.md/],
+    ['skill edited after the lock', { changed: () => ['.claude/skills/api/SKILL.md', '.agents/skills/api/SKILL.md'] }, false, /locked paths changed after the lock: \.claude\/skills\/api\/SKILL\.md, \.agents\/skills\/api\/SKILL\.md/],
     ['other test layouts', { changed: () => ['test/a.mjs', 'src/__tests__/a.js', 'src/a_test.js', 'src/test-a.mjs', 'src/a-test.js'] }, false, /test\/a\.mjs, src\/__tests__\/a\.js, src\/a_test\.js, src\/test-a\.mjs, src\/a-test\.js/],
     ['source named like a test', { changed: () => ['src/contest.mjs', 'src/latest/a.mjs'] }, true, /^locked/],
     ['e2e, spec and config paths', { changed: () => ['e2e/a.js', 'src/a.spec.ts', 'playwright.config.mjs'] }, false, /e2e\/a\.js, src\/a\.spec\.ts, playwright\.config\.mjs/],
