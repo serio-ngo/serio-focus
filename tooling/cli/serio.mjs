@@ -41,7 +41,7 @@ function parse(argv) {
   return args;
 }
 
-function readJsonFile(file, fallback) {
+const readJsonFile = (file, fallback) => {
   if (!existsSync(file)) {
     if (fallback !== undefined) return fallback;
     return fail(`cannot read ${file}`);
@@ -50,9 +50,9 @@ function readJsonFile(file, fallback) {
     const text = readFileSync(file, 'utf8');
     return text.trim() === '' ? fallback ?? {} : JSON.parse(text);
   } catch (error) {
-    return fail(`${file} is not valid JSON: ${error.message}`);
+    return fail(`failed to parse ${file} as valid JSON: ${error.message}`);
   }
-}
+};
 
 const writeJson = (file, value) => {
   mkdirSync(path.dirname(file), { recursive: true });
