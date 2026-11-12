@@ -247,8 +247,7 @@ blocks('holds deletes and wipes git cannot restore', [
   'D=/tmp; for D in /home; do rm -rf "$D"; done', 'for d in a; do rm -rf docs; done', 'D="dist/ src"; rm -rf "$D"',
 ], (command) => ({ cwd: box, ...bash(command) }));
 blocks('stops push, worktrees and issues once', ['git -C sub push', 'git worktree add ../wt', 'gh issue create -t x',
-  'echo "$(git push origin main)"',
-  'git push origin main', 'git.exe push --force origin main', 'bash -c "git push origin main"', 'cd sub && git push'],
+  'echo "$(git push origin main)"', 'git push origin main', 'git.exe push --force origin main', 'bash -c "git push origin main"', 'cd sub && git push'],
 (command) => ({ cwd: box, ...bash(command) }));
 it('holds subagents that pick no model or effort, before they take a wave slot', () => {
   const flow = path.join(box, 'flow.js');
@@ -268,9 +267,9 @@ it('judges deletes through a symlinked cwd', () => {
 describe('fan-out cap', () => {
   const spawn = (session, tool_input, tool_name = 'Agent') => at(session, { tool_name, tool_input });
   const held = (session, tool_input, tool_name = 'Agent') => stopped({ cwd: box, session_id: session, tool_name, tool_input });
-  it('runs three agents per wave and holds the fourth', () => {
-    for (let n = 0; n < 3; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku', effort: 'low' }), ALLOWED);
-    assert.equal(held('wave', { prompt: 'fourth', model: 'haiku', effort: 'low' }), DENY);
+  it('runs four agents per wave and holds the fifth', () => {
+    for (let n = 0; n < 4; n += 1) assert.equal(spawn('wave', { prompt: `s${n}`, model: 'haiku', effort: 'low' }), ALLOWED);
+    assert.equal(held('wave', { prompt: 'fifth', model: 'haiku', effort: 'low' }), DENY);
   });
   it('runs agents when the state path cannot be created, without deleting it', () => {
     const target = path.join(box, '.claude', '.wave-state-file');
@@ -294,6 +293,7 @@ describe('fan-out cap', () => {
     for (const payload of [bash('git push origin retry-fixture'), { tool_name: 'mcp__slack__send_message', tool_input: { text: 'synthetic' } }]) {
       assert.equal(at('ordinary-retry', payload), DENY); assert.equal(at('ordinary-retry', payload), ALLOWED);
     }
+    const mode = (extra, payload) => guard({ cwd: box, session_id: 'mode', ...payload }, { ...process.env, SERIO_OS_DIR: box, ...extra }), edit = { tool_name: 'Edit', tool_input: { file_path: 'a.js' } }; assert.deepEqual([mode({ SERIO_ORCHESTRATE: '1' }, edit), mode({ SERIO_ORCHESTRATE: '1' }, { ...edit, agent_id: 'coder-1' }), mode({}, edit), mode({ SERIO_UNATTENDED: '1' }, bash('rm -rf docs')), mode({}, bash('rm -rf docs')), mode({ SERIO_UNATTENDED: '1' }, bash('git push origin main'))], [DENY, ALLOWED, ALLOWED, ALLOWED, DENY, ALLOWED]);
     for (const tool of ['mcp__gmail__send_message', 'mcp__gmail__send_draft', 'mcp__gmail__reply_email', 'mcp__gmail__forward_email', 'mcp__email__send_email', 'mcp__email__reply_email', 'mcp__email__forward_email', 'mcp__outlook__send_mail', 'mcp__outlook__reply_email', 'mcp__outlook__forward_email'])
       for (let n = 0; n < 3; n += 1) assert.equal(at(tool, { tool_name: tool, tool_input: { id: 'synthetic' } }), DENY, tool);
   });

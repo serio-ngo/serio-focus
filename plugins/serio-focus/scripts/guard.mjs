@@ -10,6 +10,7 @@ import { rootOf, sessionOf, waveDir } from './lib/runtime.mjs';
 import { judgeShell } from './lib/shell-danger.mjs';
 
 export const SPAWN_TOOLS = ['Agent', 'spawn_agent'];
+const WRITERS = /^(?:Write|Edit|MultiEdit|NotebookEdit)$/;
 const CHOICE = { Agent: ['model', 'effort'], spawn_agent: ['model', 'reasoning_effort'], Workflow: [] };
 const scriptOf = (input) => { try { return input.script ?? (input.scriptPath == null ? '' : readFileSync(input.scriptPath, 'utf8')); } catch { return 'agent('; } };
 const code = (src) => String(src).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|(['"`])(?:\\[\s\S]|(?!\1)[^\\])*\1/g, (hit, quote) => (quote ? '""' : ' '));
@@ -38,13 +39,17 @@ function bareFlow(input) {
 function judge(payload) {
   const tool = String(payload.tool_name || '');
   const input = payload.tool_input || {};
+  if (WRITERS.test(tool)) {
+    if (process.env.SERIO_ORCHESTRATE === '1' && !payload.agent_id) throw new Blocked('ORCHESTRATE: the main session plans and dispatches. Send this edit to the tester or coder agent');
+    return;
+  }
   const missing = (CHOICE[tool] || []).filter((key) => !String(input[key] ?? '').trim());
   if (tool === 'Workflow' && bareFlow(input)) missing.push('model', 'effort');
   if (missing.length) throw new Blocked(`MODEL CHOICE: name ${missing.join(' and ')} in the subagent call`);
   if (SPAWN_TOOLS.includes(tool)) fanOutCap(payload);
   if (tool === 'EnterWorktree' || tool.startsWith('mcp__')) throw new Blocked(`OUTWARD: "${tool}" sends, publishes or opens a worktree`,
     !/(?:^|[_-])(?:gmail|outlook|email|mail)(?:[_-]|$)/i.test(tool) || !/(?:^|[_-])(?:send|reply|forward)(?:[_-]|$)/i.test(tool));
-  if (tool !== 'Bash' && tool !== 'PowerShell') return;
+  if ((tool !== 'Bash' && tool !== 'PowerShell') || process.env.SERIO_UNATTENDED === '1') return;
   if (typeof (input.command ?? '') !== 'string') throw new Blocked('BLOCKED: shell command must be a string');
   const verdict = judgeShell(input.command || '', 0, payload.cwd, tool);
   if (verdict) throw new Blocked(verdict, true);

@@ -8,7 +8,7 @@ const positive = (raw, fallback) => {
   return Number.isInteger(n) && n > 0 ? n : fallback;
 };
 
-export const waveCap = () => positive(process.env.SERIO_MAX_PER_WAVE, 3);
+export const waveCap = () => positive(process.env.SERIO_MAX_PER_WAVE, 4);
 const waveWindow = () => positive(process.env.SERIO_WAVE_MS, 60000);
 
 function claimSlot(dir, bucket, cap) {

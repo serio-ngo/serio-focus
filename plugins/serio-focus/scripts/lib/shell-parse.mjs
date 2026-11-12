@@ -11,19 +11,30 @@ export const bodiless = (command) => command.replace(HEREDOC, (hit, head, quote,
 
 export function segments(command, shell = 'Bash') {
   const out = [];
+  const outer = [];
   let buffer = '';
   let quote = null;
   const bash = /^(?:bash|sh|zsh|dash|ksh)$/i.test(shell);
+  const cut = () => { out.push(buffer); buffer = ''; };
   for (let i = 0; i < command.length; i += 1) {
     const char = command[i];
     if (bash && char === '\\' && quote !== "'") { buffer += command.slice(i, i + 2); i += 1; continue; }
-    if (quote !== "'" && (char === '`' || (char === '$' && command[i + 1] === '('))) return null;
+    if (quote !== "'" && char === '`') {
+      if (!bash) return null;
+      cut();
+      if (outer.at(-1)?.tick) quote = outer.pop().quote; else { outer.push({ quote, open: 0, tick: true }); quote = null; }
+      continue;
+    }
+    if (quote !== "'" && char === '$' && command[i + 1] === '(') { cut(); outer.push({ quote, open: 0 }); quote = null; i += 1; continue; }
     if (quote) {
       if (char === quote) quote = null;
       buffer += char;
       continue;
     }
     if (char === '"' || char === "'") { quote = char; buffer += char; continue; }
+    const frame = outer.at(-1);
+    if (frame && !frame.tick && char === '(') frame.open += 1;
+    if (frame && !frame.tick && char === ')') { if (frame.open) frame.open -= 1; else { cut(); quote = outer.pop().quote; continue; } }
     if (char === '&' && REDIRECT_AMP(command[i - 1], command[i + 1])) { buffer += char; continue; }
     if (';\n&|'.includes(char)) { out.push(buffer); buffer = ''; continue; }
     buffer += char;

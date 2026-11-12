@@ -1,0 +1,223 @@
+name: lifecycle agent
+
+on:
+  workflow_call:
+    inputs:
+      focus_ref:
+        description: serio-focus ref that holds the trusted scripts
+        type: string
+        default: main
+      models:
+        description: Ignored. The main session is the orchestrator; it names a model for each subagent it starts
+        type: string
+        default: "{}"
+      orchestrator:
+        description: Model of the main session of every stage; empty keeps the host default
+        type: string
+        default: ""
+      plugin_marketplaces:
+        description: Empty means serio-focus at focus_ref, so skills, hooks and scripts come from one ref
+        type: string
+        default: ""
+      plugins:
+        type: string
+        default: serio-focus@serio-ngo
+      node:
+        type: string
+        default: "22"
+
+permissions: {}
+
+jobs:
+  route:
+    name: route
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      actions: read
+    outputs:
+      stage: ${{ steps.route.outputs.stage }}
+      issue: ${{ steps.route.outputs.issue }}
+      pr: ${{ steps.route.outputs.pr }}
+      ref: ${{ steps.route.outputs.ref }}
+      sha: ${{ steps.route.outputs.sha }}
+      spec: ${{ steps.route.outputs.spec }}
+      secret: ${{ steps.route.outputs.secret }}
+      bot: ${{ steps.route.outputs.bot }}
+      turns: ${{ steps.route.outputs.turns }}
+      timeout: ${{ steps.route.outputs.timeout }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: serio-ngo/serio-focus
+          ref: ${{ inputs.focus_ref }}
+          persist-credentials: false
+      - id: route
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node plugins/serio-focus/scripts/lifecycle/route.mjs
+
+  agent:
+    name: ${{ needs.route.outputs.stage }}
+    needs: route
+    if: needs.route.outputs.stage != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(needs.route.outputs.timeout) }}
+    permissions:
+      contents: read
+      packages: read
+      issues: read
+      pull-requests: read
+      actions: read
+    outputs:
+      structured_output: ${{ steps.claude.outputs.structured_output }}
+      reason: ${{ steps.trace.outputs.reason }}
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_KEY }}
+      - id: bot
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: gh api "users/${SLUG}%5Bbot%5D" --jq '"id=\(.id)"' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.route.outputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: ${{ inputs.node }}
+      - name: Install dependencies
+        if: hashFiles('package-lock.json') != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm ci
+      - name: Install browsers
+        if: needs.route.outputs.stage != 'spec-review' && hashFiles('playwright.config.*') != ''
+        run: npx playwright install --with-deps chromium
+      - name: Save the spec text
+        if: needs.route.outputs.stage == 'spec-review'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ needs.route.outputs.issue }}
+        run: |
+          mkdir -p .lifecycle
+          gh issue view "$ISSUE" --json title,body --jq '"# " + .title + "\n\n" + .body' > .lifecycle/issue.md
+      - id: args
+        env:
+          STAGE: ${{ needs.route.outputs.stage }}
+          ISSUE: ${{ needs.route.outputs.issue }}
+          PR: ${{ needs.route.outputs.pr }}
+          TURNS: ${{ needs.route.outputs.turns }}
+          MODEL: ${{ inputs.orchestrator }}
+          SCHEMA: '{"type":"object","required":["verdict","criteria","questions"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}}}}'
+          WRITE: Read,Glob,Grep,Edit,Write,Agent,Task,Skill,Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr edit:*),Bash(gh pr ready:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh run view:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(npm:*),Bash(npx:*),Bash(node:*)
+        run: |
+          tools="$WRITE"; extra=""; model=""
+          if [ -n "$MODEL" ]; then model="--model $MODEL"; fi
+          case "$STAGE" in
+            spec-review) prompt="/serio-focus:spec-review $ISSUE"; tools="Read,Glob,Grep"; extra="--json-schema '$SCHEMA'" ;;
+            write-tests) prompt="/serio-focus:write-tests $ISSUE" ;;
+            deliver) prompt="/serio-focus:deliver task issue #$ISSUE on pull request #$PR" ;;
+            pr-loop) prompt="/serio-focus:pr-loop $PR" ;;
+            *) exit 1 ;;
+          esac
+          {
+            echo "prompt=$prompt"
+            echo "args=--max-turns $TURNS $model --allowedTools \"$tools\" $extra"
+          } >> "$GITHUB_OUTPUT"
+      - id: seat
+        env:
+          TOKEN: ${{ secrets[needs.route.outputs.secret] }}
+        run: |
+          token="$(printf '%s' "$TOKEN" | tr -d '[:space:]')"
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+      - name: Plugin at the pinned ref
+        if: inputs.plugin_marketplaces == ''
+        env:
+          REF: ${{ inputs.focus_ref }}
+        run: |
+          d="$RUNNER_TEMP/serio-focus"; git init -q "$d"
+          git -C "$d" fetch -q --depth 1 https://github.com/serio-ngo/serio-focus.git "$REF"
+          git -C "$d" checkout -q FETCH_HEAD
+      - id: claude
+        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SERIO_UNATTENDED: "1"
+          SERIO_ORCHESTRATE: ${{ needs.route.outputs.stage != 'spec-review' && '1' || '' }}
+        with:
+          claude_code_oauth_token: ${{ steps.seat.outputs.token }}
+          github_token: ${{ steps.app.outputs.token }}
+          bot_name: ${{ steps.app.outputs.app-slug }}[bot]
+          bot_id: ${{ steps.bot.outputs.id }}
+          allowed_bots: ${{ needs.route.outputs.bot == 'true' && steps.app.outputs.app-slug || '' }}
+          plugin_marketplaces: ${{ inputs.plugin_marketplaces || format('{0}/serio-focus', runner.temp) }}
+          plugins: ${{ inputs.plugins }}
+          prompt: ${{ steps.args.outputs.prompt }}
+          claude_args: ${{ steps.args.outputs.args }}
+      - name: Trace
+        id: trace
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          LOG: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          {
+            echo '```text'
+            jq -r '.[] |
+              if .type == "assistant" then (if .parent_tool_use_id then "agent" else "main" end) as $who | (.message.content[]? | select(.type == "tool_use") | "trace: \($who) call \(.name) \(.input | tostring | .[0:300])")
+              elif .type == "user" then (.message.content[]? | select(.type == "tool_result" and .is_error == true) | "trace: error \(.content | tostring | .[0:400])")
+              elif .type == "result" then "trace: result turns=\(.num_turns) \((.result // "") | .[0:800])", (.permission_denials[]? | "trace: denied \(.tool_name) \(.tool_input | tostring | .[0:300])")
+              else empty end' "$LOG" || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "reason=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: publish
+    needs: [route, agent]
+    if: always() && needs.route.outputs.stage != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: serio-ngo/serio-focus
+          ref: ${{ inputs.focus_ref }}
+          persist-credentials: false
+      - name: Publish the spec review
+        if: needs.route.outputs.stage == 'spec-review' && needs.agent.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ needs.route.outputs.issue }}
+          SPEC_SHA: ${{ needs.route.outputs.spec }}
+          STRUCTURED_OUTPUT: ${{ needs.agent.outputs.structured_output }}
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE"
+      - name: Park a run without a push
+        if: needs.route.outputs.stage != 'spec-review' && needs.agent.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ needs.route.outputs.issue }}
+          BEFORE_SHA: ${{ needs.route.outputs.sha }}
+          REASON: ${{ needs.agent.outputs.reason }}
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE" --pushed
+      - name: Park a failed run
+        if: needs.agent.result != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGE: ${{ needs.route.outputs.stage }}
+          TARGET: ${{ needs.route.outputs.pr || needs.route.outputs.issue }}
+          REASON: ${{ needs.agent.outputs.reason }}
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$TARGET" --failed "$STAGE"
