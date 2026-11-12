@@ -1,6 +1,6 @@
 # Manifest
 
-<sub><b>Answers</b> · everything the plugin loads at version 1.30.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
+<sub><b>Answers</b> · everything the plugin loads at version 1.31.0 · generated, `npm run upkeep` rewrites it · <a href="../README.md">README</a></sub>
 
 ## Hooks
 
@@ -27,13 +27,13 @@
 | `gate` | Use to check a task pull request by script before asking for review. Runs the test lock and builds the acceptance report from JUnit results - one row per criterion - without a model deciding the result. |
 | `pr-loop` | Use when a pull request has failing checks or unresolved review feedback from any reviewer, person or bot. Verifies each finding, has the coder fix it, reruns checks and requests re-review until the head is clean. |
 | `spec-review` | Use before any test or code when an issue is a task spec. Reads the issue, the product contract and the code it names, then returns a verdict, questions with recommended answers and numbered Given, When, Then criteria. Changes no repository file. |
-| `write-tests` | Use after a spec is approved and before any production code. Writes one failing test per acceptance criterion, proves the set is red and opens a draft pull request with the criterion-to-test table for a person to approve. |
+| `write-tests` | Use after a spec is approved and before any production code. Writes the repository skill the task needs and one failing test per acceptance criterion, proves the set is red and opens a draft pull request with the criterion-to-test table for a person to approve. |
 
 ## Inventory
 
 | What ships | Count |
 |---|---|
-| Script lines | **777** across 14 files |
+| Script lines | **778** across 14 files |
 | Hook events | **3** |
 | Skills | **5** |
 | Subagents | **4** |

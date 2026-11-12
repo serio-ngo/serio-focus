@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.31.0 | 2026-11-12 | Repository skills are written and locked with the tests; lifecycle runs allow every shell form and log the full transcript; a pushed retry clears needs-human on the pull request; people merge through an exempt ruleset entry |
 | 1.30.0 | 2026-11-11 | One lifecycle flow for manual and automatic runs; push stops once again locally; lifecycle workflows default to main, accept a SHA and keep the host model |
 | 1.29.0 | 2026-11-01 | Preserve native permissions and owned Codex roles; make upkeep checks read-only; deny repeated email sends; fix shell substitution and PowerShell guard bypasses |
 | 1.28.0 | 2026-10-28 | guard denies once with a note, never asks; the identical retry within 10 minutes runs and is audited; commit runs; push, worktrees, gh issue create and MCP sends stop once; named workflows run |

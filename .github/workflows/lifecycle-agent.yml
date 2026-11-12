@@ -118,7 +118,7 @@ jobs:
           TURNS: ${{ needs.route.outputs.turns }}
           MODEL: ${{ inputs.orchestrator }}
           SCHEMA: '{"type":"object","required":["verdict","criteria","questions"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}}}}'
-          WRITE: Read,Glob,Grep,Edit,Write,Agent,Task,Skill,Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr edit:*),Bash(gh pr ready:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh run view:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(npm:*),Bash(npx:*),Bash(node:*)
+          WRITE: Read,Glob,Grep,Edit,Write,Agent,Task,Skill,Bash
         run: |
           tools="$WRITE"; extra=""; model=""
           if [ -n "$MODEL" ]; then model="--model $MODEL"; fi
@@ -179,6 +179,9 @@ jobs:
               else empty end' "$LOG" || true
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '::group::Full transcript'
+          jq -c '.[]' "$LOG" || cat "$LOG"
+          echo '::endgroup::'
           echo "reason=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
 
   publish:
