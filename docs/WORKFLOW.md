@@ -20,7 +20,7 @@ Spec review, Tests and Gate apply only to an issue that is a task spec. Auto sta
 | Step | Role | Do | Manual start | Auto start | Exit evidence |
 |---|---|---|---|---|---|
 | 1. Spec review | Reviewer | Read the issue, the product contract and the code it names; verdict, questions, criteria AC1…ACn | `/serio-focus:spec-review <N>` | A person labels the issue `spec-review`: stage `spec-review` | `Spec review: ready` comment; the owner adds `spec-ok` |
-| 2. Tests | Tester | One failing test per criterion; draft pull request with the criterion-to-test table | `/serio-focus:write-tests <N>` | `spec-ok` from a person, with a ready review of the current issue text: stage `write-tests`; a `changes_requested` review before the lock reruns it | Draft pull request; a code owner review `tests-ok` on the head locks the tests |
+| 2. Tests | Tester | One failing test per criterion and the repository skill; draft pull request with the criterion-to-test table | `/serio-focus:write-tests <N>` | `spec-ok` from a person, with a ready review of the current issue text: stage `write-tests`; a `changes_requested` review before the lock reruns it | Draft pull request; a code owner review `tests-ok` on the head locks the tests and skills |
 | 3. Plan | Architect | Plan unless the change is one file with an obvious fix | `/serio-focus:deliver <goal>` | A code owner `tests-ok` review on the head: stage `deliver` | Plan with runnable checks |
 | 4. Red | Tester | One failing test when the task changes behaviour; skipped when repository test rules forbid it or the tests are locked | as step 3 | as step 3 | Failing line |
 | 5. Build | Coder | One task per dispatch; disjoint paths may run in parallel; locked tests are never edited | as step 3 | as step 3 | Green task checks |
@@ -53,7 +53,7 @@ Spec review, Tests and Gate apply only to an issue that is a task spec. Auto sta
 | Cloud fixes | Opt in per PR | Cloud sessions run without local hooks |
 | Pushes | The session, unless repository rules hold them | Cloud and local sessions finish the loop without a manual step |
 | Merge | Owner, with auto-merge off by default | Merge authority stays with a person |
-| TDD | `write-tests` for a task spec, locked by `tests-ok`; `tester` otherwise, optional | Locked tests make Red a skip; repository test rules decide the rest |
+| TDD | `write-tests` for a task spec, with the repository skill written and locked with the tests by `tests-ok`; `tester` otherwise, optional | Locked tests make Red a skip; repository test rules decide the rest |
 
 ## Merge gate
 
@@ -64,3 +64,4 @@ Spec review, Tests and Gate apply only to an issue that is a task spec. Auto sta
 | Conversation resolution | required |
 | Stale approvals | dismissed on push |
 | Force push and deletion of the default branch | blocked |
+| Updates to the default branch | restricted by a ruleset; the entry for people is in bypass mode `exempt`, so a person merges with the normal button and no App can merge |

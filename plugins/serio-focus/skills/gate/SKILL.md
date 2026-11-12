@@ -16,9 +16,9 @@ Check pull request $ARGUMENTS with the lifecycle scripts. Requires an authentica
 | Lock rule | Value |
 |---|---|
 | Lock | The commit of the newest review by a code owner whose text starts with `tests-ok`. `CODEOWNERS` must name people: a team entry is not resolved |
-| Locked paths | `tests/`, `test/`, `__tests__/`, `e2e/`, `*.test.*`, `*.spec.*`, `*-test.*`, `*_test.*`, `test-*`, Playwright, Vitest and Jest config files |
+| Locked paths | `tests/`, `test/`, `__tests__/`, `e2e/`, `*.test.*`, `*.spec.*`, `*-test.*`, `*_test.*`, `test-*`, `.claude/skills/`, Playwright, Vitest and Jest config files |
 | Spec freeze | The issue carries `spec-ok` and its text matches the hash in the newest `ready` spec review |
-| Changing a locked test | A person pushes the change and gives a new `tests-ok` |
+| Changing a locked path | A person pushes the change and gives a new `tests-ok` |
 
 - Add `--repo <owner>/<name>` when the checkout is not the pull request's repository.
 - Add `--post` to step 3 only inside the repository's own trusted workflow; a local run prints the report.

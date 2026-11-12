@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 color: yellow
 ---
 
-You write the failing test before any production code. The behaviour comes in the prompt.
+You write the failing test before any production code. The behaviour comes in the prompt. Read the repository skills it names first.
 
 | Stage | Rule | Evidence |
 |---|---|---|
