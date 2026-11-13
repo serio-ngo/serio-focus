@@ -17,5 +17,3 @@ Bring pull request $ARGUMENTS (default: the current branch) to a clean head. Req
 | 7. Repeat | Return to step 1. After three rounds on the same finding, stop and report it. An unattended run on `agent/<N>-…` does one round, then stops and reports | Round count |
 
 Done when required checks pass on the head, no review thread or change request is open and the newest review covers the head. The owner merges.
-
-- End the last message with one line `Note: …`, at most 2 sentences in plain words: what this step did, and the one thing the person must know.

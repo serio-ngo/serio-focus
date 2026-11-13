@@ -118,10 +118,11 @@ jobs:
           PR: ${{ needs.route.outputs.pr }}
           TURNS: ${{ needs.route.outputs.turns }}
           MODEL: ${{ inputs.orchestrator }}
-          SCHEMA: '{"type":"object","required":["verdict","criteria","questions"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}},"note":{"type":"string"}}}'
+          SCHEMA: '{"type":"object","required":["verdict","criteria","questions","note"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}},"note":{"type":"string"}}}'
           WRITE: Read,Glob,Grep,Edit,Write,Agent,Task,Skill,Bash
+          NOTE: "End your last message with one line that starts with Note: and holds at most 2 sentences in plain words: what this step did, and the one thing the person must know."
         run: |
-          tools="$WRITE"; extra=""; model=""
+          tools="$WRITE"; extra="--append-system-prompt \"$NOTE\""; model=""
           if [ -n "$MODEL" ]; then model="--model $MODEL"; fi
           case "$STAGE" in
             spec-review) prompt="/serio-focus:spec-review $ISSUE"; tools="Read,Glob,Grep"; extra="--json-schema '$SCHEMA'" ;;
