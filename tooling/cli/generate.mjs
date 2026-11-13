@@ -1,6 +1,4 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { card } from '../../plugins/serio-focus/scripts/card.mjs';
@@ -57,13 +55,6 @@ export function markdown(text) {
   return `${out.join('\n').replace(/\n+$/, '')}\n`;
 }
 
-export function block(text, open, close, lines) {
-  const all = text.split('\n');
-  const a = all.indexOf(open);
-  const z = all.indexOf(close);
-  return a < 0 || z < a ? text : `${[...all.slice(0, a + 1), ...lines, ...all.slice(z)].join('\n').replace(/\n+$/, '')}\n`;
-}
-
 const documents = (root, folder, pattern) => {
   const dir = path.join(root, 'plugins', 'serio-focus', folder);
   return walk(dir).filter((file) => pattern.test(file)).map((file) => {
@@ -85,39 +76,6 @@ export const codexRoles = (root = REPO) => agents(root).map((agent) => {
   return { file: `serio-${agent.name}.toml`, text: head + body,
     legacy: head + (/\b(?:Edit|Write)\b/.test(agent.tools) ? '' : 'sandbox_mode = "read-only"\n') + body };
 });
-
-export function score() {
-  const box = mkdtempSync(path.join(tmpdir(), 'serio-score-'));
-  spawnSync('git', ['init', '-q', box]);
-  writeFileSync(path.join(box, '.gitignore'), 'node_modules/\n');
-  for (const file of ['docs/a.md', 'src/a.ts', 'lib/a.js']) {
-    mkdirSync(path.join(box, path.dirname(file)), { recursive: true });
-    writeFileSync(path.join(box, file), 'keep');
-  }
-  spawnSync('git', ['-C', box, 'add', 'lib/a.js']);
-  spawnSync('git', ['-C', box, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'fixture']);
-  const corpus = read('tooling', 'corpus', 'guard-corpus.jsonl').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
-  const { matcher } = readJson('plugins', 'serio-focus', 'hooks', 'hooks.json').hooks.PreToolUse[0];
-  const rows = corpus.filter((c) => !c.known_gap).map((c) => {
-      if (!new RegExp(matcher).test(c.tool)) return { id: c.id, block: c.want === 'block', held: false };
-      const run = spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'guard.mjs')], {
-      input: JSON.stringify({ session_id: `corpus-${c.id}`, cwd: box, tool_name: c.tool, tool_input: c.input || {} }), encoding: 'utf8',
-      env: { ...process.env, SERIO_OS_DIR: box },
-      });
-      if (run.error || run.status !== 0) throw new Error(`guard execution failed: ${c.id}`);
-      return { id: c.id, block: c.want === 'block', held: /"permissionDecision":"deny"/.test(run.stdout) };
-    });
-  rmSync(box, { recursive: true, force: true });
-  const n = (block, held) => rows.filter((row) => row.block === block && row.held === held).length;
-  const pct = (part, whole) => (whole ? Math.round((100 * part) / whole) : 0);
-  return {
-    cases: rows.length,
-    gaps: corpus.length - rows.length,
-    recall: pct(n(true, true), n(true, true) + n(true, false)),
-    fpRate: pct(n(false, true), n(false, true) + n(false, false)),
-    misses: rows.filter((row) => row.block !== row.held).map((row) => row.id),
-  };
-}
 
 export function inventory(root = REPO) {
   const plugin = path.join(root, 'plugins', 'serio-focus');

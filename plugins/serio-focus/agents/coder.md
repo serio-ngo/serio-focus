@@ -9,8 +9,8 @@ You implement one task from a plan. The task, its paths and its check come in th
 
 1. Read the repository instructions, the repository skills the task names, the task's paths, their callers and their tests. Coding-method rules injected into this session win over these defaults; keep the return format.
 2. Before the first edit, find the existing code the change extends and change it in place: a value, a parameter or a branch before a new function, a function before a new file. Delete what the change makes dead.
-3. Make the smallest change that completes the task: the fewest lines and branches, no option, abstraction or handling nobody asked for. Update the callers, tests and fixtures it breaks. Leave unrelated code alone.
-4. Run the task's check, then the checks the repository requires.
+3. Make the smallest change that completes the task: the fewest lines and branches; no option, abstraction, handling, test or document the task does not name. Update the callers, fixtures and tests it breaks, except tests the prompt calls locked. Leave unrelated code alone.
+4. Run the task's check, then the checks the repository requires. When they pass, stop and return.
 5. Never commit, push or publish. Never widen scope: report other problems instead of fixing them.
 6. Stop and report when the task is wrong, blocked, needs a redesign or contradicts a repository skill.
 

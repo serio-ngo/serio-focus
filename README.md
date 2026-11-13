@@ -7,76 +7,53 @@
 
 # serio-focus
 
-**Four specialist agents take a change from plan to pull request. Short replies, built for neurodivergent focus.**
-
-architect · tester · coder · reviewer · a guard that stops sends and deletes git cannot undo once
+**An AI dev lifecycle for Claude Code: a spec, locked tests, code and fixes by four role agents, with three human gates.**
 
 [![version](https://img.shields.io/github/package-json/v/serio-ngo/serio-focus?label=version&color=1f6feb)](plugins/serio-focus/.claude-plugin/plugin.json)
 [![verify](https://github.com/serio-ngo/serio-focus/actions/workflows/verify.yml/badge.svg)](https://github.com/serio-ngo/serio-focus/actions/workflows/verify.yml)
 [![license](https://img.shields.io/github/license/serio-ngo/serio-focus?color=1f6feb)](LICENSE)
 
-<!-- serio-demo -->
-<img src="docs/demo.svg" width="864" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · gh issue create -t drop-widget → OUTWARD: &quot;gh issue create -t drop-widget&quot; files an issue. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · SERIO FOCUS · 2 holds written to the audit log">
-<!-- /serio-demo -->
-
-<sub>[Agents](#agents) · [Install](#install) · [Safety net](#safety-net) · [Workflow](docs/WORKFLOW.md) · [Contributing](CONTRIBUTING.md)</sub>
-
 </div>
 
-## Agents
+## One task
 
-| Agent | Does | Returns |
+| Step | Who | Does |
 |---|---|---|
-| `architect` | Reads the code a goal touches and commits to the smallest approach. Edits nothing. | Plan: tasks, paths, a check per task, risks |
-| `tester` | Writes one failing test through a public boundary, only when behaviour changes and the repository has tests. | Test path and its failing line |
-| `coder` | Builds one planned task in a fresh context and runs the checks. Never commits. | Changed lines, check output, what was not done |
-| `reviewer` | Reviews a diff in a fresh context. Edits nothing. | P0–P2 findings at `file:line`, verdict `ready` or `changes needed` |
+| 1 | you | Write the spec as an issue |
+| 2 | agent | `spec-review`: a verdict, questions and criteria `AC1…ACn` |
+| 3 | you | Label the issue `spec-ok` |
+| 4 | agent | `write-tests`: the repository skill and one failing test per criterion, as a draft pull request |
+| 5 | you | Submit a review that starts with `tests-ok`: it locks the tests and the skill |
+| 6 | agent | `deliver`: code until the locked tests pass, a fresh-context review, the pull request marked ready |
+| 7 | script | The test lock and the acceptance report: one row per criterion |
+| 8 | you | Approve and merge |
 
-| Skill | Run | Does |
-|---|---|---|
-| `deliver` | `/serio-focus:deliver <goal>` · Codex `$deliver` | Plan → red test → build → review → commit, push, pull request |
-| `pr-loop` | `/serio-focus:pr-loop <PR>` · Codex `$pr-loop` | Clears failing checks and review threads until the head is clean |
+Scripts route, lock, report and publish; models only write. Every run leaves a note on the task, and the next run starts from one brief built from those notes. Roles, hand-offs and caps: [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
-## Replies
+## Use
 
-Every session starts with reply rules for a neurodivergent reader: result first, short bullets each with its why, one recommended action with its exact command.
-Warnings and irreversible steps stay in full sentences.
-
-## Safety net
-
-| Call | What happens |
+| For | Run |
 |---|---|
-| `git commit` | Runs: git can undo it |
-| `gh issue create`, other MCP send, reply, forward, post, publish, schedule, share, submit, invite or respond (drafts run) | Denied once with a short note; the same call retried within 10 minutes runs and is audited as `retry` |
-| Email sending, including sending a saved draft | Denied on every attempt; no retry bypass |
-| Subagent call without model and effort | Held |
-| Delete of tracked, clean files, a temp path or an ignored build folder | Runs: git or a rebuild restores it |
-| Delete of untracked, modified or outside-repo data; `git reset --hard`; `git clean -f` | Denied once, the same in every permission mode and in Codex; the same call retried runs |
-| More than 4 direct subagent starts in 60 s | The next one waits for the next wave (`SERIO_MAX_PER_WAVE`, `SERIO_WAVE_MS`) |
-| Every hold | One line in `audit/YYYY-MM.jsonl`, without the command text |
-| Every Claude turn end | One `session` line in the same file: project, branch, title, API calls, tokens, edited files; read from the transcript, no agent action |
+| Any change, by hand | `/serio-focus:deliver <goal>`, then `/serio-focus:pr-loop <PR>` |
+| One stage of a task, by hand | `/serio-focus:spec-review <issue>` · `/serio-focus:write-tests <issue>` · `/serio-focus:deliver task issue #<N> on pull request #<PR>` · `/serio-focus:gate <PR>` |
+| Unattended, in GitHub Actions | Start from [lifecycle-sandbox](https://github.com/serio-ngo/lifecycle-sandbox): its two workflows call `lifecycle-agent.yml` and `lifecycle-gate.yml` of this repository |
 
-When you specifically request a held action, the AI retries the identical call through the action-scoped bypass. Existing specific authorization is enough; you do not need to approve it again or run the command manually. This bypass never overrides project prohibitions or native permissions.
+Agents: `architect` plans and edits nothing, `tester` writes one failing test per behaviour, `coder` builds one task per dispatch, `reviewer` reviews the diff in a fresh context. The main session orchestrates on the model you chose and names a cheaper model for every agent.
 
-The guard is a seatbelt, not a sandbox: [SECURITY.md](SECURITY.md).
+Every session also starts with reply rules for a neurodivergent reader: the result first, short bullets, one recommended action.
 
 ## Install
 
-1. `git clone https://github.com/serio-ngo/serio-focus.git && cd serio-focus`
-   You should see `Cloning into 'serio-focus'`.
-2. `npm run setup -- --host claude`, or `--host codex`
-   You should see `Installed. Review and trust the hooks in the native host, then start a fresh session.`
-3. Restart the host, then `npm run doctor -- --host claude`, or `--host codex`
-   You should see every check answer `yes`.
+In Claude Code: `/plugin marketplace add serio-ngo/serio-focus`, then `/plugin install serio-focus@serio-ngo`, and restart.
 
-Without a checkout, in Claude Code: `/plugin marketplace add serio-ngo/serio-focus`, then `/plugin install serio-focus@serio-ngo` and restart.
+From a checkout, also for Codex: `npm run setup -- --host claude` or `--host codex`, then `npm run doctor -- --host claude`.
 
-In Codex, setup also writes the four agents to `~/.codex/agents/`; open `/hooks` and trust the three Serio hooks after every update. After `git pull`, `claude plugin update serio-focus@serio-ngo` loads the new version in Claude Code. Never copy the checkout into the plugin cache by hand.
+No API key is needed: a run uses the developer's own Claude login, or their token from `claude setup-token` in Actions.
 
 <div align="center">
 <sub>
 
-[CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [docs/WORKFLOW.md](docs/WORKFLOW.md) · [docs/BENCHMARK.md](docs/BENCHMARK.md) · [docs/MANIFEST.md](docs/MANIFEST.md) · [Apache-2.0](LICENSE) · Built by [Serio NGO](https://serio.org.pl)
+[CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [docs/WORKFLOW.md](docs/WORKFLOW.md) · [docs/MANIFEST.md](docs/MANIFEST.md) · [Apache-2.0](LICENSE) · Built by [Serio NGO](https://serio.org.pl)
 
 </sub>
 </div>

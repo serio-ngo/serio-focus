@@ -15,12 +15,15 @@ export const person = (user) => user?.type === 'User';
 export const owners = (text) => new Set([...String(text || '').replace(/#.*$/gm, '').matchAll(/(?<=\s)@([A-Za-z0-9-]+)(?![A-Za-z0-9/-])/g)].map((m) => m[1].toLowerCase()));
 export const ownersOf = (repo) => owners(['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'].map((file) => raw(`repos/${repo}/contents/${file}`)).find(Boolean));
 export const owns = (user, own) => person(user) && own.has(user.login.toLowerCase());
-const robot = (user) => user?.login === 'github-actions[bot]' && user.type === 'Bot';
+export const robot = (user) => user?.login === 'github-actions[bot]' && user.type === 'Bot';
 
 export const specSha = (issue) => createHash('sha256').update(`${issue.title}\n${String(issue.body || '').replace(/\r\n/g, '\n')}`).digest('hex').slice(0, 12);
-export const specMarker = (comments, own) => comments.filter((c) => (robot(c.user) || owns(c.user, own)) && c.created_at === c.updated_at)
-  .map((c) => /<!-- spec-review v1 sha=([0-9a-f]{12}) verdict=(ready|questions) ac=([\d,]*) -->/.exec(c.body || '')).filter(Boolean)
-  .map(([, sha, verdict, ac]) => ({ sha, verdict, ac: ac.split(',').filter(Boolean).map(Number) })).at(-1);
+const SPEC = /<!-- spec-review v1 sha=([0-9a-f]{12}) verdict=(ready|questions) ac=([\d,]*) -->/;
+export const specComment = (comments, own) => comments.filter((c) => (robot(c.user) || owns(c.user, own)) && c.created_at === c.updated_at && SPEC.test(c.body || '')).at(-1);
+export const specMarker = (comments, own) => {
+  const m = SPEC.exec(specComment(comments, own)?.body || '');
+  return m ? { sha: m[1], verdict: m[2], ac: m[3].split(',').filter(Boolean).map(Number) } : undefined;
+};
 export const fixMarkers = (comments) => comments.filter((c) => robot(c.user))
   .map((c) => /<!-- fix-ci v1 run=(\d+) attempt=(\d+) sha=[0-9a-f]+ -->/.exec(c.body || '')).filter(Boolean)
   .map(([, run, attempt]) => ({ run: Number(run), attempt: Number(attempt) }));
