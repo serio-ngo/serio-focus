@@ -8,7 +8,7 @@ const GIT = String.raw`^(?:\S*[/\\])?git(?:\.exe)?\b(?:\s+(?:-[Cc]\s+(?:"[^"]*"|
 const git = (tail) => new RegExp(GIT + tail, 'i');
 
 const OUTWARD = /^gh(?:\.exe)?\s+issue\s+create\b/i;
-const GIT_WIPE = git(String.raw`(?:clean\b[^\n]*\s(?:-[A-Za-z]*[fdx]|--force\b)|reset\b[^\n]*--hard\b|push\b[^\n]*\s(?:--force|-f\b|--delete\b|-d\b|--mirror\b|[+:]\S))`);
+const GIT_WIPE = git(String.raw`(?:clean\b[^\n]*\s(?:-[A-Za-z]*[fdx]|--force\b)|reset\b[^\n]*--hard\b|push\b[^\n]*\s(?:--force|-f\b|--delete\b|-d\b|--mirror\b|--prune\b|[+:]\S))`);
 const RM_RECURSIVE = /^(?:\S*[/\\])?rm(?:\.exe)?\b[^\n]*\s-(?:[A-Za-z]*[rR]|-recursive\b)/;
 const REMOVE_ITEM_RECURSE = /^(?:(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b[^\n]*\s-r[a-z]*\b|(?:rmdir|rd|del|erase)\b[^\n]*\s\/s\b|(?:ri|rd)\b)/i;
 

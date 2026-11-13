@@ -74,3 +74,4 @@
 {"id":"git-powershell-backslash-substitution","category":"git","tool":"PowerShell","input":{"command":"Write-Output \"\\$(git reset --hard)\""},"want":"block","origin":"regression","note":"PowerShell backslashes do not escape command substitution"}
 {"id":"git-bash-powershell-path-separator","category":"git","tool":"Bash","input":{"command":"powershell -Command 'Write-Output C:\\; git reset --hard'"},"want":"block","origin":"regression","note":"nested PowerShell retains its command separator semantics"}
 {"id":"git-bash-pwsh-backslash-substitution","category":"git","tool":"Bash","input":{"command":"pwsh -Command 'Write-Output \"\\$(git reset --hard)\"'"},"want":"block","origin":"regression","note":"nested PowerShell retains its command substitution semantics"}
+{"id":"git-d04","category":"git","tool":"Bash","input":{"command":"git push --prune origin"},"want":"block","origin":"regression","note":"a pruning push deletes remote branches"}
