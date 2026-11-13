@@ -13,7 +13,7 @@ body:
       description: Tool name and input, verbatim — the command line, file path or connector action.
       placeholder: |
         tool: Bash
-        input: { "command": "git push --dry-run origin main" }
+        input: { "command": "git status --short" }
       render: text
     validations:
       required: true

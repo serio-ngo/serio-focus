@@ -211,8 +211,8 @@ function doctor(args = {}) {
   const pre = (tool_name, tool_input) => ({ hook_event_name: 'PreToolUse', session_id: session(), cwd: probe, tool_name, tool_input });
   const shell = (command) => at(PLUGIN, 'guard.mjs', pre('Bash', { command }));
 
-  check('push stops once, commit runs',
-    held(shell('git push origin main')) && !held(shell('git commit -m x')),
+  check('issue filing stops once, commit and push run',
+    held(shell('gh issue create -t x')) && !held(shell('git commit -m x')) && !held(shell('git push origin main')),
     'deterministic script probe; native hook trust and invocation are separate');
   check('git wipes and deletes git cannot restore are held',
     ['rm -rf ~/serio-doctor-probe', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),

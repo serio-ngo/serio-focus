@@ -7,10 +7,6 @@ on:
         description: serio-focus ref that holds the trusted scripts
         type: string
         default: main
-      models:
-        description: Ignored. The main session is the orchestrator; it names a model for each subagent it starts
-        type: string
-        default: "{}"
       orchestrator:
         description: Model of the main session of every stage; empty keeps the host default
         type: string
@@ -61,7 +57,7 @@ jobs:
         run: node plugins/serio-focus/scripts/lifecycle/route.mjs
 
   agent:
-    name: ${{ needs.route.outputs.stage }}
+    name: ${{ needs.route.outputs.stage || 'agent' }}
     needs: route
     if: needs.route.outputs.stage != ''
     runs-on: ubuntu-latest
@@ -119,7 +115,7 @@ jobs:
           TURNS: ${{ needs.route.outputs.turns }}
           MODEL: ${{ inputs.orchestrator }}
           SCHEMA: '{"type":"object","required":["verdict","criteria","questions","note"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}},"note":{"type":"string"}}}'
-          WRITE: Read,Glob,Grep,Edit,Write,Agent,Task,Skill,Bash
+          WRITE: Read,Glob,Grep,Edit,Write,Agent,Skill,Bash
           NOTE: "End your last message with one line that starts with Note: and holds at most 2 sentences in plain words: what this step did, and the one thing the person must know."
         run: |
           tools="$WRITE"; extra="--append-system-prompt \"$NOTE\""; model=""

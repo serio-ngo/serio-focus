@@ -63,7 +63,7 @@ function probe() {
     ['tester · red: widget test fails as expected'],
     ['coder · Bash · rm -rf src/old-widget', ''],
     ['reviewer · verdict ready'],
-    ['Bash · git push -u origin feat/drop-widget', 'deny'],
+    ['Bash · gh issue create -t drop-widget', 'deny'],
     ['Bash · rm -rf ~/notes', 'deny'],
   ].map(([label, want]) => {
     if (want === undefined) return { label };
@@ -74,7 +74,7 @@ function probe() {
   const answer = [
     'Shipped: old widget removed, PR open.',
     '- src/old-widget deleted — tracked, git can restore it',
-    '- push stopped once — runs only on your exact request',
+    '- issue filing stopped once — runs only on your exact request',
     'Next: say "rm -rf ~/notes" to allow it — outside the repo, no undo.',
   ];
   const holds = readdirSync(path.join(root, 'audit')).reduce((n, name) => n + readFileSync(path.join(root, 'audit', name), 'utf8').trim().split('\n').length, 0);

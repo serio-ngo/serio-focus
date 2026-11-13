@@ -9,14 +9,14 @@
 
 **Four specialist agents take a change from plan to pull request. Short replies, built for neurodivergent focus.**
 
-architect · tester · coder · reviewer · a guard that stops pushes, sends and deletes git cannot undo once
+architect · tester · coder · reviewer · a guard that stops sends and deletes git cannot undo once
 
 [![version](https://img.shields.io/github/package-json/v/serio-ngo/serio-focus?label=version&color=1f6feb)](plugins/serio-focus/.claude-plugin/plugin.json)
 [![verify](https://github.com/serio-ngo/serio-focus/actions/workflows/verify.yml/badge.svg)](https://github.com/serio-ngo/serio-focus/actions/workflows/verify.yml)
 [![license](https://img.shields.io/github/license/serio-ngo/serio-focus?color=1f6feb)](LICENSE)
 
 <!-- serio-demo -->
-<img src="docs/demo.svg" width="864" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · git push -u origin feat/drop-widget → OUTWARD: &quot;git push -u origin feat/drop-widget&quot; pushes, files an issue or opens a worktree. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · SERIO FOCUS · 2 holds written to the audit log">
+<img src="docs/demo.svg" width="864" alt="serio-focus session: architect · plan: 2 tasks, each with its check · tester · red: widget test fails as expected · coder · Bash · rm -rf src/old-widget ✓ · reviewer · verdict ready · Bash · gh issue create -t drop-widget → OUTWARD: &quot;gh issue create -t drop-widget&quot; files an issue. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · Bash · rm -rf ~/notes → DELETE: &quot;rm -rf ~/notes&quot; removes data git cannot restore. Held: give the user the exact command. Retry the same call only if the user asked for exactly this · SERIO FOCUS · 2 holds written to the audit log">
 <!-- /serio-demo -->
 
 <sub>[Agents](#agents) · [Install](#install) · [Safety net](#safety-net) · [Workflow](docs/WORKFLOW.md) · [Contributing](CONTRIBUTING.md)</sub>
@@ -47,7 +47,7 @@ Warnings and irreversible steps stay in full sentences.
 | Call | What happens |
 |---|---|
 | `git commit` | Runs: git can undo it |
-| `git worktree add`, `EnterWorktree`, `gh issue create`, other MCP send, reply, forward, post, publish, schedule, share, submit, invite or respond (drafts run) | Denied once with a short note; the same call retried within 10 minutes runs and is audited as `retry` |
+| `gh issue create`, other MCP send, reply, forward, post, publish, schedule, share, submit, invite or respond (drafts run) | Denied once with a short note; the same call retried within 10 minutes runs and is audited as `retry` |
 | Email sending, including sending a saved draft | Denied on every attempt; no retry bypass |
 | Subagent call without model and effort | Held |
 | Delete of tracked, clean files, a temp path or an ignored build folder | Runs: git or a rebuild restores it |

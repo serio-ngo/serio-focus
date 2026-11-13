@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 1.32.0 | 2026-11-13 | Pushes and worktrees run, force and delete pushes stop once; fit-first coding rules; the repository skill is the specification; one model and effort table for agents; a step note on every lifecycle run; npm run verify |
 | 1.31.0 | 2026-11-12 | Repository skills are written and locked with the tests; lifecycle runs allow every shell form and log the full transcript; a pushed retry clears needs-human on the pull request; people merge through an exempt ruleset entry |
 | 1.30.0 | 2026-11-11 | One lifecycle flow for manual and automatic runs; push stops once again locally; lifecycle workflows default to main, accept a SHA and keep the host model |
 | 1.29.0 | 2026-11-01 | Preserve native permissions and owned Codex roles; make upkeep checks read-only; deny repeated email sends; fix shell substitution and PowerShell guard bypasses |

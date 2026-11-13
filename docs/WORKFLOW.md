@@ -6,7 +6,7 @@
 
 | Role | Runs as | Writes | Returns |
 |---|---|---|---|
-| Orchestrator | The main session running `deliver`, then `pr-loop` | the plan and the evidence | Status to the owner |
+| Orchestrator | The main session running `deliver`, then `pr-loop`; it names each agent's model and effort from the table in `deliver` | the plan and the evidence | Status to the owner |
 | Architect | `architect`: Read, Grep and Glob only in Claude; canonical role instructions and parent permissions in Codex | nothing | One plan: tasks, paths, acceptance commands, risks |
 | Coder | `coder` agent, one task per dispatch, fresh context | code and tests, never commits | Changed lines, check output, what was not done |
 | Reviewer | `reviewer`: read-only instructions; Bash remains available; Codex inherits parent permissions | nothing | P0–P2 findings at `file:line`, verdict `ready` or `changes needed` |
@@ -25,7 +25,7 @@ Spec review, Tests and Gate apply only to an issue that is a task spec. Auto sta
 | 4. Red | Tester | One failing test when the task changes behaviour; skipped when repository test rules forbid it or the tests are locked | as step 3 | as step 3 | Failing line |
 | 5. Build | Coder | One task per dispatch; disjoint paths may run in parallel; locked tests are never edited | as step 3 | as step 3 | Green task checks |
 | 6. Review | Reviewer | Review each task's diff; the coder fixes every P0 and P1; three rounds per finding at most | as step 3 | as step 3 | Verdict `ready` |
-| 7. Publish | Orchestrator | Commit, push, open the pull request; on a task branch also the card in the body and ready; repository rules or permissions may hold a step | as step 3 | as step 3 | PR URL and head SHA |
+| 7. Publish | Orchestrator | Commit, push, open the pull request; on a task branch also the card in the body and ready | as step 3 | as step 3 | PR URL and head SHA |
 | 8. Gate | Script | Test lock and acceptance report from JUnit results | `/serio-focus:gate <PR>` | `lifecycle-gate.yml` on the pull request | `test lock: pass`; one report row per criterion |
 | 9. PR review | CI and Codex review | Required checks run; Codex reviews on open and on push; comment `@codex review` when a head has none | Open the pull request | Pull request events | Checks and a review that name the head |
 | 10. Fix | Orchestrator with `pr-loop` | Verify each finding on the head; coder fixes, reviewer re-checks, publish, request re-review | `/serio-focus:pr-loop <PR>` | After the lock: a code owner `changes_requested` review or a failed CI run: stage `pr-loop`, one round; CI parks after 2 fix runs | Next head; repeat from step 9 |
@@ -51,7 +51,7 @@ Spec review, Tests and Gate apply only to an issue that is a task spec. Auto sta
 | Second model | Codex review on the PR | A different model family finds different faults |
 | Fix location | The session that owns the branch: local, or the `pr-loop` stage of `lifecycle-agent.yml` | Hooks and the real checks run there; the seat token is a secret of the target repository |
 | Cloud fixes | Opt in per PR | Cloud sessions run without local hooks |
-| Pushes | The session, unless repository rules hold them | Cloud and local sessions finish the loop without a manual step |
+| Pushes | The session | Cloud and local sessions finish the loop without a manual step |
 | Merge | Owner, with auto-merge off by default | Merge authority stays with a person |
 | TDD | `write-tests` for a task spec, with the repository skill written and locked with the tests by `tests-ok`; `tester` otherwise, optional | Locked tests make Red a skip; repository test rules decide the rest |
 

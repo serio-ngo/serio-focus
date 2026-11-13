@@ -47,7 +47,7 @@ function judge(payload) {
   if (tool === 'Workflow' && bareFlow(input)) missing.push('model', 'effort');
   if (missing.length) throw new Blocked(`MODEL CHOICE: name ${missing.join(' and ')} in the subagent call`);
   if (SPAWN_TOOLS.includes(tool)) fanOutCap(payload);
-  if (tool === 'EnterWorktree' || tool.startsWith('mcp__')) throw new Blocked(`OUTWARD: "${tool}" sends, publishes or opens a worktree`,
+  if (tool.startsWith('mcp__')) throw new Blocked(`OUTWARD: "${tool}" sends or publishes`,
     !/(?:^|[_-])(?:gmail|outlook|email|mail)(?:[_-]|$)/i.test(tool) || !/(?:^|[_-])(?:send|reply|forward)(?:[_-]|$)/i.test(tool));
   if ((tool !== 'Bash' && tool !== 'PowerShell') || process.env.SERIO_UNATTENDED === '1') return;
   if (typeof (input.command ?? '') !== 'string') throw new Blocked('BLOCKED: shell command must be a string');
