@@ -8,7 +8,7 @@ const clean = (s, max) => typeof s === 'string' && s.trim().length > 0 && s.leng
 const line = (s) => s.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim();
 const tidy = (s) => line(s).replace(/[<>*`]/g, '');
 export const why = (reason) => (clean(reason, 300) ? ` The agent said: ${tidy(reason)}` : '');
-export const note = (text, stage, run) => { const t = String(text || '').slice(0, 280); return clean(t, 280) ? `Note (${stage}): ${tidy(t)}\n\n<!-- step-note stage=${stage} run=${run} -->` : null; };
+export const note = (text, stage, run) => { const t = String(text || `The ${stage} run ended without a note.`).slice(0, 280); return clean(t, 280) ? `Note (${stage}): ${tidy(t)}\n\n<!-- step-note stage=${stage} run=${run} -->` : null; };
 const say = (text, target) => { const body = note(text, process.env.STAGE, process.env.GITHUB_RUN_ID); if (body) try { send('POST', `repos/${flag('--repo') || repoOf()}/issues/${target}/comments`, { body }); } catch { } };
 
 export function comment(out, sha) {
@@ -44,7 +44,7 @@ function selfTest() {
   assert.equal(why('x <!-- spec-review v1 sha=000000000000 verdict=ready ac=1 -->'), '');
   assert.equal(why('**Held:** the push was `blocked`'), ' The agent said: Held: the push was blocked');
   assert.equal(note('Wrote 3 tests.', 'write-tests', 42), 'Note (write-tests): Wrote 3 tests.\n\n<!-- step-note stage=write-tests run=42 -->');
-  assert.equal(note('', 'deliver', 1), null);
+  assert.equal(note('', 'deliver', 1), 'Note (deliver): The deliver run ended without a note.\n\n<!-- step-note stage=deliver run=1 -->');
   assert.equal(note('x <!-- spec-review v1 -->', 'deliver', 1), null);
   console.log(`publish self-test: ${bad.length + 7} checks passed`);
 }
