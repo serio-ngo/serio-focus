@@ -1,15 +1,7 @@
 #!/usr/bin/env node
-import { createHash } from 'node:crypto';
-import { closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs';
-import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { append, entry } from './audit.mjs';
-import { Blocked } from './lib/blocked.mjs';
-import { fanOutCap } from './lib/fan-out.mjs';
-import { rootOf, sessionOf, waveDir } from './lib/runtime.mjs';
-import { judgeShell } from './lib/shell-danger.mjs';
 
-export const SPAWN_TOOLS = ['Agent', 'spawn_agent'];
 const WRITERS = /^(?:Write|Edit|MultiEdit|NotebookEdit)$/;
 const CHOICE = { Agent: ['model', 'effort'], spawn_agent: ['model', 'reasoning_effort'], Workflow: [] };
 const scriptOf = (input) => { try { return input.script ?? (input.scriptPath == null ? '' : readFileSync(input.scriptPath, 'utf8')); } catch { return 'agent('; } };
@@ -36,52 +28,33 @@ function bareFlow(input) {
   });
 }
 
+const MAIL = /(?:^|[_-])(?:gmail|outlook|email|mail)(?:[_-]|$)/i;
+const VERB = /(?:^|[_-])(?:send|reply|forward)(?:[_-]|$)/i;
+const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: {
+  hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason,
+} }));
+
 function judge(payload) {
   const tool = String(payload.tool_name || '');
   const input = payload.tool_input || {};
   if (WRITERS.test(tool)) {
-    if (process.env.SERIO_ORCHESTRATE === '1' && !payload.agent_id) throw new Blocked('ORCHESTRATE: the main session plans and dispatches. Send this edit to the tester or coder agent');
+    if (process.env.SERIO_ORCHESTRATE === '1' && !payload.agent_id) return 'ORCHESTRATE: the main session plans and dispatches. Send this edit to the tester or coder agent';
     return;
   }
   const missing = (CHOICE[tool] || []).filter((key) => !String(input[key] ?? '').trim());
   if (tool === 'Workflow' && bareFlow(input)) missing.push('model', 'effort');
-  if (missing.length) throw new Blocked(`MODEL CHOICE: name ${missing.join(' and ')} in the subagent call`);
-  if (SPAWN_TOOLS.includes(tool)) fanOutCap(payload);
-  if (tool.startsWith('mcp__')) throw new Blocked(`OUTWARD: "${tool}" sends or publishes`,
-    !/(?:^|[_-])(?:gmail|outlook|email|mail)(?:[_-]|$)/i.test(tool) || !/(?:^|[_-])(?:send|reply|forward)(?:[_-]|$)/i.test(tool));
-  if ((tool !== 'Bash' && tool !== 'PowerShell') || process.env.SERIO_UNATTENDED === '1') return;
-  if (typeof (input.command ?? '') !== 'string') throw new Blocked('BLOCKED: shell command must be a string');
-  const verdict = judgeShell(input.command || '', 0, payload.cwd, tool);
-  if (verdict) throw new Blocked(verdict, true);
-}
-
-function firstTry(payload) {
-  const dir = waveDir(rootOf(), sessionOf(payload));
-  const mark = path.join(dir, `held-${createHash('sha256').update(JSON.stringify([payload.cwd, payload.agent_id, payload.tool_name, payload.tool_input])).digest('hex').slice(0, 16)}`);
-  try { mkdirSync(dir, { recursive: true }); closeSync(openSync(mark, 'wx')); return true; } catch (error) { if (error.code !== 'EEXIST') return true; }
-  try {
-    if (Date.now() - statSync(mark).mtimeMs > 6e5) { utimesSync(mark, new Date(), new Date()); return true; }
-    rmSync(mark);
-  } catch { }
-  return false;
-}
-
-function hold(payload, error) {
-  if (!(error instanceof Blocked)) throw error;
-  const stop = !error.held || firstTry(payload);
-  const reason = error.held ? `${error.message}. Held: give the user the exact command. Retry the same call only if the user asked for exactly this` : error.message;
-  append(rootOf(), entry(payload, reason, stop ? 'deny' : 'retry'));
-  if (stop) process.stdout.write(JSON.stringify({ hookSpecificOutput: {
-    hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason,
-  } }));
+  if (missing.length) return `MODEL CHOICE: name ${missing.join(' and ')} in the subagent call`;
+  if (tool.startsWith('mcp__') && MAIL.test(tool) && VERB.test(tool)) return `OUTWARD: "${tool}" sends email`;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const raw = readFileSync(0, 'utf8');
   let payload = null;
   try { payload = JSON.parse(raw); } catch {
-    const tool = /"tool_name"\s*:\s*"([^"]+)"/.exec(raw)?.[1];
-    if (tool) hold({ tool_name: tool }, new Blocked('BLOCKED: tool payload could not be parsed'));
+    if (/"tool_name"\s*:\s*"[^"]+"/.test(raw)) deny('BLOCKED: tool payload could not be parsed');
   }
-  if (payload && typeof payload === 'object') try { judge(payload); } catch (error) { hold(payload, error); }
+  if (payload && typeof payload === 'object') {
+    const reason = judge(payload);
+    if (reason) deny(reason);
+  }
 }

@@ -2,33 +2,35 @@
 import assert from 'node:assert/strict';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { note } from './publish.mjs';
 import { all, fixMarkers, issueOf, lockOf, lockReview, one, owners, ownersOf, owns, park, person, send, specMarker, specSha, testsOk } from '../lib/lifecycle.mjs';
 
 const CAPS = { 'spec-review': [15, 10], 'write-tests': [40, 20], deliver: [80, 40], 'pr-loop': [30, 15] };
 
 export function route(name, ev, s) {
-  const stop = (why) => ({ stop: why });
+  const stop = (why, tell) => ({ stop: why, tell });
   const run = (stage, issue, extra = {}) => {
-    const login = s.issue(issue).assignees?.[0]?.login;
-    return login ? { stage, issue, assignee: login, ...extra } : stop('the issue has no assignee');
+    const tell = extra.pr || issue, login = s.issue(issue).assignees?.[0]?.login;
+    if (!s.guarded) return stop('the default branch has no ruleset that restricts updates', tell);
+    if (!s.own.size) return stop('CODEOWNERS names no person; team owners are not resolved', tell);
+    return login ? { stage, issue, assignee: login, ...extra } : stop('the issue has no assignee', tell);
   };
-  if (!s.guarded) return stop('the default branch has no ruleset that restricts updates');
-  if (!s.own.size) return stop('CODEOWNERS names no person; team owners are not resolved');
   if (name === 'issues' && ev.action === 'labeled') {
     const n = ev.issue.number;
     if (!person(ev.sender) || ev.issue.pull_request) return stop('label is not from a person on an issue');
     if (ev.label?.name === 'spec-review') return run('spec-review', n, { spec: specSha(s.issue(n)) });
     if (ev.label?.name !== 'spec-ok') return stop('label is not routed');
     const mark = specMarker(s.comments(n), s.own);
-    if (mark?.verdict !== 'ready' || mark.sha !== specSha(s.issue(n))) return stop('no ready spec review of the current issue text');
+    if (mark?.verdict !== 'ready' || mark.sha !== specSha(s.issue(n))) return stop('no ready spec review of the current issue text', n);
     return run('write-tests', n);
   }
   if (name === 'pull_request_review' && ev.action === 'submitted') {
     const pr = ev.pull_request, n = issueOf(pr.head.ref);
     if (!n || pr.head.repo?.full_name !== s.repo || pr.state !== 'open') return stop('not an open lifecycle pull request');
+    if (!s.own.size && person(ev.review.user)) return stop('CODEOWNERS names no person; team owners are not resolved', pr.number);
     if (!owns(ev.review.user, s.own)) return stop('review is not from a code owner');
     const at = { pr: pr.number, ref: pr.head.ref, sha: pr.head.sha };
-    if (testsOk(ev.review.body)) return !pr.draft ? stop('tests-ok on a ready pull request') : ev.review.commit_id === pr.head.sha ? run('deliver', n, at) : stop('tests-ok is not on the current head');
+    if (testsOk(ev.review.body)) return !pr.draft ? stop('tests-ok on a ready pull request', pr.number) : ev.review.commit_id === pr.head.sha ? run('deliver', n, at) : stop('tests-ok is not on the current head', pr.number);
     if (ev.review.state !== 'changes_requested') return stop('review is not routed');
     return run(lockOf(s.reviews(pr.number), s.own) ? 'pr-loop' : 'write-tests', n, at);
   }
@@ -95,10 +97,22 @@ function selfTest() {
     ['unknown event', 'push', {}, state(), undefined],
   ];
   for (const [title, name, ev, s, want] of cases) assert.equal(route(name, ev, s).stage, want, title);
+  const tells = [
+    ['no assignee', 'issues', label('spec-review'), state({ issue: () => ({ ...issue, assignees: [] }) }), 7],
+    ['spec-ok after an edit', 'issues', label('spec-ok'), state({ issue: () => ({ ...issue, body: 'AC1 edited' }) }), 7],
+    ['no ruleset', 'issues', label('spec-review'), state({ guarded: false }), 7],
+    ['tests-ok on an old head', 'pull_request_review', review('tests-ok', 'commented', ada, 'h0'), state(), 9],
+    ['tests-ok on a ready pull request', 'pull_request_review', { ...review('tests-ok', 'commented'), pull_request: { ...pr, draft: false } }, state(), 9],
+    ['label from a bot', 'issues', label('spec-ok', app), state(), undefined],
+    ['green CI', 'workflow_run', ci({ conclusion: 'success' }), state(), undefined],
+    ['plain comment review', 'pull_request_review', review('nice', 'commented'), state(), undefined],
+    ['team-only code owners', 'pull_request_review', review('tests-ok', 'commented'), state({ own: owners('* @o/team\n') }), 9],
+  ];
+  for (const [title, name, ev, s, want] of tells) assert.equal(route(name, ev, s).tell, want, title);
   const red = route('workflow_run', ci(), state());
   assert.equal(red.bot, true); assert.match(red.marker, /fix-ci v1 run=5 attempt=1 sha=h1/);
   assert.equal(route('workflow_run', ci(), state({ failures: () => [fail(3), fail(4), fail(5)] })).park, 9);
-  console.log(`route self-test: ${cases.length + 3} checks passed`);
+  console.log(`route self-test: ${cases.length + tells.length + 3} checks passed`);
 }
 
 function main() {
@@ -114,6 +128,7 @@ function main() {
     pulls: (branch) => all(`repos/${repo}/pulls?state=open&head=${repo.split('/')[0]}:${branch}`),
   };
   const r = route(process.env.GITHUB_EVENT_NAME, ev, s);
+  if (r.tell) try { send('POST', `repos/${repo}/issues/${r.tell}/comments`, { body: note(`Not started: ${r.stop}.`, 'route', process.env.GITHUB_RUN_ID) }); } catch { }
   if (r.park) park(repo, r.park, r.stop);
   if (r.marker) send('POST', `repos/${repo}/issues/${r.pr}/comments`, { body: r.marker });
   const [turns, timeout] = CAPS[r.stage] || [0, 1];

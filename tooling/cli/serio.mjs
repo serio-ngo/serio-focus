@@ -4,8 +4,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
-import { figures } from './figures.mjs';
-import { PLUGIN, REPO, block, codexRoles, inventory, manifest, markdown, pluginVersion, readJson, score, table, walk } from './generate.mjs';
+import { PLUGIN, REPO, codexRoles, manifest, markdown, pluginVersion, readJson, walk } from './generate.mjs';
 
 const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const CODEX_AGENTS = path.join(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'agents');
@@ -140,12 +139,6 @@ function upkeep(args = {}) {
   json('package.json', { ...readJson('package.json'), description: plugin.description });
   json('.claude-plugin/marketplace.json', { ...marketplace, description: plugin.description,
     plugins: marketplace.plugins.map((entry) => entry.name === plugin.name ? { ...entry, description: plugin.description } : entry) });
-  const { cases, gaps, recall, fpRate } = score();
-  const { contextTokens } = inventory();
-  pending.set('docs/BENCHMARK.md', block(pending.get('docs/BENCHMARK.md'), '<!-- serio-scores -->', '<!-- /serio-scores -->', table(['Measure', 'Value'], [
-    `| Labelled cases | ${cases} |`, `| Known gaps held out | ${gaps} |`, `| Recall: blocks held | ${recall}% |`, `| False blocks: allows held | ${fpRate}% |`, `| Startup context | ~${contextTokens} tokens |`,
-  ]).split('\n')));
-  row('figures', `${figures(pending)} file(s)`);
   json('plugins/serio-focus/.codex-plugin/plugin.json', {
     name: plugin.name, version: plugin.version, description: plugin.description, skills: './skills/', hooks: './hooks/hooks.json',
     interface: { displayName: plugin.displayName, developerName: plugin.author.name, category: 'Productivity' },
@@ -209,14 +202,10 @@ function doctor(args = {}) {
   });
   const session = () => `doctor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const pre = (tool_name, tool_input) => ({ hook_event_name: 'PreToolUse', session_id: session(), cwd: probe, tool_name, tool_input });
-  const shell = (command) => at(PLUGIN, 'guard.mjs', pre('Bash', { command }));
+  const spawn = (tool_input) => held(at(PLUGIN, 'guard.mjs', pre('Agent', tool_input)));
 
-  check('issue filing stops once, commit and push run',
-    held(shell('gh issue create -t x')) && !held(shell('git commit -m x')) && !held(shell('git push origin main')),
+  check('a subagent call without model and effort is held', spawn({ prompt: 'p' }) && !spawn({ prompt: 'p', model: 'm', effort: 'low' }),
     'deterministic script probe; native hook trust and invocation are separate');
-  check('git wipes and deletes git cannot restore are held',
-    ['rm -rf ~/serio-doctor-probe', 'git clean -fdx', 'git reset --hard HEAD~1'].every((c) => held(shell(c))),
-    'rm -r, clean -fdx, reset --hard');
   check('the checkout card prints', at(PLUGIN, 'card.mjs', {}).stdout.trim().length > 0);
 
   rmSync(probe, { recursive: true, force: true });
@@ -272,7 +261,7 @@ function prove() {
   try {
     if (spawnSync('git', ['-C', REPO, 'archive', '--format=tar', '-o', path.join(box, 'head.tar'), 'HEAD']).status !== 0) throw new Error('cannot archive HEAD');
     if (spawnSync('tar', ['-xf', 'head.tar'], { cwd: box }).status !== 0) throw new Error('cannot unpack HEAD');
-    for (const file of [suite, path.join('tooling', 'corpus', 'guard-corpus.jsonl')]) copyFileSync(path.join(REPO, file), path.join(box, file));
+    copyFileSync(path.join(REPO, suite), path.join(box, suite));
     head = failing(box);
     tree = failing(REPO);
   } finally { rmSync(box, { recursive: true, force: true }); }

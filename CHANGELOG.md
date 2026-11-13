@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 2.0.0 | 2026-11-13 | Lifecycle 2.0: every stage starts from one brief and leaves a note with turns and cost; a trigger that cannot start answers; the acceptance report lists size and gate files; the guard keeps model choice, the unattended edit rule and the mail deny; the shell judge, holds, fan-out hook and guard benchmark are removed |
 | 1.32.1 | 2026-11-13 | A pruning push stops once; a run that ends without a note posts a fallback step note |
 | 1.32.0 | 2026-11-13 | Pushes and worktrees run, force and delete pushes stop once; fit-first coding rules; the repository skill is the specification; one model and effort table for agents; a step note on every lifecycle run; npm run verify |
 | 1.31.0 | 2026-11-12 | Repository skills are written and locked with the tests; lifecycle runs allow every shell form and log the full transcript; a pushed retry clears needs-human on the pull request; people merge through an exempt ruleset entry |

@@ -7,13 +7,14 @@ import { all, flag, one, ownersOf, repoOf, runLink, send, specMarker, taskOf } f
 
 const text = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 const cell = (s) => s.replace(/[|\r\n<>]/g, ' ').slice(0, 120);
+const GATE = /^\.github\/|(^|\/)(?:CODEOWNERS|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig[^/]*\.json|\.[^/]*rc(?:\.[a-z]+)?|[^/]*\.config\.[^/]+)$|(^|\/)(?:scripts?|\.husky)\//;
 
 export const cases = (xml) => [...xml.matchAll(/<testcase\b((?:[^>"]|"[^"]*")*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g)].map(([, attrs, inner = '']) => ({
   name: text(/\bname="([^"]*)"/.exec(attrs)?.[1] || ''),
   result: /<(failure|error)\b/.test(inner) ? 'failed' : /<skipped\b/.test(inner) ? 'skipped' : 'passed',
 }));
 
-export function report({ issue, ac, tests, sha, lock = '', link = '' }) {
+export function report({ issue, ac, tests, sha, lock = '', link = '', files = [], size = '' }) {
   const own = tests.filter((t) => t.name.startsWith(`#${issue} AC`)).map((t) => ({ ...t, name: t.name.slice(`#${issue} `.length) }));
   const rows = ac.map((n) => {
     const mine = own.filter((t) => new RegExp(`^AC${n}\\b`).test(t.name));
@@ -27,6 +28,7 @@ export function report({ issue, ac, tests, sha, lock = '', link = '' }) {
     '| Criterion | Test | Result |', '|---|---|---|',
     ...rows.map((r) => `| AC${r.n} | ${r.names} | ${r.result} |`),
     ...(stray.length ? ['', `Tests without a criterion: ${stray.join('; ')}`] : []),
+    ...(size || files.length ? ['', `Changed: ${size} · gate files: ${files.filter((f) => GATE.test(f)).map((f) => `\`${cell(f)}\``).join(', ') || 'none'}`] : []),
     ...(link ? ['', `Run and e2e traces: ${link}`] : []), '', `<!-- acceptance v1 sha=${sha} -->`,
   ].join('\n');
   return { ok, body };
@@ -37,6 +39,11 @@ function selfTest() {
   const pass = report({ issue: 7, ac: [1, 2], tests: cases(junit), sha: 'abcdef123456' });
   assert.equal(pass.ok, true); assert.match(pass.body, /\| AC2 \| AC2: 2 = {2}"5" \| passed \|/); assert.match(pass.body, /<!-- acceptance v1 sha=abcdef123456 -->/);
   const run = (xml, ac = [1, 2]) => report({ issue: 7, ac, tests: cases(xml), sha: 'abcdef1' });
+  const changed = (files) => report({ issue: 7, ac: [1, 2], tests: cases(junit), sha: 'abcdef1', size: '+3 −1 in 2 files', files }).body;
+  assert.match(changed(['src/a.mjs', '.github/workflows/ci.yml', 'scripts/x.sh']), /\nChanged: \+3 −1 in 2 files · gate files: `\.github\/workflows\/ci\.yml`, `scripts\/x\.sh`\n/);
+  assert.match(changed(['src/a.mjs', 'src/describe.mjs']), /gate files: none\n/);
+  assert.match(changed(['CODEOWNERS', '.eslintrc.json', '.husky/pre-commit', 'tsconfig.json', 'yarn.lock']), /gate files: `CODEOWNERS`, `\.eslintrc\.json`, `\.husky\/pre-commit`, `tsconfig\.json`, `yarn\.lock`\n/);
+  assert.doesNotMatch(changed(['scripts/x\n| AC1 | forged | passed |']), /\n\| AC1 \| forged/);
   const list = [
     ['missing criterion', run(junit, [1, 2, 3]), /\| AC3 \| - \| missing \|/],
     ['skipped test', run(junit.replace('<system-out>x</system-out>', '<skipped/>')), /\| AC2 \| .* \| skipped \|/],
@@ -50,7 +57,7 @@ function selfTest() {
     ['no results', run(''), /\| AC1 \| - \| missing \|/],
   ];
   for (const [title, got, want] of list) { assert.equal(got.ok, false, title); assert.match(got.body, want, title); }
-  console.log(`acceptance self-test: ${list.length + 3} checks passed`);
+  console.log(`acceptance self-test: ${list.length + 5} checks passed`);
 }
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.xml') ? [path.join(dir, e.name)] : []);
@@ -60,9 +67,10 @@ function main() {
   const pr = one(`repos/${repo}/pulls/${number}`), n = taskOf(pr);
   if (!n) return console.log('acceptance: not a lifecycle pull request');
   const ac = specMarker(all(`repos/${repo}/issues/${n}/comments?per_page=100`), ownersOf(repo))?.ac || [];
-  let files = [];
-  try { files = walk(dir); } catch { }
-  const got = report({ issue: n, ac, tests: files.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: pr.head.sha, lock: process.env.LOCK_NOTE, link: process.env.GITHUB_RUN_ID ? runLink() : '' });
+  let xml = [];
+  try { xml = walk(dir); } catch { }
+  const files = all(`repos/${repo}/pulls/${number}/files?per_page=100`).map((f) => f.filename), size = `+${pr.additions} −${pr.deletions} in ${pr.changed_files} files`;
+  const got = report({ issue: n, ac, tests: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: pr.head.sha, lock: process.env.LOCK_NOTE, link: process.env.GITHUB_RUN_ID ? runLink() : '', files, size });
   if (process.argv.includes('--post')) {
     const old = all(`repos/${repo}/issues/${number}/comments?per_page=100`).find((c) => c.user?.login === 'github-actions[bot]' && /<!-- acceptance v1 /.test(c.body || ''));
     if (old) send('PATCH', `repos/${repo}/issues/comments/${old.id}`, { body: got.body });

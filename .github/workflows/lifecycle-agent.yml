@@ -27,6 +27,9 @@ permissions: {}
 jobs:
   route:
     name: route
+    if: >-
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'failure') &&
+      (github.event_name != 'pull_request_review' || github.event.review.state != 'approved' || contains(github.event.review.body, 'tests-ok'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -72,6 +75,7 @@ jobs:
       structured_output: ${{ steps.claude.outputs.structured_output }}
       reason: ${{ steps.trace.outputs.reason }}
       note: ${{ steps.trace.outputs.note }}
+      stats: ${{ steps.trace.outputs.stats }}
     steps:
       - id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
@@ -99,14 +103,20 @@ jobs:
       - name: Install browsers
         if: needs.route.outputs.stage != 'spec-review' && hashFiles('playwright.config.*') != ''
         run: npx playwright install --with-deps chromium
-      - name: Save the spec text
-        if: needs.route.outputs.stage == 'spec-review'
+      - name: Plugin at the pinned ref
+        env:
+          REF: ${{ inputs.focus_ref }}
+        run: |
+          d="$RUNNER_TEMP/serio-focus"; git init -q "$d"
+          git -C "$d" fetch -q --depth 1 https://github.com/serio-ngo/serio-focus.git "$REF"
+          git -C "$d" checkout -q FETCH_HEAD
+      - name: Brief
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ needs.route.outputs.issue }}
         run: |
-          mkdir -p .lifecycle
-          gh issue view "$ISSUE" --json title,body --jq '"# " + .title + "\n\n" + .body' > .lifecycle/issue.md
+          mkdir -p .lifecycle && echo .lifecycle/ >> .git/info/exclude
+          node "$RUNNER_TEMP/serio-focus/plugins/serio-focus/scripts/lifecycle/brief.mjs" "$ISSUE" > .lifecycle/task.md
       - id: args
         env:
           STAGE: ${{ needs.route.outputs.stage }}
@@ -138,14 +148,6 @@ jobs:
           token="$(printf '%s' "$TOKEN" | tr -d '[:space:]')"
           echo "::add-mask::$token"
           echo "token=$token" >> "$GITHUB_OUTPUT"
-      - name: Plugin at the pinned ref
-        if: inputs.plugin_marketplaces == ''
-        env:
-          REF: ${{ inputs.focus_ref }}
-        run: |
-          d="$RUNNER_TEMP/serio-focus"; git init -q "$d"
-          git -C "$d" fetch -q --depth 1 https://github.com/serio-ngo/serio-focus.git "$REF"
-          git -C "$d" checkout -q FETCH_HEAD
       - id: claude
         uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed
         env:
@@ -154,6 +156,8 @@ jobs:
           SERIO_ORCHESTRATE: ${{ needs.route.outputs.stage != 'spec-review' && '1' || '' }}
           # One-shot run: a background subagent outlives the session's last turn (run 43271348109)
           CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+          CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS: "4"
+          CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: "1"
         with:
           claude_code_oauth_token: ${{ steps.seat.outputs.token }}
           github_token: ${{ steps.app.outputs.token }}
@@ -183,7 +187,7 @@ jobs:
           jq -c '.[]' "$LOG" || cat "$LOG"
           echo '::endgroup::'
           echo "reason=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
-          echo "note=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | [splits("\n") | select(test("^Note: "))] | last // "" | sub("^Note: "; "") | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
+          node "$RUNNER_TEMP/serio-focus/plugins/serio-focus/scripts/lifecycle/publish.mjs" --outcome "$LOG" >> "$GITHUB_OUTPUT" || true
 
   publish:
     name: publish
@@ -207,6 +211,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ needs.route.outputs.issue }}
           SPEC_SHA: ${{ needs.route.outputs.spec }}
+          STATS: ${{ needs.agent.outputs.stats }}
           STAGE: ${{ needs.route.outputs.stage }}
           STRUCTURED_OUTPUT: ${{ needs.agent.outputs.structured_output }}
         run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE"
@@ -216,6 +221,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ needs.route.outputs.issue }}
           BEFORE_SHA: ${{ needs.route.outputs.sha }}
+          STATS: ${{ needs.agent.outputs.stats }}
           REASON: ${{ needs.agent.outputs.reason }}
           NOTE: ${{ needs.agent.outputs.note }}
           STAGE: ${{ needs.route.outputs.stage }}
@@ -226,6 +232,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           STAGE: ${{ needs.route.outputs.stage }}
           TARGET: ${{ needs.route.outputs.pr || needs.route.outputs.issue }}
+          STATS: ${{ needs.agent.outputs.stats }}
           REASON: ${{ needs.agent.outputs.reason }}
           NOTE: ${{ needs.agent.outputs.note }}
         run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$TARGET" --failed "$STAGE"
