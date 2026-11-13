@@ -28,7 +28,7 @@ export function route(name, ev, s) {
     if (!n || pr.head.repo?.full_name !== s.repo || pr.state !== 'open') return stop('not an open lifecycle pull request');
     if (!owns(ev.review.user, s.own)) return stop('review is not from a code owner');
     const at = { pr: pr.number, ref: pr.head.ref, sha: pr.head.sha };
-    if (testsOk(ev.review.body)) return ev.review.commit_id === pr.head.sha ? run('deliver', n, at) : stop('tests-ok is not on the current head');
+    if (testsOk(ev.review.body)) return !pr.draft ? stop('tests-ok on a ready pull request') : ev.review.commit_id === pr.head.sha ? run('deliver', n, at) : stop('tests-ok is not on the current head');
     if (ev.review.state !== 'changes_requested') return stop('review is not routed');
     return run(lockOf(s.reviews(pr.number), s.own) ? 'pr-loop' : 'write-tests', n, at);
   }
@@ -57,7 +57,7 @@ function selfTest() {
   const lock = { user: ada, body: 'tests-ok', commit_id: 'h1', state: 'COMMENTED', submitted_at: '2026-01-02' };
   const fail = (id, created_at = '2026-01-03') => ({ id, created_at });
   const fix = (run) => ({ user: actions, body: `<!-- fix-ci v1 run=${run} attempt=1 sha=abc -->` });
-  const pr = { number: 9, state: 'open', head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
+  const pr = { number: 9, state: 'open', draft: true, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
   const state = (over = {}) => ({ repo: 'o/r', guarded: true, failures: () => [], own: owners('* @ada\n'), issue: () => issue, comments: () => [ready], reviews: () => [lock], pulls: () => [pr], ...over });
   const label = (name, sender = ada) => ({ action: 'labeled', label: { name }, sender, issue: { number: 7 } });
   const review = (body, state_, who = ada, commit = 'h1') => ({ action: 'submitted', pull_request: pr, review: { user: who, body, state: state_, commit_id: commit } });
@@ -76,6 +76,8 @@ function selfTest() {
     ['tests-ok from a stranger', 'pull_request_review', review('tests-ok', 'commented', user('eve')), state(), undefined],
     ['changes before the lock', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ reviews: () => [] }), 'write-tests'],
     ['changes after the lock', 'pull_request_review', review('fix AC1', 'changes_requested'), state(), 'pr-loop'],
+    ['tests-ok on a ready pull request', 'pull_request_review', { ...review('tests-ok', 'commented'), pull_request: { ...pr, draft: false } }, state(), undefined],
+    ['changes on a ready pull request', 'pull_request_review', { ...review('fix AC1', 'changes_requested'), pull_request: { ...pr, draft: false } }, state(), 'pr-loop'],
     ['plain comment review', 'pull_request_review', review('nice', 'commented'), state(), undefined],
     ['red CI', 'workflow_run', ci(), state(), 'pr-loop'],
     ['green CI', 'workflow_run', ci({ conclusion: 'success' }), state(), undefined],

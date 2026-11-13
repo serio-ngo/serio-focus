@@ -31,10 +31,12 @@ Return exactly this object and nothing else:
 {
   "verdict": "ready | questions",
   "criteria": [{ "id": 1, "text": "Given …, When …, Then …", "level": "unit | e2e" }],
-  "questions": [{ "question": "…", "recommended": "…" }]
+  "questions": [{ "question": "…", "recommended": "…" }],
+  "note": "…"
 }
 ```
 
+- `note` is at most 2 sentences in plain words: the verdict, and the one thing the person must know.
 - `ready` carries 1 to 5 criteria and no question; `questions` carries 1 to 5 questions.
 - In a local run publish the object: set it as `STRUCTURED_OUTPUT` and run `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/publish.mjs" <N>`. In an automated run the workflow publishes it.
 - The developer answers by editing the issue and asks for the review again; `spec-ok` follows a `ready` verdict.

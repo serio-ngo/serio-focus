@@ -75,6 +75,7 @@ jobs:
     outputs:
       structured_output: ${{ steps.claude.outputs.structured_output }}
       reason: ${{ steps.trace.outputs.reason }}
+      note: ${{ steps.trace.outputs.note }}
     steps:
       - id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
@@ -117,7 +118,7 @@ jobs:
           PR: ${{ needs.route.outputs.pr }}
           TURNS: ${{ needs.route.outputs.turns }}
           MODEL: ${{ inputs.orchestrator }}
-          SCHEMA: '{"type":"object","required":["verdict","criteria","questions"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}}}}'
+          SCHEMA: '{"type":"object","required":["verdict","criteria","questions"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}},"note":{"type":"string"}}}'
           WRITE: Read,Glob,Grep,Edit,Write,Agent,Task,Skill,Bash
         run: |
           tools="$WRITE"; extra=""; model=""
@@ -185,6 +186,7 @@ jobs:
           jq -c '.[]' "$LOG" || cat "$LOG"
           echo '::endgroup::'
           echo "reason=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
+          echo "note=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | [splits("\n") | select(test("^Note: "))] | last // "" | sub("^Note: "; "") | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
 
   publish:
     name: publish
@@ -208,6 +210,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ needs.route.outputs.issue }}
           SPEC_SHA: ${{ needs.route.outputs.spec }}
+          STAGE: ${{ needs.route.outputs.stage }}
           STRUCTURED_OUTPUT: ${{ needs.agent.outputs.structured_output }}
         run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE"
       - name: Park a run without a push
@@ -217,6 +220,8 @@ jobs:
           ISSUE: ${{ needs.route.outputs.issue }}
           BEFORE_SHA: ${{ needs.route.outputs.sha }}
           REASON: ${{ needs.agent.outputs.reason }}
+          NOTE: ${{ needs.agent.outputs.note }}
+          STAGE: ${{ needs.route.outputs.stage }}
         run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE" --pushed
       - name: Park a failed run
         if: needs.agent.result != 'success'
@@ -225,4 +230,5 @@ jobs:
           STAGE: ${{ needs.route.outputs.stage }}
           TARGET: ${{ needs.route.outputs.pr || needs.route.outputs.issue }}
           REASON: ${{ needs.agent.outputs.reason }}
+          NOTE: ${{ needs.agent.outputs.note }}
         run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$TARGET" --failed "$STAGE"
