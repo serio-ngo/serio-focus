@@ -22,7 +22,7 @@ A stage is one skill. By hand a person runs it in Claude Code; unattended, `life
 | `spec-review` | `/serio-focus:spec-review <N>` | A person labels the issue `spec-review` | A review comment: verdict, questions, criteria `AC1…ACn` |
 | `write-tests` | `/serio-focus:write-tests <N>` | A person labels it `spec-ok` and the newest review says `ready` for the current text; or a code owner requests changes before the lock | A draft pull request `agent/<N>-…`: the repository skill, one failing test per criterion |
 | `deliver` | `/serio-focus:deliver task issue #<N> on pull request #<PR>` | A code owner's review starting with `tests-ok` on the head of the draft | Code, green checks, reviewer `ready`, the pull request marked ready |
-| `pr-loop` | `/serio-focus:pr-loop <PR>` | After the lock: a failed CI run on the head (twice at most) or a code owner's change request | One fix round pushed |
+| `pr-loop` | `/serio-focus:pr-loop <PR>` | After the lock: a failed CI run on the head that started after the first `tests-ok` (twice at most) or a code owner's change request | One fix round pushed |
 | `gate` | `/serio-focus:gate <PR>` | `lifecycle-gate.yml` on every push | `test lock: pass`; the acceptance report |
 
 `deliver` and `pr-loop` also work on any change that is not a task: plan, red test, build, review, pull request.

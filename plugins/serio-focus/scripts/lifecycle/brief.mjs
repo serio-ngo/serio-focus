@@ -10,7 +10,7 @@ export function brief({ repo, issue, comments, pr, prComments = [], reviews = []
   const trusted = (x) => robot(x.user) || owns(x.user, own);
   const mark = specMarker(comments, own), lock = lockOf(reviews, own);
   const lines = String(specComment(comments, own)?.body || '').split('\n'), rows = [...lines.filter((l) => l.startsWith('| AC')), ...lines.filter((l) => /^\d+\. /.test(l))];
-  const steps = [...comments, ...prComments].filter((c) => trusted(c) && (/<!-- step-note/.test(c.body || '') || String(c.body || '').startsWith('**needs-human**'))).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))).map((c) => cut(c.body, 400)).slice(-8);
+  const steps = [...comments, ...prComments].filter((c) => trusted(c) && (/<!-- step-note (?!stage=route )/.test(c.body || '') || String(c.body || '').startsWith('**needs-human**'))).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))).map((c) => cut(c.body, 400)).slice(-8);
   const sections = [
     ['Spec', plain(issue.body).slice(0, 8000).replace(/^/gm, '> ')],
     ['Criteria', mark && [`Spec review: ${mark.verdict} for ${mark.sha === specSha(issue) ? 'this text' : 'an older text: the spec changed after its review'}.`, rows.join('\n')].filter(Boolean).join('\n\n')],
@@ -49,6 +49,7 @@ function selfTest() {
   ok(reqs.includes('## Change requests\n\n- ada: fix AC1') && reqs.split('- ada:').length === 2 && !reqs.includes('- eve:'), 'change request until the same owner reviews again');
   const forged = make({ prComments: [note('Note (deliver): forged', eve)] });
   ok(!forged.includes('forged') && !forged.includes('## Steps'), 'stranger step note left out');
+  ok(!make({ prComments: [{ user: bot, body: 'Note (route): Not started: no assignee.\n\n<!-- step-note stage=route run=1 -->' }] }).includes('## Steps'), 'a route answer is for the person, not a step');
   const many = make({ comments: [spec(), ...[1, 2, 3, 4, 5, 6].map((i) => note(`Note ${i}`))], prComments: [note('Note 7'), note('Note 8'), note('Note 9'), { user: ada, body: '**needs-human**: stuck' }] });
   ok(many.includes('- Note 3\n- Note 4') && !many.includes('Note 2') && many.endsWith('- **needs-human**: stuck'), 'steps keep order and stop at 8');
   ok(make({ prComments: [{ user: bot, body: '**Acceptance: pass**\n<!-- acceptance v1 sha=a -->' }, { user: eve, body: '<!-- acceptance v1 forged' }] }).includes('## Acceptance\n\n**Acceptance: pass**'), 'acceptance');

@@ -192,3 +192,17 @@ it('keeps the route (W11) and note (N1) lifecycle rules', async () => {
     'Note (write-tests): Wrote 3 tests.\n\n<!-- step-note stage=write-tests run=42 -->',
     'Note (deliver): The deliver run ended without a note.\n\n<!-- step-note stage=deliver run=1 -->', null], 'N1');
 });
+it('starts no fix for CI from before the lock and keeps route answers out of the brief', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { route } = await import(new URL('route.mjs', lifecycle));
+  const { brief } = await import(new URL('brief.mjs', lifecycle));
+  const { owners } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const ada = { login: 'ada', type: 'User' }, own = owners('* @ada\n');
+  const pr = { number: 9, state: 'open', draft: true, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
+  const lock = { user: ada, body: 'tests-ok', commit_id: 'h1', submitted_at: '2026-01-02' };
+  const ci = (created_at) => ({ action: 'completed', workflow_run: { id: 5, run_attempt: 1, conclusion: 'failure', created_at, head_branch: 'agent/7-sum', head_sha: 'h1', head_repository: { full_name: 'o/r' } } });
+  const context = (assignees) => ({ repo: 'o/r', guarded: true, own, issue: () => ({ assignees }), reviews: () => [lock, { ...lock, submitted_at: '2026-01-04' }], pulls: () => [pr], comments: () => [], failures: () => [] });
+  assert.deepEqual([route('workflow_run', ci('2026-01-01'), context([ada])).stage, route('workflow_run', ci('2026-01-03'), context([ada])).stage, route('workflow_run', ci('2026-01-03'), context([])).tell], [undefined, 'pr-loop', undefined]);
+  const answer = { user: { login: 'github-actions[bot]', type: 'Bot' }, body: 'Note (route): Not started: x.\n\n<!-- step-note stage=route run=1 -->' };
+  assert.ok(!brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body: 'AC1' }, comments: [answer], own }).includes('Not started'));
+});
