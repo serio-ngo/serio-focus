@@ -67,6 +67,7 @@
 | `npm run install:plugin -- --host codex` | Install this checkout through the native host CLI; restart to load |
 | `npm run upkeep` | regenerate `docs/MANIFEST.md`, manifests, the BENCHMARK result block and the demo |
 | `npm run upkeep:check` | Fail when generation changes saved artifacts; allow unrelated existing diffs |
+| `npm run verify` | The checks to run before a push; workflow and Markdown lint run in CI only |
 
 ## Tests
 
@@ -102,5 +103,5 @@ npm run release patch "one-line note"
 |---|---|
 | Setup | `--host claude` by default, `--host codex` for Codex; `npm run sync` merges the `.claude/settings.json` permissions into user settings, only when requested |
 | Reports | [SECURITY.md](SECURITY.md) |
-| Git | Commit runs; push, worktree add, deletes git cannot restore and git wipes are denied once with a note |
-| Connectors | MCP send-like tools and `EnterWorktree` are denied once; drafts run |
+| Git | Commit runs; `gh issue create`, deletes git cannot restore and git wipes are denied once with a note |
+| Connectors | MCP send-like tools are denied once; drafts run |
