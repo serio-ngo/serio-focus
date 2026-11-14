@@ -1,0 +1,40 @@
+name: Spec
+description: One small task for the lifecycle. Every field is required.
+title: "<who gets what>"
+body:
+  - type: textarea
+    id: goal
+    attributes: { label: Goal, description: "One sentence: who gets what." }
+    validations: { required: true }
+  - type: textarea
+    id: where
+    attributes: { label: Where, description: "URL, route or screen, and the element." }
+    validations: { required: true }
+  - type: textarea
+    id: now-wanted
+    attributes: { label: Now and wanted, description: "Today's behaviour; the behaviour after the change." }
+    validations: { required: true }
+  - type: textarea
+    id: criteria
+    attributes: { label: Acceptance criteria, description: "Numbered, at most 5. Each one Given, When, Then with concrete values and its level, unit or e2e. The happy path first." }
+    validations: { required: true }
+  - type: textarea
+    id: edges
+    attributes: { label: States and edges, description: "Empty, loading, error, limits, invalid input: each a criterion or out of scope." }
+    validations: { required: true }
+  - type: textarea
+    id: text
+    attributes: { label: Text shown, description: "Exact wording in the product's language, or \"none\"." }
+    validations: { required: true }
+  - type: textarea
+    id: a11y
+    attributes: { label: Accessibility, description: "Keyboard path and labels for a change a person sees, or \"no visible change\"." }
+    validations: { required: true }
+  - type: textarea
+    id: out
+    attributes: { label: Out of scope, description: "What this task does not touch." }
+    validations: { required: true }
+  - type: textarea
+    id: links
+    attributes: { label: Links, description: "`Fixes serio-ngo/ops#N` when it comes from ops; the `.prd` clause it serves; or \"none\"." }
+    validations: { required: true }

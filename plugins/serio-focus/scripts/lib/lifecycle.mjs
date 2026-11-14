@@ -12,7 +12,7 @@ export const repoOf = () => process.env.GITHUB_REPOSITORY
 export const flag = (name) => { const i = process.argv.indexOf(name); return i < 0 ? '' : process.argv[i + 1] || ''; };
 
 export const person = (user) => user?.type === 'User';
-export const owners = (text) => new Set([...String(text || '').replace(/#.*$/gm, '').matchAll(/(?<=\s)@([A-Za-z0-9-]+)(?![A-Za-z0-9/-])/g)].map((m) => m[1].toLowerCase()));
+export const owners = (text) => new Set([...String(text || '').replace(/#.*$/gm, '').split('\n').filter((line) => /^\s*\*\s/.test(line)).join('\n').matchAll(/(?<=\s)@([A-Za-z0-9-]+)(?![A-Za-z0-9/-])/g)].map((m) => m[1].toLowerCase()));
 export const ownersOf = (repo) => owners(['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'].map((file) => raw(`repos/${repo}/contents/${file}`)).find(Boolean));
 export const owns = (user, own) => person(user) && own.has(user.login.toLowerCase());
 export const robot = (user) => user?.login === 'github-actions[bot]' && user.type === 'Bot';
@@ -28,7 +28,7 @@ export const fixMarkers = (comments) => comments.filter((c) => robot(c.user))
   .map((c) => /<!-- fix-ci v1 run=(\d+) attempt=(\d+) sha=[0-9a-f]+ -->/.exec(c.body || '')).filter(Boolean)
   .map(([, run, attempt]) => ({ run: Number(run), attempt: Number(attempt) }));
 export const testsOk = (body) => /^tests-ok\b/.test(String(body || '').trim());
-export const lockReview = (reviews, own) => reviews.filter((r) => owns(r.user, own) && testsOk(r.body)).at(-1);
+export const lockReview = (reviews, own) => reviews.filter((r) => owns(r.user, own) && testsOk(r.body) && r.state !== 'CHANGES_REQUESTED').at(-1);
 export const lockOf = (reviews, own) => lockReview(reviews, own)?.commit_id;
 export const issueOf = (ref) => Number(/^agent\/(\d+)-[a-z0-9-]+$/.exec(ref || '')?.[1]) || 0;
 export const taskOf = (pr) => pr.head.repo?.full_name === pr.base.repo.full_name ? issueOf(pr.head.ref) : 0;

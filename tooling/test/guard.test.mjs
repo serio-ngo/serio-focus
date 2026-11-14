@@ -186,8 +186,9 @@ it('keeps the route (W11) and note (N1) lifecycle rules', async () => {
   const ada = { login: 'ada', type: 'User' };
   const pr = { number: 9, state: 'open', draft: false, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
   const review = { user: ada, body: 'tests-ok', state: 'commented', commit_id: 'h1' };
-  const context = { repo: 'o/r', guarded: true, own: owners('* @ada\n'), issue: () => ({ assignees: [ada] }) };
+  const context = { repo: 'o/r', guarded: true, own: owners('* @ada\n'), issue: () => ({ assignees: [ada] }), pull: () => pr };
   assert.equal(route('pull_request_review', { action: 'submitted', pull_request: pr, review }, context).stage, undefined, 'W11');
+  assert.equal(route('pull_request_review', { action: 'submitted', pull_request: { ...pr, draft: true }, review }, context).stage, undefined, 'a queued tests-ok routes on the live pull request, not its stale payload');
   assert.deepEqual([note('Wrote 3 tests.', 'write-tests', 42), note('', 'deliver', 1), note('x <!-- spec-review v1 -->', 'deliver', 1)], [
     'Note (write-tests): Wrote 3 tests.\n\n<!-- step-note stage=write-tests run=42 -->',
     'Note (deliver): The deliver run ended without a note.\n\n<!-- step-note stage=deliver run=1 -->', null], 'N1');
@@ -207,4 +208,14 @@ it('starts no fix for CI from before the lock and keeps route answers out of the
   assert.deepEqual([route('workflow_run', ci('2026-01-01'), context([ada])).stage, route('workflow_run', ci('2026-01-03'), context([ada])).stage, route('workflow_run', ci('2026-01-03'), context([])).tell], [undefined, 'pr-loop', undefined]);
   const answer = { user: { login: 'github-actions[bot]', type: 'Bot' }, body: 'Note (route): Not started: x.\n\n<!-- step-note stage=route run=1 -->' };
   assert.ok(!brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body: 'AC1' }, comments: [answer], own }).includes('Not started'));
+});
+it('keeps every write token out of the model job and runs on a private repository without a ruleset', async () => {
+  const { route } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/route.mjs', import.meta.url));
+  const { owners } = await import(new URL('../../plugins/serio-focus/scripts/lib/lifecycle.mjs', import.meta.url));
+  const ada = { login: 'ada', type: 'User' }, label = { action: 'labeled', label: { name: 'spec-review' }, sender: ada, issue: { number: 7 } };
+  const context = (over) => ({ repo: 'o/r', guarded: false, own: owners('* @ada\n'), issue: () => ({ title: 'Sum', body: 'AC1', assignees: [ada] }), ...over });
+  assert.deepEqual([route('issues', label, context({ private: true })).stage, route('issues', label, context({})).stage], ['spec-review', undefined]);
+  const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8'), job = (name) => flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith(`${name}:`));
+  assert.doesNotMatch(job('agent'), /AGENT_APP|steps\.app|contents: write|pull-requests: write|issues: write/);
+  assert.match(job('publish'), /AGENT_APP_KEY[\s\S]+lifecycle\/push\.mjs/);
 });

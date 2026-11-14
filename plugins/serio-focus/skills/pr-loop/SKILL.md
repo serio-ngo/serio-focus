@@ -12,7 +12,7 @@ Bring pull request $ARGUMENTS (default: the current branch) to a clean head. Req
 | 2. Triage | Reproduce each failing check and each finding on the current head, whoever wrote it. Harmful: fix it with the smallest change. Wrong, stale or true but harmless: answer with the evidence and change nothing. Harmful means a concrete case with its cost in time, money or data | One verdict per item |
 | 3. Fix | Dispatch the coder with the finding, its `file:line` and the check that proves the fix. Never edit a locked test or skill path | Diff touches only the cause |
 | 4. Prove | Run the repository's checks as in the Ship step of `deliver`, then the reviewer on this round's diff | Green output; verdict `ready` |
-| 5. Publish | Commit, push, reply to and resolve each thread. On `agent/<N>-…`, refresh the card in the body after the push | Pushed head SHA |
+| 5. Publish | Commit, push, reply to and resolve each thread. On `agent/<N>-…`, refresh the card in the body after the push. When `SERIO_UNATTENDED=1`, commit and write the refreshed card to `.lifecycle/pr.md` instead: the workflow pushes, and the threads stay for the person | Pushed head SHA; unattended, the commit |
 | 6. Re-review | Skip in an unattended run. Otherwise, once checks finish, ask every reviewer whose newest review predates the head to review again: `gh pr edit --add-reviewer <login>` for a person, the trigger the bot documents or used before for a bot | A review whose reviewed commit is the head |
 | 7. Repeat | Return to step 1. After three rounds on the same finding, stop and report it. An unattended run on `agent/<N>-…` does one round, then stops and reports | Round count |
 

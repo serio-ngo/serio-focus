@@ -11,7 +11,7 @@ export function route(name, ev, s) {
   const stop = (why, tell) => ({ stop: why, tell });
   const run = (stage, issue, extra = {}) => {
     const tell = extra.bot ? undefined : extra.pr || issue, login = s.issue(issue).assignees?.[0]?.login;
-    if (!s.guarded) return stop('the default branch has no ruleset that restricts updates', tell);
+    if (!s.guarded && !s.private) return stop('the default branch has no ruleset that restricts updates', tell);
     if (!s.own.size) return stop('CODEOWNERS names no person; team owners are not resolved', tell);
     return login ? { stage, issue, assignee: login, ...extra } : stop('the issue has no assignee', tell);
   };
@@ -25,12 +25,12 @@ export function route(name, ev, s) {
     return run('write-tests', n);
   }
   if (name === 'pull_request_review' && ev.action === 'submitted') {
-    const pr = ev.pull_request, n = issueOf(pr.head.ref);
+    const pr = s.pull(ev.pull_request.number), n = issueOf(pr.head.ref);
     if (!n || pr.head.repo?.full_name !== s.repo || pr.state !== 'open') return stop('not an open lifecycle pull request');
     if (!s.own.size && person(ev.review.user)) return stop('CODEOWNERS names no person; team owners are not resolved', pr.number);
     if (!owns(ev.review.user, s.own)) return stop('review is not from a code owner');
     const at = { pr: pr.number, ref: pr.head.ref, sha: pr.head.sha };
-    if (testsOk(ev.review.body)) return !pr.draft ? stop('tests-ok on a ready pull request', pr.number) : ev.review.commit_id === pr.head.sha ? run('deliver', n, at) : stop('tests-ok is not on the current head', pr.number);
+    if (testsOk(ev.review.body) && ev.review.state !== 'changes_requested') return !pr.draft ? stop('tests-ok on a ready pull request', pr.number) : ev.review.commit_id === pr.head.sha ? run('deliver', n, at) : stop('tests-ok is not on the current head', pr.number);
     if (ev.review.state !== 'changes_requested') return stop('review is not routed');
     return run(lockOf(s.reviews(pr.number), s.own) ? 'pr-loop' : 'write-tests', n, at);
   }
@@ -61,7 +61,7 @@ function selfTest() {
   const fail = (id, created_at = '2026-01-03') => ({ id, created_at });
   const fix = (run) => ({ user: actions, body: `<!-- fix-ci v1 run=${run} attempt=1 sha=abc -->` });
   const pr = { number: 9, state: 'open', draft: true, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
-  const state = (over = {}) => ({ repo: 'o/r', guarded: true, failures: () => [], own: owners('* @ada\n'), issue: () => issue, comments: () => [ready], reviews: () => [lock], pulls: () => [pr], ...over });
+  const state = (over = {}) => ({ repo: 'o/r', guarded: true, failures: () => [], own: owners('* @ada\n'), issue: () => issue, comments: () => [ready], reviews: () => [lock], pulls: () => [pr], pull: () => pr, ...over });
   const label = (name, sender = ada) => ({ action: 'labeled', label: { name }, sender, issue: { number: 7 } });
   const review = (body, state_, who = ada, commit = 'h1') => ({ action: 'submitted', pull_request: pr, review: { user: who, body, state: state_, commit_id: commit } });
   const ci = (over = {}) => ({ action: 'completed', workflow_run: { id: 5, run_attempt: 1, conclusion: 'failure', head_branch: 'agent/7-sum', head_sha: 'h1', head_repository: { full_name: 'o/r' }, html_url: 'u', ...over } });
@@ -79,9 +79,11 @@ function selfTest() {
     ['tests-ok from a stranger', 'pull_request_review', review('tests-ok', 'commented', user('eve')), state(), undefined],
     ['changes before the lock', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ reviews: () => [] }), 'write-tests'],
     ['changes after the lock', 'pull_request_review', review('fix AC1', 'changes_requested'), state(), 'pr-loop'],
-    ['tests-ok on a ready pull request', 'pull_request_review', { ...review('tests-ok', 'commented'), pull_request: { ...pr, draft: false } }, state(), undefined],
-    ['changes on a ready pull request', 'pull_request_review', { ...review('fix AC1', 'changes_requested'), pull_request: { ...pr, draft: false } }, state(), 'pr-loop'],
+    ['tests-ok on a ready pull request', 'pull_request_review', { ...review('tests-ok', 'commented'), pull_request: { ...pr, draft: false } }, state({ pull: () => ({ ...pr, draft: false }) }), undefined],
+    ['changes on a ready pull request', 'pull_request_review', { ...review('fix AC1', 'changes_requested'), pull_request: { ...pr, draft: false } }, state({ pull: () => ({ ...pr, draft: false }) }), 'pr-loop'],
     ['plain comment review', 'pull_request_review', review('nice', 'commented'), state(), undefined],
+    ['change request that starts with tests-ok', 'pull_request_review', review('tests-ok but AC2 is wrong', 'changes_requested'), state(), 'pr-loop'],
+    ['owner of one path only', 'pull_request_review', review('tests-ok', 'commented', user('eve')), state({ own: owners('* @ada\n/docs/ @eve\n') }), undefined],
     ['red CI', 'workflow_run', ci(), state(), 'pr-loop'],
     ['green CI', 'workflow_run', ci({ conclusion: 'success' }), state(), undefined],
     ['stale head', 'workflow_run', ci({ head_sha: 'h0' }), state(), undefined],
@@ -95,6 +97,7 @@ function selfTest() {
     ['third red CI', 'workflow_run', ci(), state({ failures: () => [fail(3), fail(4), fail(5)] }), undefined],
     ['team-only code owners', 'pull_request_review', review('tests-ok', 'commented'), state({ own: owners('* @o/team\n') }), undefined],
     ['no ruleset', 'issues', label('spec-review'), state({ guarded: false }), undefined],
+    ['private repository, where no ruleset can exist', 'issues', label('spec-review'), state({ guarded: false, private: true }), 'spec-review'],
     ['edited marker', 'issues', label('spec-ok'), state({ comments: () => [{ ...ready, created_at: 'a', updated_at: 'b' }] }), undefined],
     ['unknown event', 'push', {}, state(), undefined],
   ];
@@ -104,7 +107,7 @@ function selfTest() {
     ['spec-ok after an edit', 'issues', label('spec-ok'), state({ issue: () => ({ ...issue, body: 'AC1 edited' }) }), 7],
     ['no ruleset', 'issues', label('spec-review'), state({ guarded: false }), 7],
     ['tests-ok on an old head', 'pull_request_review', review('tests-ok', 'commented', ada, 'h0'), state(), 9],
-    ['tests-ok on a ready pull request', 'pull_request_review', { ...review('tests-ok', 'commented'), pull_request: { ...pr, draft: false } }, state(), 9],
+    ['tests-ok on a ready pull request', 'pull_request_review', { ...review('tests-ok', 'commented'), pull_request: { ...pr, draft: false } }, state({ pull: () => ({ ...pr, draft: false }) }), 9],
     ['label from a bot', 'issues', label('spec-ok', app), state(), undefined],
     ['green CI', 'workflow_run', ci({ conclusion: 'success' }), state(), undefined],
     ['red CI on a task without an assignee', 'workflow_run', ci(), state({ issue: () => ({ ...issue, assignees: [] }) }), undefined],
@@ -123,11 +126,12 @@ function main() {
   let guarded = false;
   try { guarded = all(`repos/${repo}/rules/branches/${ev.repository.default_branch}?per_page=100`).some((rule) => rule.type === 'update'); } catch { }
   const s = {
-    repo, guarded, own: ownersOf(repo),
+    repo, guarded, private: ev.repository.private, own: ownersOf(repo),
     failures: (w) => all(`repos/${repo}/actions/workflows/${w.workflow_id}/runs?branch=${w.head_branch}&status=failure&per_page=100`).flatMap((page) => page.workflow_runs),
     issue: (n) => seen.get(n) || seen.set(n, one(`repos/${repo}/issues/${n}`)).get(n),
     comments: (n) => all(`repos/${repo}/issues/${n}/comments?per_page=100`),
     reviews: (n) => all(`repos/${repo}/pulls/${n}/reviews?per_page=100`),
+    pull: (n) => one(`repos/${repo}/pulls/${n}`),
     pulls: (branch) => all(`repos/${repo}/pulls?state=open&head=${repo.split('/')[0]}:${branch}`),
   };
   const r = route(process.env.GITHUB_EVENT_NAME, ev, s);
