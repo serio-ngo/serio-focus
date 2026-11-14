@@ -10,7 +10,7 @@ const CAPS = { 'spec-review': [15, 10], 'write-tests': [40, 20], deliver: [80, 4
 export function route(name, ev, s) {
   const stop = (why, tell) => ({ stop: why, tell });
   const run = (stage, issue, extra = {}) => {
-    const tell = extra.pr || issue, login = s.issue(issue).assignees?.[0]?.login;
+    const tell = extra.bot ? undefined : extra.pr || issue, login = s.issue(issue).assignees?.[0]?.login;
     if (!s.guarded) return stop('the default branch has no ruleset that restricts updates', tell);
     if (!s.own.size) return stop('CODEOWNERS names no person; team owners are not resolved', tell);
     return login ? { stage, issue, assignee: login, ...extra } : stop('the issue has no assignee', tell);
@@ -40,8 +40,9 @@ export function route(name, ev, s) {
     if (w.head_repository?.full_name !== s.repo || !issueOf(w.head_branch)) return stop('not a lifecycle branch of this repository');
     const pr = s.pulls(w.head_branch).find((p) => p.head.sha === w.head_sha);
     if (!pr) return stop('stale head or no open pull request');
-    const lock = lockReview(s.reviews(pr.number), s.own);
+    const reviews = s.reviews(pr.number), lock = lockReview(reviews, s.own);
     if (!lock) return stop('no test lock yet');
+    if (w.created_at < reviews.find((r) => owns(r.user, s.own) && testsOk(r.body)).submitted_at) return stop('CI started before the first test lock');
     if (fixMarkers(s.comments(pr.number)).some((f) => f.run === w.id && f.attempt === w.run_attempt)) return stop('duplicate CI event');
     const red = new Set(s.failures(w).filter((f) => f.created_at > lock.submitted_at).map((f) => f.id)).add(w.id);
     if (red.size > 2) return { park: pr.number, stop: `CI failed after 2 fix runs: ${w.html_url}` };
@@ -87,6 +88,7 @@ function selfTest() {
     ['fork run', 'workflow_run', ci({ head_repository: { full_name: 'x/r' } }), state(), undefined],
     ['other branch', 'workflow_run', ci({ head_branch: 'main' }), state(), undefined],
     ['red CI before the lock', 'workflow_run', ci(), state({ reviews: () => [] }), undefined],
+    ['red CI that started before the lock', 'workflow_run', ci({ created_at: '2026-01-01' }), state(), undefined],
     ['duplicate run', 'workflow_run', ci(), state({ comments: () => [fix(5)] }), undefined],
     ['second red CI', 'workflow_run', ci(), state({ failures: () => [fail(4), fail(5)] }), 'pr-loop'],
     ['red CI from before the lock', 'workflow_run', ci(), state({ failures: () => [fail(2, '2026-01-01'), fail(3, '2026-01-01'), fail(5)] }), 'pr-loop'],
@@ -105,6 +107,7 @@ function selfTest() {
     ['tests-ok on a ready pull request', 'pull_request_review', { ...review('tests-ok', 'commented'), pull_request: { ...pr, draft: false } }, state(), 9],
     ['label from a bot', 'issues', label('spec-ok', app), state(), undefined],
     ['green CI', 'workflow_run', ci({ conclusion: 'success' }), state(), undefined],
+    ['red CI on a task without an assignee', 'workflow_run', ci(), state({ issue: () => ({ ...issue, assignees: [] }) }), undefined],
     ['plain comment review', 'pull_request_review', review('nice', 'commented'), state(), undefined],
     ['team-only code owners', 'pull_request_review', review('tests-ok', 'commented'), state({ own: owners('* @o/team\n') }), 9],
   ];

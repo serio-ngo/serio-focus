@@ -4,7 +4,7 @@ description: Use when a pull request has failing checks or unresolved review fee
 argument-hint: "[PR number]"
 ---
 
-Bring pull request $ARGUMENTS (default: the current branch) to a clean head. Requires an authenticated `gh`. Agents, models and efforts are as in `deliver`.
+Bring pull request $ARGUMENTS (default: the current branch) to a clean head. Requires an authenticated `gh`. Before the first dispatch read the agent table in `${CLAUDE_PLUGIN_ROOT}/skills/deliver/SKILL.md`: every dispatch names its model and effort from that table, never the main session's model.
 
 | Step | Do | Evidence |
 |---|---|---|
@@ -13,9 +13,9 @@ Bring pull request $ARGUMENTS (default: the current branch) to a clean head. Req
 | 3. Fix | Dispatch the coder with the finding, its `file:line` and the check that proves the fix. Never edit a locked test or skill path | Diff touches only the cause |
 | 4. Prove | Run the repository's checks as in the Ship step of `deliver`, then the reviewer on this round's diff | Green output; verdict `ready` |
 | 5. Publish | Commit, push, reply to and resolve each thread. On `agent/<N>-…`, refresh the card in the body after the push | Pushed head SHA |
-| 6. Re-review | Once checks finish, ask every reviewer whose newest review predates the head to review again: `gh pr edit --add-reviewer <login>` for a person, the trigger the bot documents or used before for a bot | A review whose reviewed commit is the head |
+| 6. Re-review | Skip in an unattended run. Otherwise, once checks finish, ask every reviewer whose newest review predates the head to review again: `gh pr edit --add-reviewer <login>` for a person, the trigger the bot documents or used before for a bot | A review whose reviewed commit is the head |
 | 7. Repeat | Return to step 1. After three rounds on the same finding, stop and report it. An unattended run on `agent/<N>-…` does one round, then stops and reports | Round count |
 
 Done when required checks pass on the head, no review thread or change request is open and the newest review covers the head. The owner merges.
 
-End your last message with one line `Note: …`, at most 2 sentences in plain words: what this round did, and the one thing the person must know. On `agent/<N>-…` in an attended session, post it first: `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/publish.mjs" <PR> --note pr-loop "<the same text>"`; the workflow posts it for an unattended run.
+End your last message with one line `Note: …`, at most 2 sentences and 280 characters in plain words: what this round did, and the one thing the person must know. On `agent/<N>-…` in an attended session, post it first: `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/publish.mjs" <PR> --note pr-loop "<the same text>"`; the workflow posts it for an unattended run.
