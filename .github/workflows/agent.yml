@@ -1,0 +1,29 @@
+name: agent
+
+on:
+  issues:
+    types: [labeled]
+  pull_request_review:
+    types: [submitted]
+  workflow_run:
+    workflows: [verify]
+    types: [completed]
+
+concurrency:
+  group: agent-${{ github.repository }}
+  cancel-in-progress: false
+  queue: max
+
+permissions:
+  contents: read
+  packages: read
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  agent:
+    uses: serio-ngo/serio-focus/.github/workflows/lifecycle-agent.yml@main
+    with:
+      orchestrator: opus
+    secrets: inherit
