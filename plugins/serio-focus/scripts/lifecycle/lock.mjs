@@ -37,6 +37,7 @@ function selfTest() {
     ['source named like a test', { changed: () => ['src/contest.mjs', 'src/latest/a.mjs'] }, true, /^locked/],
     ['e2e, spec and config paths', { changed: () => ['e2e/a.js', 'src/a.spec.ts', 'playwright.config.mjs'] }, false, /e2e\/a\.js, src\/a\.spec\.ts, playwright\.config\.mjs/],
     ['bot review', { reviews: [lock(app)] }, false, /without a tests-ok/],
+    ['change request that starts with tests-ok', { reviews: [{ ...lock(), state: 'CHANGES_REQUESTED' }] }, false, /without a tests-ok/],
     ['stranger review', { reviews: [lock({ login: 'eve', type: 'User' })] }, false, /without a tests-ok/],
     ['draft', { pr: { draft: true, head, base: { repo } }, reviews: [] }, true, /^not locked$/],
     ['team-only code owners', { own: owners('* @o/team\n') }, false, /names no person/],

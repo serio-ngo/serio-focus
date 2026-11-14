@@ -21,6 +21,10 @@ on:
       node:
         type: string
         default: "22"
+      bot:
+        description: Slug of the GitHub App whose key is AGENT_APP_KEY; it pushes the run's commits and authors them
+        type: string
+        default: serio-agent
 
 permissions: {}
 
@@ -77,15 +81,10 @@ jobs:
       note: ${{ steps.trace.outputs.note }}
       stats: ${{ steps.trace.outputs.stats }}
     steps:
-      - id: app
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          app-id: ${{ secrets.AGENT_APP_ID }}
-          private-key: ${{ secrets.AGENT_APP_KEY }}
       - id: bot
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          SLUG: ${{ steps.app.outputs.app-slug }}
+          GH_TOKEN: ${{ github.token }}
+          SLUG: ${{ inputs.bot }}
         run: gh api "users/${SLUG}%5Bbot%5D" --jq '"id=\(.id)"' >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -151,7 +150,7 @@ jobs:
       - id: claude
         uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           SERIO_UNATTENDED: "1"
           SERIO_ORCHESTRATE: ${{ needs.route.outputs.stage != 'spec-review' && '1' || '' }}
           # One-shot run: a background subagent outlives the session's last turn (run 43271348109)
@@ -160,10 +159,10 @@ jobs:
           CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: "1"
         with:
           claude_code_oauth_token: ${{ steps.seat.outputs.token }}
-          github_token: ${{ steps.app.outputs.token }}
-          bot_name: ${{ steps.app.outputs.app-slug }}[bot]
+          github_token: ${{ github.token }}
+          bot_name: ${{ inputs.bot }}[bot]
           bot_id: ${{ steps.bot.outputs.id }}
-          allowed_bots: ${{ needs.route.outputs.bot == 'true' && steps.app.outputs.app-slug || '' }}
+          allowed_bots: ${{ needs.route.outputs.bot == 'true' && inputs.bot || '' }}
           plugin_marketplaces: ${{ inputs.plugin_marketplaces || format('{0}/serio-focus', runner.temp) }}
           plugins: ${{ inputs.plugins }}
           prompt: ${{ steps.args.outputs.prompt }}
@@ -188,6 +187,21 @@ jobs:
           echo '::endgroup::'
           echo "reason=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
           node "$RUNNER_TEMP/serio-focus/plugins/serio-focus/scripts/lifecycle/publish.mjs" --outcome "$LOG" >> "$GITHUB_OUTPUT" || true
+      - name: Hand the commits to the publish job
+        if: needs.route.outputs.stage != 'spec-review' && steps.claude.outcome == 'success'
+        env:
+          BEFORE: ${{ needs.route.outputs.sha || format('origin/{0}', github.event.repository.default_branch) }}
+        run: |
+          out="$RUNNER_TEMP/out"; mkdir -p "$out"
+          git branch --show-current > "$out/ref"
+          git bundle create "$out/commits.bundle" "$BEFORE..HEAD" || rm -f "$out/commits.bundle"
+          cp .lifecycle/pr.md "$out/" 2>/dev/null || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: needs.route.outputs.stage != 'spec-review' && steps.claude.outcome == 'success'
+        with:
+          name: commits
+          path: ${{ runner.temp }}/out
+          retention-days: 1
 
   publish:
     name: publish
@@ -215,6 +229,29 @@ jobs:
           STAGE: ${{ needs.route.outputs.stage }}
           STRUCTURED_OUTPUT: ${{ needs.agent.outputs.structured_output }}
         run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE"
+      - id: app
+        if: needs.route.outputs.stage != 'spec-review' && needs.agent.result == 'success'
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_KEY }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.app.outcome == 'success'
+        continue-on-error: true
+        with:
+          name: commits
+          path: ${{ runner.temp }}/out
+      - name: Push the run's commits
+        if: steps.app.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          OUT: ${{ runner.temp }}/out
+          ISSUE: ${{ needs.route.outputs.issue }}
+          REF: ${{ needs.route.outputs.ref }}
+          STAGE: ${{ needs.route.outputs.stage }}
+        run: node plugins/serio-focus/scripts/lifecycle/push.mjs
       - name: Park a run without a push
         if: needs.route.outputs.stage != 'spec-review' && needs.agent.result == 'success'
         env:

@@ -208,3 +208,13 @@ it('starts no fix for CI from before the lock and keeps route answers out of the
   const answer = { user: { login: 'github-actions[bot]', type: 'Bot' }, body: 'Note (route): Not started: x.\n\n<!-- step-note stage=route run=1 -->' };
   assert.ok(!brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body: 'AC1' }, comments: [answer], own }).includes('Not started'));
 });
+it('keeps every write token out of the model job and runs on a private repository without a ruleset', async () => {
+  const { route } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/route.mjs', import.meta.url));
+  const { owners } = await import(new URL('../../plugins/serio-focus/scripts/lib/lifecycle.mjs', import.meta.url));
+  const ada = { login: 'ada', type: 'User' }, label = { action: 'labeled', label: { name: 'spec-review' }, sender: ada, issue: { number: 7 } };
+  const context = (over) => ({ repo: 'o/r', guarded: false, own: owners('* @ada\n'), issue: () => ({ title: 'Sum', body: 'AC1', assignees: [ada] }), ...over });
+  assert.deepEqual([route('issues', label, context({ private: true })).stage, route('issues', label, context({})).stage], ['spec-review', undefined]);
+  const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8'), job = (name) => flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith(`${name}:`));
+  assert.doesNotMatch(job('agent'), /AGENT_APP|steps\.app|contents: write|pull-requests: write|issues: write/);
+  assert.match(job('publish'), /AGENT_APP_KEY[\s\S]+lifecycle\/push\.mjs/);
+});

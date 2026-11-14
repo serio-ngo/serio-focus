@@ -40,6 +40,7 @@ Runs share no memory. They hand off through comments on the task, written and re
 | `<!-- fix-ci v1 run=… attempt=… sha=… -->` | `route.mjs` | Pull request | `route.mjs` (duplicate events) |
 | `<!-- acceptance v1 sha=… -->`: one row per criterion, size, changed gate files | `acceptance.mjs`, replaced on every push | Pull request | `brief.mjs`; the person |
 | A review starting with `tests-ok` | A code owner | Pull request | `lock.mjs`, `route.mjs`, `brief.mjs` |
+| The commits of a run as a bundle, the branch name and `.lifecycle/pr.md` | The agent job, after the model session ends | Run artifact `commits`, kept 1 day | `push.mjs` |
 | The whole transcript and a trace of calls, errors and denials | The Trace step | Job log and summary | Whoever debugs a run |
 
 | Brief rule | Value |
@@ -64,7 +65,7 @@ Runs share no memory. They hand off through comments on the task, written and re
 
 | Rule | Held by |
 |---|---|
-| Only a person merges | A ruleset that restricts updates of the default branch; `route.mjs` starts nothing without one |
+| Only a person merges | The model session of an unattended run holds a read-only token and no App key. `push.mjs`, in the publish job, pushes its commits to `agent/<N>-…` only, never forced, and opens the pull request. A public repository also needs a ruleset that restricts updates of the default branch: `route.mjs` starts nothing without one |
 | No test before `spec-ok`, no code before `tests-ok` | `route.mjs` |
 | Tests, skills and the spec do not change after their gate | `lock.mjs`, in a job that never runs pull request code |
 | Only people start a stage; only code owners lock or request changes | `route.mjs`: actor type `User`, `CODEOWNERS` |

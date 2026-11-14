@@ -11,7 +11,7 @@ export function route(name, ev, s) {
   const stop = (why, tell) => ({ stop: why, tell });
   const run = (stage, issue, extra = {}) => {
     const tell = extra.bot ? undefined : extra.pr || issue, login = s.issue(issue).assignees?.[0]?.login;
-    if (!s.guarded) return stop('the default branch has no ruleset that restricts updates', tell);
+    if (!s.guarded && !s.private) return stop('the default branch has no ruleset that restricts updates', tell);
     if (!s.own.size) return stop('CODEOWNERS names no person; team owners are not resolved', tell);
     return login ? { stage, issue, assignee: login, ...extra } : stop('the issue has no assignee', tell);
   };
@@ -30,7 +30,7 @@ export function route(name, ev, s) {
     if (!s.own.size && person(ev.review.user)) return stop('CODEOWNERS names no person; team owners are not resolved', pr.number);
     if (!owns(ev.review.user, s.own)) return stop('review is not from a code owner');
     const at = { pr: pr.number, ref: pr.head.ref, sha: pr.head.sha };
-    if (testsOk(ev.review.body)) return !pr.draft ? stop('tests-ok on a ready pull request', pr.number) : ev.review.commit_id === pr.head.sha ? run('deliver', n, at) : stop('tests-ok is not on the current head', pr.number);
+    if (testsOk(ev.review.body) && ev.review.state !== 'changes_requested') return !pr.draft ? stop('tests-ok on a ready pull request', pr.number) : ev.review.commit_id === pr.head.sha ? run('deliver', n, at) : stop('tests-ok is not on the current head', pr.number);
     if (ev.review.state !== 'changes_requested') return stop('review is not routed');
     return run(lockOf(s.reviews(pr.number), s.own) ? 'pr-loop' : 'write-tests', n, at);
   }
@@ -82,6 +82,8 @@ function selfTest() {
     ['tests-ok on a ready pull request', 'pull_request_review', { ...review('tests-ok', 'commented'), pull_request: { ...pr, draft: false } }, state(), undefined],
     ['changes on a ready pull request', 'pull_request_review', { ...review('fix AC1', 'changes_requested'), pull_request: { ...pr, draft: false } }, state(), 'pr-loop'],
     ['plain comment review', 'pull_request_review', review('nice', 'commented'), state(), undefined],
+    ['change request that starts with tests-ok', 'pull_request_review', review('tests-ok but AC2 is wrong', 'changes_requested'), state(), 'pr-loop'],
+    ['owner of one path only', 'pull_request_review', review('tests-ok', 'commented', user('eve')), state({ own: owners('* @ada\n/docs/ @eve\n') }), undefined],
     ['red CI', 'workflow_run', ci(), state(), 'pr-loop'],
     ['green CI', 'workflow_run', ci({ conclusion: 'success' }), state(), undefined],
     ['stale head', 'workflow_run', ci({ head_sha: 'h0' }), state(), undefined],
@@ -95,6 +97,7 @@ function selfTest() {
     ['third red CI', 'workflow_run', ci(), state({ failures: () => [fail(3), fail(4), fail(5)] }), undefined],
     ['team-only code owners', 'pull_request_review', review('tests-ok', 'commented'), state({ own: owners('* @o/team\n') }), undefined],
     ['no ruleset', 'issues', label('spec-review'), state({ guarded: false }), undefined],
+    ['private repository, where no ruleset can exist', 'issues', label('spec-review'), state({ guarded: false, private: true }), 'spec-review'],
     ['edited marker', 'issues', label('spec-ok'), state({ comments: () => [{ ...ready, created_at: 'a', updated_at: 'b' }] }), undefined],
     ['unknown event', 'push', {}, state(), undefined],
   ];
@@ -123,7 +126,7 @@ function main() {
   let guarded = false;
   try { guarded = all(`repos/${repo}/rules/branches/${ev.repository.default_branch}?per_page=100`).some((rule) => rule.type === 'update'); } catch { }
   const s = {
-    repo, guarded, own: ownersOf(repo),
+    repo, guarded, private: ev.repository.private, own: ownersOf(repo),
     failures: (w) => all(`repos/${repo}/actions/workflows/${w.workflow_id}/runs?branch=${w.head_branch}&status=failure&per_page=100`).flatMap((page) => page.workflow_runs),
     issue: (n) => seen.get(n) || seen.set(n, one(`repos/${repo}/issues/${n}`)).get(n),
     comments: (n) => all(`repos/${repo}/issues/${n}/comments?per_page=100`),
