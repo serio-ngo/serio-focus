@@ -37,6 +37,6 @@
 | Hook events | **3** |
 | Skills | **5** |
 | Subagents | **4** |
-| Startup context: card, agent and skill descriptions | **~446** tokens |
+| Startup context: card, agent and skill descriptions | **~476** tokens |
 | Third-party packages | **0** |
 | Network calls, API keys, model calls | **0** |
