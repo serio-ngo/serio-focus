@@ -186,8 +186,9 @@ it('keeps the route (W11) and note (N1) lifecycle rules', async () => {
   const ada = { login: 'ada', type: 'User' };
   const pr = { number: 9, state: 'open', draft: false, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
   const review = { user: ada, body: 'tests-ok', state: 'commented', commit_id: 'h1' };
-  const context = { repo: 'o/r', guarded: true, own: owners('* @ada\n'), issue: () => ({ assignees: [ada] }) };
+  const context = { repo: 'o/r', guarded: true, own: owners('* @ada\n'), issue: () => ({ assignees: [ada] }), pull: () => pr };
   assert.equal(route('pull_request_review', { action: 'submitted', pull_request: pr, review }, context).stage, undefined, 'W11');
+  assert.equal(route('pull_request_review', { action: 'submitted', pull_request: { ...pr, draft: true }, review }, context).stage, undefined, 'a queued tests-ok routes on the live pull request, not its stale payload');
   assert.deepEqual([note('Wrote 3 tests.', 'write-tests', 42), note('', 'deliver', 1), note('x <!-- spec-review v1 -->', 'deliver', 1)], [
     'Note (write-tests): Wrote 3 tests.\n\n<!-- step-note stage=write-tests run=42 -->',
     'Note (deliver): The deliver run ended without a note.\n\n<!-- step-note stage=deliver run=1 -->', null], 'N1');
