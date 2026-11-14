@@ -34,7 +34,7 @@ Runs share no memory. They hand off through comments on the task, written and re
 | Message | Written by | Where | Read by |
 |---|---|---|---|
 | `<!-- spec-review v1 sha=… verdict=… ac=… -->` with the criteria table | `publish.mjs` from the review's result | Issue | `route.mjs` (may tests start), `lock.mjs` (spec freeze), `acceptance.mjs` (criteria), `brief.mjs` |
-| `<!-- step-note stage=… run=… turns=… usd=… denied=… -->` with one `Note:` of at most 2 sentences | `publish.mjs` after every run; `--note` in a run by hand | Issue or pull request | `brief.mjs`; the person |
+| `<!-- step-note stage=… run=… turns=… usd=… denied=… -->` with one `Note:` of at most 2 sentences and 280 characters | `publish.mjs` after every run; `--note` in a run by hand | Issue or pull request | `brief.mjs`; the person |
 | `Note (route): Not started: <reason>` | `route.mjs`, when a person's trigger cannot start | Issue or pull request | The person |
 | `**needs-human**: <reason>` and the label | `publish.mjs` (a run that failed or pushed nothing), `route.mjs` (a third red CI) | Issue or pull request | `brief.mjs`; the person |
 | `<!-- fix-ci v1 run=… attempt=… sha=… -->` | `route.mjs` | Pull request | `route.mjs` (duplicate events) |

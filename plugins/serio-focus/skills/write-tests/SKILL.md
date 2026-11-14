@@ -37,4 +37,4 @@ Skills: `<path>`, `<path>`
 - No test without a criterion and no criterion without a test.
 - No production code, no change to a gate, a script or a test command.
 - Never mark the pull request ready, approve it or merge it. A person approves the tests and the skills with a review that starts with `tests-ok`.
-- End your last message with one line `Note: …`, at most 2 sentences in plain words: what this step did, and the one thing the person must know. In an attended session, post it first: `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/publish.mjs" <PR> --note write-tests "<the same text>"`; the workflow posts it for an unattended run.
+- End your last message with one line `Note: …`, at most 2 sentences and 280 characters in plain words: what this step did, and the one thing the person must know. In an attended session, post it first: `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/publish.mjs" <PR> --note write-tests "<the same text>"`; the workflow posts it for an unattended run.

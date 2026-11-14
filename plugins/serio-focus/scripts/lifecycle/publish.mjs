@@ -69,6 +69,7 @@ function main() {
   if (process.argv[3] === '--note') {
     const [stage, ...text] = process.argv.slice(4);
     if (!['spec-review', 'write-tests', 'deliver', 'pr-loop'].includes(stage)) { console.error('usage: publish.mjs <number> --note <spec-review|write-tests|deliver|pr-loop> <text>'); process.exit(1); }
+    if (process.env.SERIO_UNATTENDED === '1') return console.log('Not posted: the workflow posts the note of an unattended run.');
     return say(text.join(' '), number, stage);
   }
   const failed = flag('--failed');

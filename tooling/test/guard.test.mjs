@@ -191,6 +191,8 @@ it('keeps the route (W11) and note (N1) lifecycle rules', async () => {
   assert.deepEqual([note('Wrote 3 tests.', 'write-tests', 42), note('', 'deliver', 1), note('x <!-- spec-review v1 -->', 'deliver', 1)], [
     'Note (write-tests): Wrote 3 tests.\n\n<!-- step-note stage=write-tests run=42 -->',
     'Note (deliver): The deliver run ended without a note.\n\n<!-- step-note stage=deliver run=1 -->', null], 'N1');
+  const run = spawnSync(process.execPath, [script('lifecycle/publish.mjs'), '9', '--note', 'deliver', 'Done.', '--repo', 'o/r'], { encoding: 'utf8', env: { ...process.env, SERIO_UNATTENDED: '1', PATH: '', Path: '' } });
+  assert.match(run.stdout, /^Not posted/, 'an unattended run posts its note once, through the workflow');
 });
 it('starts no fix for CI from before the lock and keeps route answers out of the brief', async () => {
   const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
