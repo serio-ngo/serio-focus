@@ -1,5 +1,0 @@
-blank_issues_enabled: true
-contact_links:
-  - name: Vulnerability report
-    url: https://github.com/serio-ngo/serio-focus/blob/main/SECURITY.md
-    about: Never a public issue. Use GitHub private vulnerability reporting, per SECURITY.md.
