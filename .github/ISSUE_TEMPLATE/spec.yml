@@ -16,7 +16,7 @@ body:
     validations: { required: true }
   - type: textarea
     id: criteria
-    attributes: { label: Acceptance criteria, description: "Numbered, at most 5. Each one Given, When, Then with concrete values and its level, unit or e2e. The happy path first." }
+    attributes: { label: Acceptance criteria, description: "Numbered, at most 5. Each one Given, When, Then with concrete values and its level, unit or e2e. The happy path first. A change a person sees has one criterion that reads the built or served page." }
     validations: { required: true }
   - type: textarea
     id: edges
