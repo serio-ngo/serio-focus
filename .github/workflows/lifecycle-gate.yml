@@ -9,7 +9,7 @@ on:
         default: main
       node:
         type: string
-        default: "22"
+        default: "24"
       gates:
         description: The repository's own gate command; empty runs none
         type: string

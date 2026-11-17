@@ -20,7 +20,7 @@ on:
         default: serio-focus@serio-ngo
       node:
         type: string
-        default: "22"
+        default: "24"
       bot:
         description: Slug of the GitHub App whose key is AGENT_APP_KEY; it pushes the run's commits and authors them
         type: string
