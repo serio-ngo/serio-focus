@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 |---|---|---|
+| 2.1.0 | 2026-11-17 | Tests run passes the repository's checks; spec review knows the agent's limits; the model session holds no write token, so private repositories run; no fix run from the draft's red CI; one note per run; pr-loop ends at its push; a reply says what an issue or decision is, never its number alone; the spec form asks for a criterion on the built page |
 | 2.0.0 | 2026-11-13 | Lifecycle 2.0: every stage starts from one brief and leaves a note with turns and cost; a trigger that cannot start answers; the acceptance report lists size and gate files; the guard keeps model choice, the unattended edit rule and the mail deny; the shell judge, holds, fan-out hook and guard benchmark are removed |
 | 1.32.1 | 2026-11-13 | A pruning push stops once; a run that ends without a note posts a fallback step note |
 | 1.32.0 | 2026-11-13 | Pushes and worktrees run, force and delete pushes stop once; fit-first coding rules; the repository skill is the specification; one model and effort table for agents; a step note on every lifecycle run; npm run verify |
