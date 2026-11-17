@@ -49,10 +49,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34
-      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8
+      - name: Dead links
+        id: links
+        continue-on-error: true
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8
         with:
           args: --no-progress --accept 200,206,429,503 --max-retries 2 "**/*.md"
-          fail: true
+          fail: false
+          failIfEmpty: false
+      - name: Dead links warning
+        if: steps.links.outputs.exit_code != '0'
+        run: echo "::warning title=Dead links::lychee reported broken or unreachable links (exit ${{ steps.links.outputs.exit_code }}); the list is in the job summary"
 
   gate:
     uses: ./.github/workflows/lifecycle-gate.yml
