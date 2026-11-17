@@ -8,9 +8,9 @@ on:
         type: string
         default: main
       orchestrator:
-        description: Model of the main session of every stage; empty keeps the host default
+        description: Model of the main session of every stage
         type: string
-        default: ""
+        default: opus
       plugin_marketplaces:
         description: Empty means serio-focus at focus_ref, so skills, hooks and scripts come from one ref
         type: string
@@ -20,7 +20,7 @@ on:
         default: serio-focus@serio-ngo
       node:
         type: string
-        default: "22"
+        default: "24"
       bot:
         description: Slug of the GitHub App whose key is AGENT_APP_KEY; it pushes the run's commits and authors them
         type: string
@@ -127,8 +127,7 @@ jobs:
           WRITE: Read,Glob,Grep,Edit,Write,Agent,Skill,Bash
           NOTE: "End your last message with one line that starts with Note: and holds at most 2 sentences and 280 characters in plain words: what this step did, and the one thing the person must know."
         run: |
-          tools="$WRITE"; extra="--append-system-prompt \"$NOTE\""; model=""
-          if [ -n "$MODEL" ]; then model="--model $MODEL"; fi
+          tools="$WRITE"; extra="--append-system-prompt \"$NOTE\""; model="--model $MODEL"
           case "$STAGE" in
             spec-review) prompt="/serio-focus:spec-review $ISSUE"; tools="Read,Glob,Grep"; extra="--json-schema '$SCHEMA'" ;;
             write-tests) prompt="/serio-focus:write-tests $ISSUE" ;;
