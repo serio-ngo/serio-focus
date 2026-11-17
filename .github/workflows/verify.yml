@@ -59,7 +59,8 @@ jobs:
           failIfEmpty: false
       - name: Dead links warning
         if: steps.links.outputs.exit_code != '0'
-        run: echo "::warning title=Dead links::lychee reported broken or unreachable links (exit ${{ steps.links.outputs.exit_code }}); the list is in the job summary"
+        run: |
+          echo "::warning title=Dead links::lychee reported broken or unreachable links (exit ${{ steps.links.outputs.exit_code || 'none: lychee did not run' }}); the list is in the job summary"
 
   gate:
     uses: ./.github/workflows/lifecycle-gate.yml
