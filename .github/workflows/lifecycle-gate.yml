@@ -11,9 +11,9 @@ on:
         type: string
         default: "24"
       gates:
-        description: The repository's own gate command; empty runs none
+        description: The repository's own gate command
         type: string
-        default: ""
+        default: npm run build --if-present
       unit:
         type: string
         default: node --test --test-reporter=junit --test-reporter-destination=junit/unit.xml

@@ -9,7 +9,7 @@
 
 1. Each fact has one home. Do not duplicate facts between files.
 2. Never send, publish, pay or submit.
-3. Use deterministic scripts first. Let the host and user select the main session's model and native roles.
+3. Use deterministic scripts first. Let the host and user select native roles.
 4. Write in tables and short imperative sentences. Continue until the requested result is verified or the user explicitly authorizes stopping. Use interactivity for blockers and necessary questions; continue independent work while waiting.
 5. No comments in code. No runtime dependencies. The fewest lines and branches that pass the suite.
 6. Nothing price- or plan-specific in shipped files. Model names live only in the dispatch table of `deliver` and in workflow inputs.
