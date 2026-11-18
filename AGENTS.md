@@ -31,5 +31,5 @@ Layout, commands, releases: [CONTRIBUTING.md](CONTRIBUTING.md).
 - Block permission bypasses, a weakened gate, missing failure proof and unsupported host claims.
 - Report a finding only with proven harm: the concrete cases where it fails and what each costs in time, money or data. Prefer no change; a fix adds the fewest lines.
 - Preserve explicit model/role choices and complete instruction access.
-- Keep agents and skills generic: no repository paths, descriptions under 300 characters, model names only in the dispatch table of `deliver`.
+- Keep the plugin's agents and skills generic: no repository paths, descriptions under 300 characters, model names only in the dispatch table of `deliver`.
 - Verify the current PR head; retain unresolved findings and failed checks.
