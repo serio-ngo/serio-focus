@@ -199,7 +199,6 @@ jobs:
           jq -c '.[]' "$LOG" || cat "$LOG"
           echo '::endgroup::'
           echo "reason=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
-          # The step may exit non-zero after a valid result (turn cap): the last result row decides
           jq -r --arg stage "$STAGE" '[.[] | select(.type == "result")] | last // {} | (if .subtype == "success" and .is_error == false and ($stage != "spec-review" or .structured_output != null) then "finished=true" else empty end), (if .structured_output != null then "structured=\(.structured_output | tojson)" else empty end)' "$LOG" >> "$GITHUB_OUTPUT" || true
           node "$RUNNER_TEMP/serio-focus/plugins/serio-focus/scripts/lifecycle/publish.mjs" --outcome "$LOG" >> "$GITHUB_OUTPUT" || true
       - name: Hand the commits to the publish job
