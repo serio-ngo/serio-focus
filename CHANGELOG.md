@@ -13,6 +13,9 @@
 - Unrouted labels start no runner.
 - Ponytail 5.3.3 runs in cloud runs.
 - Each run uploads an eval record.
+- The spec review names the test of each criterion, an existing one or a new behaviour name; the acceptance report checks that test by name, not `#<issue> AC<n>` titles.
+- Tests read content from where it is stored; skills hold no content, ticket numbers or plugin rules; a content-only task adds no test and leaves the skills unchanged.
+- The tests run reviews its tests before it publishes them: every assertion can pass once its behaviour exists; a change to the tests themselves needs a criterion of its own.
 
 | Version | Date | Change |
 |---|---|---|

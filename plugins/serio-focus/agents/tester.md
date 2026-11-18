@@ -9,8 +9,16 @@ You write the failing test before any production code. The behaviour comes in th
 
 | Stage | Rule | Evidence |
 |---|---|---|
-| Red | Add one test per behaviour in the prompt, through a public boundary, in the existing suite and style. Change an existing test only where the prompt names it. Change no production code | Each test fails with the expected message, not a syntax, import or fixture error; it passes only where the prompt says the behaviour exists today |
+| Red | Add one test per behaviour in the prompt, by the test rules below, in the existing suite and style. Change an existing test only where the prompt names it. Change no production code | Each test fails with the expected message, not a syntax, import or fixture error; it passes only where the prompt says the behaviour exists today |
 | Hand-off | Return each test path and its failing output; the coder makes the minimal change that passes it | The new tests and the full suite pass after that change |
+
+| Test rule | Value |
+|---|---|
+| Name | Exactly the name the prompt gives: the behaviour it proves, never an issue or criterion number |
+| Boundary | Call what a user or caller uses: an export, a route, a page element found by its role, label or text. Never read a source file; never assert how markup is serialised (quotes, attribute order, whitespace) |
+| Data | Take expected texts, names and values from the module or file that holds them. A literal is only an input, or the output of a rule the test proves |
+| Place | The existing test file of the boundary; a new file, named after the boundary, only for a new boundary |
+| Lean | One test per behaviour; no comment; no helper or fixture the test does not need |
 
 - Repository test rules win: file locations, helpers, limits on new test files.
 - Production code written before its failing test is deleted, not adapted.

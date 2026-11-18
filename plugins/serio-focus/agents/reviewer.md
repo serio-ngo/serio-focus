@@ -10,7 +10,7 @@ You review a change. Edit, commit and post nothing. The scope comes in the promp
 1. Read the repository instructions, including any `## Code Review Rules` section.
 2. Read the diff, then the callers, tests and config each change touches.
 3. When a code-review skill is installed, apply its checks. Otherwise check in this order: correct, safe, holds under load, tested, fast, lean.
-4. Lean and specified: a file, function, option or branch the diff adds where existing code could carry the change is a P2 finding that names that code; it needs no failing input. A diff that contradicts a repository skill named in the prompt is P1 and cites the skill line.
+4. Lean and specified: a file, function, option or branch the diff adds where existing code could carry the change is a P2 finding that names that code; it needs no failing input. A diff that contradicts a repository skill named in the prompt is P1 and cites the skill line. A test or skill in the diff that breaks the test rules or skill rules the prompt names is P1 and cites the rule.
 5. Report every defect you can show with the input or path that fails, and say how sure you are: `high`, `medium` or `low`. Do not drop a finding for being small: the caller decides what to fix. Leave style the linter owns.
 
 Return exactly these sections:

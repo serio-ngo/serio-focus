@@ -20,9 +20,9 @@
 | Step | Who | Does |
 |---|---|---|
 | 1 | you | Write the spec as an issue |
-| 2 | agent | `spec-review`: a verdict, questions and criteria `AC1…ACn` |
+| 2 | agent | `spec-review`: a verdict, questions and criteria `AC1…ACn`, each with the test that proves it |
 | 3 | you | Label the issue `spec-ok` |
-| 4 | agent | `write-tests`: the repository skill and one failing test per criterion, as a draft pull request |
+| 4 | agent | `write-tests`: a failing test for each behaviour no test covers yet, and the repository skill when a boundary changes, as a draft pull request |
 | 5 | you | Submit a review that starts with `tests-ok`: it locks the tests and the skill |
 | 6 | agent | `deliver`: code until the locked tests pass, a fresh-context review, the pull request marked ready |
 | 7 | script | The test lock and the acceptance report: one row per criterion |

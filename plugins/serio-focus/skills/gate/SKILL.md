@@ -11,7 +11,7 @@ Check pull request $ARGUMENTS with the lifecycle scripts. Requires an authentica
 |---|---|---|
 | 1. Lock | `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/lock.mjs" <PR>` | `test lock: pass`; a draft without `tests-ok` passes as `not locked` |
 | 2. Results | Run the repository's unit and e2e commands with their JUnit reporters into one directory, such as `junit/` | One `.xml` file per runner |
-| 3. Report | `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/acceptance.mjs" <PR> junit` | `Acceptance: pass`: every criterion has a passing test titled `#<issue> AC<n>` |
+| 3. Report | `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/acceptance.mjs" <PR> junit` | `Acceptance: pass`: the test the spec review names for each criterion ran and passed |
 
 | Lock rule | Value |
 |---|---|

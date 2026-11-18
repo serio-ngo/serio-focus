@@ -19,8 +19,8 @@ A stage is one skill. By hand a person runs it in Claude Code; unattended, `life
 
 | Stage | By hand | Unattended start | Ends with |
 |---|---|---|---|
-| `spec-review` | `/serio-focus:spec-review <N>` | A person labels the issue `spec-review` | A review comment: verdict, questions, criteria `AC1…ACn` |
-| `write-tests` | `/serio-focus:write-tests <N>` | A person labels it `spec-ok` and the newest review says `ready` for the current text; or a code owner requests changes before the lock | A draft pull request `agent/<N>-…`: the repository skill, one failing test per criterion |
+| `spec-review` | `/serio-focus:spec-review <N>` | A person labels the issue `spec-review` | A review comment: verdict, questions, criteria `AC1…ACn`, each with the test that proves it |
+| `write-tests` | `/serio-focus:write-tests <N>` | A person labels it `spec-ok` and the newest review says `ready` for the current text; or a code owner requests changes before the lock | A draft pull request `agent/<N>-…`: a failing test for each behaviour no test covers yet; the repository skill when a boundary changes |
 | `deliver` | `/serio-focus:deliver task issue #<N> on pull request #<PR>` | A code owner's review starting with `tests-ok` on the head of the draft | Code, green checks, reviewer `ready`, the pull request marked ready |
 | `pr-loop` | `/serio-focus:pr-loop <PR>` | After the lock: a failed CI run on the head that started after the first `tests-ok` (twice at most) or a code owner's change request | One fix round pushed |
 | `gate` | `/serio-focus:gate <PR>` | `lifecycle-gate.yml` on every push | `test lock: pass`; the acceptance report |
@@ -33,7 +33,7 @@ Runs share no memory. They hand off through comments on the task, written and re
 
 | Message | Written by | Where | Read by |
 |---|---|---|---|
-| `<!-- spec-review v1 sha=… verdict=… ac=… -->` with the criteria table | `publish.mjs` from the review's result | Issue | `route.mjs` (may tests start), `lock.mjs` (spec freeze), `acceptance.mjs` (criteria), `brief.mjs` |
+| `<!-- spec-review v1 sha=… verdict=… ac=… -->` with the criteria table: text, level and test of each criterion | `publish.mjs` from the review's result | Issue | `route.mjs` (may tests start), `lock.mjs` (spec freeze), `acceptance.mjs` (criteria), `brief.mjs` |
 | Status comment `<!-- lifecycle-status v1 -->`: Now, Next and a log of the last 20 lines (route lines drop first) | `publish.mjs` and `route.mjs`, edited in place | One per issue or pull request | `brief.mjs`; the person |
 | Log line `Note (<stage>): …` with `<!-- step-note stage=… run=… [turns=… usd=… denied=…] at=… -->`, one `Note:` of at most 2 sentences and 280 characters | `publish.mjs` after every run; `--note` in a run by hand; `route.mjs` for a bypass | Status log | `brief.mjs`; the person |
 | Log line `Note (route): Not started: <reason>` | `route.mjs`, when a person's trigger cannot start | Status log | The person |

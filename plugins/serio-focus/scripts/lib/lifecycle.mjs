@@ -20,10 +20,11 @@ export const robot = (user) => user?.login === 'github-actions[bot]' && user.typ
 export const specSha = (issue) => createHash('sha256').update(`${issue.title}\n${String(issue.body || '').replace(/\r\n/g, '\n')}`).digest('hex').slice(0, 12);
 const SPEC = /<!-- spec-review v1 sha=([0-9a-f]{12}) verdict=(ready|questions) ac=([\d,]*) -->/;
 export const specComment = (comments, own, marker = SPEC) => comments.filter((c) => (robot(c.user) || owns(c.user, own)) && c.created_at === c.updated_at && marker.test(c.body || '')).at(-1);
-export const specMarker = (comments, own) => {
-  const m = SPEC.exec(specComment(comments, own)?.body || '');
+export const specOf = (body) => {
+  const m = SPEC.exec(body || '');
   return m ? { sha: m[1], verdict: m[2], ac: m[3].split(',').filter(Boolean).map(Number) } : undefined;
 };
+export const specMarker = (comments, own) => specOf(specComment(comments, own)?.body);
 export const fixMarkers = (comments) => comments.filter((c) => robot(c.user))
   .map((c) => /<!-- fix-ci v1 run=(\d+) attempt=(\d+) sha=[0-9a-f]+ -->/.exec(c.body || '')).filter(Boolean)
   .map(([, run, attempt]) => ({ run: Number(run), attempt: Number(attempt) }));
