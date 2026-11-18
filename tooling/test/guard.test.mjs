@@ -226,6 +226,51 @@ it('blocks a spec review that asks consent for content the issue supplies, and a
   assert.match(flow, /if: always\(\) && steps\.trace\.outputs\.finished != 'true'\n\s+run: exit 1/);
   assert.match(flow, /id: claude\n\s+continue-on-error: true/);
 });
+it('the spec review table shows the test of each criterion and refuses a criterion without one', async () => {
+  const { comment } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
+  const review = (test) => comment({ verdict: 'ready', criteria: [{ id: 1, text: 'Given 2 and 3, When Add, Then 5', level: 'unit', test }], questions: [] }, 'abcdef123456');
+  const lines = review('sum adds two numbers')?.split('\n') || [];
+  assert.ok(lines.includes('| Criterion | Given, When, Then | Level | Test |'), lines.join('\n'));
+  assert.ok(lines.includes('| AC1 | Given 2 and 3, When Add, Then 5 | unit | `sum adds two numbers` |'), lines.join('\n'));
+  assert.ok(review('x`y|z')?.split('\n').includes('| AC1 | Given 2 and 3, When Add, Then 5 | unit | `xyz` |'), review('x`y|z'));
+  for (const test of [undefined, '']) assert.equal(review(test), null, JSON.stringify(test));
+});
+it("a code owner's spec-ok keeps the test of every accepted criterion", async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { route } = await import(new URL('route.mjs', lifecycle));
+  const { comment } = await import(new URL('publish.mjs', lifecycle));
+  const { owners, specMarker, specSha } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const ada = { login: 'ada', type: 'User' }, bot = { login: 'github-actions[bot]', type: 'Bot' }, own = owners('* @ada\n');
+  const issue = { number: 7, title: 'Sum', body: 'AC1 edited', assignees: [ada] };
+  const criteria = [{ id: 1, text: 'Given 2 and 3, When Add, Then 5', level: 'unit', test: 'sum adds two numbers' }, { id: 2, text: 'Given a, When Add, Then an error', level: 'e2e', test: 'sum rejects text' }];
+  const earlier = comment({ verdict: 'questions', criteria, questions: [{ question: 'Which locale?', recommended: 'pl-PL' }] }, '000000000000');
+  const old = '| Criterion | Given, When, Then | Level |\n|---|---|---|\n| AC1 | Given 2 and 3, When Add, Then 5 | unit |\n\n<!-- spec-review v1 sha=000000000000 verdict=questions ac=1 -->';
+  const accept = (body) => route('issues', { action: 'labeled', label: { name: 'spec-ok' }, sender: ada, issue: { number: 7 } }, { repo: 'o/r', guarded: true, own, issue: () => issue, comments: () => [{ user: bot, body }] });
+  const got = accept(earlier).accept || '', marker = specMarker([{ user: bot, body: got }], own);
+  assert.deepEqual([marker?.sha, marker?.verdict], [specSha(issue), 'ready']);
+  assert.match(got, /^\| AC1 \| .* \| unit \| `sum adds two numbers` \|\n\| AC2 \| .* \| e2e \| `sum rejects text` \|$/m);
+  const stale = accept(old); assert.deepEqual([stale.stop, stale.stage, stale.accept], ['no reviewed criteria to accept yet: add spec-review first', undefined, undefined]);
+});
+it('acceptance passes a criterion only when the test its review names ran and passed', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { cases, report } = await import(new URL('acceptance.mjs', lifecycle));
+  const { comment } = await import(new URL('publish.mjs', lifecycle));
+  const criterion = (id) => ({ id, text: `Given 2 and 3, When Add ${id}, Then 5`, level: 'unit', test: 'sum adds two numbers' });
+  const review = comment({ verdict: 'ready', criteria: [criterion(1), criterion(2)], questions: [] }, 'abcdef123456');
+  const old = '| Criterion | Given, When, Then | Level |\n|---|---|---|\n| AC1 | Given 2 and 3, When Add, Then 5 | unit |\n\n<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1 -->';
+  const run = (xml, body = review) => report({ issue: 7, review: body, tests: cases(`<testsuites><testsuite>${xml}</testsuite></testsuites>`), sha: 'abcdef123456' });
+  const named = (inner = '') => `<testcase name="sum adds two numbers">${inner}</testcase>`;
+  const pass = run(`${named()}<testcase name="#7 AC3: another test"/>`);
+  assert.equal(pass.ok, true, pass.body);
+  for (const n of [1, 2]) assert.ok(pass.body.split('\n').includes(`| AC${n} | sum adds two numbers | passed |`), pass.body);
+  assert.doesNotMatch(pass.body, /Tests without a criterion/);
+  for (const [xml, result] of [['<testcase name="#7 AC1: sum"/><testcase name="sum adds two numbers twice"/>', 'missing'], [named('<skipped/>'), 'skipped'],
+    [named('<failure/>'), 'failed'], [named('<error/>'), 'failed'], [named() + named('<failure/>'), 'failed']]) {
+    const got = run(xml);
+    assert.equal(got.ok, false, xml); assert.match(got.body, /Acceptance: fail/, xml); assert.match(got.body, new RegExp(`^\\| AC1 \\| [^|]* \\| ${result} \\|$`, 'm'), xml);
+  }
+  assert.ok(run(named(), old).body.split('\n').includes('| AC1 | - | missing |'));
+});
 it('#84 AC1: tooling/cli reads every JSON file through one reader', () => {
   const dir = path.join(REPO, 'tooling', 'cli'), src = (file) => readFileSync(file, 'utf8');
   const cli = readdirSync(dir).map((name) => [name, src(path.join(dir, name))]);
