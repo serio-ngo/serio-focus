@@ -224,4 +224,5 @@ it('blocks a spec review that asks consent for content the issue supplies, and a
   assert.deepEqual(skill.split('\n').filter((l) => /consent|permission|rights/i.test(l) && !/Never ask for consent, permission or rights/.test(l)), []);
   assert.doesNotMatch(flow, /steps\.claude\.outcome|--json-schema '\{/);
   assert.match(flow, /if: always\(\) && steps\.trace\.outputs\.finished != 'true'\n\s+run: exit 1/);
+  assert.match(flow, /id: claude\n\s+continue-on-error: true/);
 });
