@@ -242,7 +242,7 @@ it('#84 AC1-AC4: tooling reads JSON, the plugin version and the Claude binary on
   assert.doesNotMatch(cli.map(([, text]) => text).join('\n'), /JSON\.parse\(readFileSync\(|(const readJson =|function readJson\()[\s\S]*readJsonFile|readJsonFile[\s\S]*(const readJson =|function readJson\()/);
   const serio = src(path.join(dir, 'serio.mjs'));
   assert.equal(serio.split("'.local', 'bin'").length - 1, 1);
-  const tooling = [...walk(path.join(REPO, 'tooling')), ...walk(path.join(REPO, 'plugins'))].filter((file) => file !== fileURLToPath(import.meta.url));
+  const tooling = ['tooling', 'plugins'].flatMap((d) => walk(path.join(REPO, d)).map((f) => path.join(REPO, d, f))).filter((file) => file !== fileURLToPath(import.meta.url));
   assert.deepEqual(tooling.filter((file) => /\.(mjs|js)$/.test(file) && src(file).includes('pluginVersion')), []);
   for (const name of ['serio.mjs', 'generate.mjs']) assert.match(src(path.join(dir, name)), /import \{[^}]*\bversion\b[^}]*\} from '[^']*runtime\.mjs'/);
   const life = src(path.join(PLUGIN, 'scripts', 'lib', 'lifecycle.mjs'));
