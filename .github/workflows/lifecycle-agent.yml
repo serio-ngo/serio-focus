@@ -32,6 +32,7 @@ jobs:
   route:
     name: route
     if: >-
+      (github.event_name != 'issues' || contains(fromJSON('["spec-review","spec-ok","tests-ok"]'), github.event.label.name)) &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'failure') &&
       (github.event_name != 'pull_request_review' || github.event.review.state != 'approved' || contains(github.event.review.body, 'tests-ok'))
     runs-on: ubuntu-latest
@@ -50,6 +51,7 @@ jobs:
       spec: ${{ steps.route.outputs.spec }}
       secret: ${{ steps.route.outputs.secret }}
       bot: ${{ steps.route.outputs.bot }}
+      bypass: ${{ steps.route.outputs.bypass }}
       turns: ${{ steps.route.outputs.turns }}
       timeout: ${{ steps.route.outputs.timeout }}
     steps:
@@ -76,7 +78,7 @@ jobs:
       pull-requests: read
       actions: read
     outputs:
-      structured_output: ${{ steps.claude.outputs.structured_output }}
+      structured_output: ${{ steps.claude.outputs.structured_output || steps.trace.outputs.structured }}
       reason: ${{ steps.trace.outputs.reason }}
       note: ${{ steps.trace.outputs.note }}
       stats: ${{ steps.trace.outputs.stats }}
@@ -109,6 +111,11 @@ jobs:
           d="$RUNNER_TEMP/serio-focus"; git init -q "$d"
           git -C "$d" fetch -q --depth 1 https://github.com/serio-ngo/serio-focus.git "$REF"
           git -C "$d" checkout -q FETCH_HEAD
+      - name: Ponytail at the pinned commit
+        run: |
+          d="$RUNNER_TEMP/ponytail"; git init -q "$d"
+          git -C "$d" fetch -q --depth 1 https://github.com/DietrichGebert/ponytail.git 7801d061243d7b753bad0e0b3c057cd250b11755
+          git -C "$d" checkout -q FETCH_HEAD
       - name: Brief
         env:
           GH_TOKEN: ${{ github.token }}
@@ -123,13 +130,12 @@ jobs:
           PR: ${{ needs.route.outputs.pr }}
           TURNS: ${{ needs.route.outputs.turns }}
           MODEL: ${{ inputs.orchestrator }}
-          SCHEMA: '{"type":"object","required":["verdict","criteria","questions","note"],"properties":{"verdict":{"enum":["ready","questions"]},"criteria":{"type":"array","maxItems":5,"items":{"type":"object","required":["id","text","level"],"properties":{"id":{"type":"integer"},"text":{"type":"string"},"level":{"enum":["unit","e2e"]}}}},"questions":{"type":"array","maxItems":5,"items":{"type":"object","required":["question","recommended"],"properties":{"question":{"type":"string"},"recommended":{"type":"string"}}}},"note":{"type":"string"}}}'
           WRITE: Read,Glob,Grep,Edit,Write,Agent,Skill,Bash
           NOTE: "End your last message with one line that starts with Note: and holds at most 2 sentences and 280 characters in plain words: what this step did, and the one thing the person must know."
         run: |
           tools="$WRITE"; extra="--append-system-prompt \"$NOTE\""; model="--model $MODEL"
           case "$STAGE" in
-            spec-review) prompt="/serio-focus:spec-review $ISSUE"; tools="Read,Glob,Grep"; extra="--json-schema '$SCHEMA'" ;;
+            spec-review) prompt="/serio-focus:spec-review $ISSUE"; tools="Read,Glob,Grep"; extra="--json-schema '$(jq -c . "$RUNNER_TEMP/serio-focus/plugins/serio-focus/scripts/lib/spec-review.schema.json")'" ;;
             write-tests) prompt="/serio-focus:write-tests $ISSUE" ;;
             deliver) prompt="/serio-focus:deliver task issue #$ISSUE on pull request #$PR" ;;
             pr-loop) prompt="/serio-focus:pr-loop $PR" ;;
@@ -147,6 +153,7 @@ jobs:
           echo "::add-mask::$token"
           echo "token=$token" >> "$GITHUB_OUTPUT"
       - id: claude
+        continue-on-error: true
         uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed
         env:
           GH_TOKEN: ${{ github.token }}
@@ -162,8 +169,12 @@ jobs:
           bot_name: ${{ inputs.bot }}[bot]
           bot_id: ${{ steps.bot.outputs.id }}
           allowed_bots: ${{ needs.route.outputs.bot == 'true' && inputs.bot || '' }}
-          plugin_marketplaces: ${{ inputs.plugin_marketplaces || format('{0}/serio-focus', runner.temp) }}
-          plugins: ${{ inputs.plugins }}
+          plugin_marketplaces: |-
+            ${{ inputs.plugin_marketplaces || format('{0}/serio-focus', runner.temp) }}
+            ${{ runner.temp }}/ponytail
+          plugins: |-
+            ${{ inputs.plugins }}
+            ponytail@ponytail
           prompt: ${{ steps.args.outputs.prompt }}
           claude_args: ${{ steps.args.outputs.args }}
       - name: Trace
@@ -171,6 +182,9 @@ jobs:
         if: always() && steps.claude.outputs.execution_file != ''
         env:
           LOG: ${{ steps.claude.outputs.execution_file }}
+          STAGE: ${{ needs.route.outputs.stage }}
+          ISSUE: ${{ needs.route.outputs.issue }}
+          BYPASS: ${{ needs.route.outputs.bypass }}
         run: |
           {
             echo '```text'
@@ -185,9 +199,11 @@ jobs:
           jq -c '.[]' "$LOG" || cat "$LOG"
           echo '::endgroup::'
           echo "reason=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
+          # The step may exit non-zero after a valid result (turn cap): the last result row decides
+          jq -r --arg stage "$STAGE" '[.[] | select(.type == "result")] | last // {} | (if .subtype == "success" and .is_error == false and ($stage != "spec-review" or .structured_output != null) then "finished=true" else empty end), (if .structured_output != null then "structured=\(.structured_output | tojson)" else empty end)' "$LOG" >> "$GITHUB_OUTPUT" || true
           node "$RUNNER_TEMP/serio-focus/plugins/serio-focus/scripts/lifecycle/publish.mjs" --outcome "$LOG" >> "$GITHUB_OUTPUT" || true
       - name: Hand the commits to the publish job
-        if: needs.route.outputs.stage != 'spec-review' && steps.claude.outcome == 'success'
+        if: needs.route.outputs.stage != 'spec-review' && steps.trace.outputs.finished == 'true'
         env:
           BEFORE: ${{ needs.route.outputs.sha || format('origin/{0}', github.event.repository.default_branch) }}
         run: |
@@ -196,11 +212,20 @@ jobs:
           git bundle create "$out/commits.bundle" "$BEFORE..HEAD" || rm -f "$out/commits.bundle"
           cp .lifecycle/pr.md "$out/" 2>/dev/null || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: needs.route.outputs.stage != 'spec-review' && steps.claude.outcome == 'success'
+        if: needs.route.outputs.stage != 'spec-review' && steps.trace.outputs.finished == 'true'
         with:
           name: commits
           path: ${{ runner.temp }}/out
           retention-days: 1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: eval-${{ needs.route.outputs.stage }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/eval.json
+          if-no-files-found: ignore
+      - name: Fail a run without a finished result
+        if: always() && steps.trace.outputs.finished != 'true'
+        run: exit 1
 
   publish:
     name: publish

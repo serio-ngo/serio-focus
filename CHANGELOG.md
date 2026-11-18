@@ -2,6 +2,18 @@
 
 <!-- one row per version; `npm run release` updates -->
 
+## Unreleased
+
+- One status comment per issue is edited in place: step, result, next action, log.
+- A code owner's `spec-ok` without a ready review accepts the latest reviewed criteria and is logged; a missing review stops it.
+- `tests-ok` as an issue label answers with the exact action.
+- A finished result is kept whatever the turn count; turn caps (40/80/160/60) are a runaway guard.
+- One schema file holds the spec-review limits; long text is shortened, not dropped.
+- Spec review never asks consent for content the issue supplies.
+- Unrouted labels start no runner.
+- Ponytail 5.3.3 runs in cloud runs.
+- Each run uploads an eval record.
+
 | Version | Date | Change |
 |---|---|---|
 | 2.1.0 | 2026-11-17 | Tests run passes the repository's checks; spec review knows the agent's limits; the model session holds no write token, so private repositories run; no fix run from the draft's red CI; one note per run; pr-loop ends at its push; a reply says what an issue or decision is, never its number alone; the spec form asks for a criterion on the built page |

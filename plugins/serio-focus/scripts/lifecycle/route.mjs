@@ -2,10 +2,11 @@
 import assert from 'node:assert/strict';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { note } from './publish.mjs';
-import { all, fixMarkers, issueOf, lockOf, lockReview, one, owners, ownersOf, owns, park, person, send, specMarker, specSha, testsOk } from '../lib/lifecycle.mjs';
+import { check } from './lock.mjs';
+import { comment, note } from './publish.mjs';
+import { all, fixMarkers, issueOf, lockOf, lockReview, one, owners, ownersOf, owns, park, person, send, specComment, specMarker, status, specSha, testsOk } from '../lib/lifecycle.mjs';
 
-const CAPS = { 'spec-review': [15, 10], 'write-tests': [40, 20], deliver: [80, 40], 'pr-loop': [30, 15] };
+const CAPS = { 'spec-review': [40, 10], 'write-tests': [80, 20], deliver: [160, 40], 'pr-loop': [60, 15] };
 
 export function route(name, ev, s) {
   const stop = (why, tell) => ({ stop: why, tell });
@@ -19,9 +20,19 @@ export function route(name, ev, s) {
     const n = ev.issue.number;
     if (!person(ev.sender) || ev.issue.pull_request) return stop('label is not from a person on an issue');
     if (ev.label?.name === 'spec-review') return run('spec-review', n, { spec: specSha(s.issue(n)) });
+    if (ev.label?.name === 'tests-ok') {
+      const draft = s.openPulls().find((p) => p.draft && issueOf(p.head.ref) === n);
+      return stop(draft ? `tests-ok is a review on draft pull request #${draft.number}: Review changes, Comment, text tests-ok` : 'tests-ok needs the draft pull request from the tests run first', n);
+    }
     if (ev.label?.name !== 'spec-ok') return stop('label is not routed');
     const mark = specMarker(s.comments(n), s.own);
-    if (mark?.verdict !== 'ready' || mark.sha !== specSha(s.issue(n))) return stop('no ready spec review of the current issue text', n);
+    if (mark?.verdict !== 'ready' || mark.sha !== specSha(s.issue(n))) {
+      const earlier = specComment(s.comments(n), s.own), has = /^\| AC\d+ \|/m.test(earlier?.body || '');
+      if (!owns(ev.sender, s.own)) return stop(`no ready spec review of the current issue text; ${has ? 'a code owner can accept the reviewed criteria by adding spec-ok' : 'add spec-review first'}`, n);
+      const criteria = [...(earlier?.body || '').matchAll(/^\| AC(\d+) \| (.*) \| (unit|e2e) \|$/gm)].map(([, id, text, level]) => ({ id: +id, text: text.replace(/\\\|/g, '|'), level }));
+      const accept = comment({ verdict: 'ready', criteria }, specSha(s.issue(n)), `Accepted by ${ev.sender.login} without a ready review; open questions stay on the earlier review.`);
+      return accept ? run('write-tests', n, { bypass: ev.sender.login, accept }) : stop('no reviewed criteria to accept yet: add spec-review first', n);
+    }
     return run('write-tests', n);
   }
   if (name === 'pull_request_review' && ev.action === 'submitted') {
@@ -53,15 +64,16 @@ export function route(name, ev, s) {
 
 function selfTest() {
   const user = (login, type = 'User') => ({ login, type });
-  const ada = user('ada'), app = user('serio-agent[bot]', 'Bot'), actions = user('github-actions[bot]', 'Bot');
+  const ada = user('ada'), eve = user('eve'), app = user('serio-agent[bot]', 'Bot'), actions = user('github-actions[bot]', 'Bot');
   const issue = { number: 7, title: 'Sum', body: 'AC1', assignees: [ada] };
   const sha = specSha(issue);
   const ready = { user: actions, body: `<!-- spec-review v1 sha=${sha} verdict=ready ac=1 -->` };
+  const earlier = { user: actions, body: comment({ verdict: 'questions', criteria: [{ id: 1, text: 'Given a | b, When x, Then y', level: 'unit' }, { id: 2, text: 'Given 2, When Add, Then 3', level: 'e2e' }], questions: [{ question: 'Which locale?', recommended: 'pl-PL' }] }, '000000000000') };
   const lock = { user: ada, body: 'tests-ok', commit_id: 'h1', state: 'COMMENTED', submitted_at: '2026-01-02' };
   const fail = (id, created_at = '2026-01-03') => ({ id, created_at });
   const fix = (run) => ({ user: actions, body: `<!-- fix-ci v1 run=${run} attempt=1 sha=abc -->` });
   const pr = { number: 9, state: 'open', draft: true, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
-  const state = (over = {}) => ({ repo: 'o/r', guarded: true, failures: () => [], own: owners('* @ada\n'), issue: () => issue, comments: () => [ready], reviews: () => [lock], pulls: () => [pr], pull: () => pr, ...over });
+  const state = (over = {}) => ({ repo: 'o/r', guarded: true, failures: () => [], own: owners('* @ada\n'), issue: () => issue, comments: () => [ready], reviews: () => [lock], pulls: () => [pr], openPulls: () => [pr], pull: () => pr, ...over });
   const label = (name, sender = ada) => ({ action: 'labeled', label: { name }, sender, issue: { number: 7 } });
   const review = (body, state_, who = ada, commit = 'h1') => ({ action: 'submitted', pull_request: pr, review: { user: who, body, state: state_, commit_id: commit } });
   const ci = (over = {}) => ({ action: 'completed', workflow_run: { id: 5, run_attempt: 1, conclusion: 'failure', head_branch: 'agent/7-sum', head_sha: 'h1', head_repository: { full_name: 'o/r' }, html_url: 'u', ...over } });
@@ -70,8 +82,16 @@ function selfTest() {
     ['spec-ok label', 'issues', label('spec-ok'), state(), 'write-tests'],
     ['label from a bot', 'issues', label('spec-ok', app), state(), undefined],
     ['spec-ok without a review', 'issues', label('spec-ok'), state({ comments: () => [] }), undefined],
-    ['spec-ok after an edit', 'issues', label('spec-ok'), state({ issue: () => ({ ...issue, body: 'AC1 edited' }) }), undefined],
-    ['spec-ok with a forged marker', 'issues', label('spec-ok'), state({ comments: () => [{ ...ready, user: app }] }), undefined],
+    ['spec-ok bypass accepting earlier criteria', 'issues', label('spec-ok'), state({ comments: () => [earlier] }), 'write-tests'],
+    ['spec-ok bypass with an earlier review without criteria', 'issues', label('spec-ok'), state({ comments: () => [{ ...ready, body: '<!-- spec-review v1 sha=000000000000 verdict=questions ac= -->' }] }), undefined],
+    ['spec-ok bypass with a newer review without criteria', 'issues', label('spec-ok'), state({ comments: () => [earlier, { ...ready, body: '<!-- spec-review v1 sha=000000000000 verdict=questions ac= -->' }] }), undefined],
+    ['spec-ok bypass by a non-owner', 'issues', label('spec-ok', eve), state({ comments: () => [earlier] }), undefined],
+    ['spec-ok bypass by a bot', 'issues', label('spec-ok', app), state({ comments: () => [earlier] }), undefined],
+    ['spec-ok bypass with a forged review', 'issues', label('spec-ok'), state({ comments: () => [{ ...earlier, user: eve }] }), undefined],
+    ['spec-ok without a review from a non-owner', 'issues', label('spec-ok', eve), state({ comments: () => [] }), undefined],
+    ['tests-ok issue label', 'issues', label('tests-ok'), state(), undefined],
+    ['spec-ok after an edit', 'issues', label('spec-ok', eve), state({ issue: () => ({ ...issue, body: 'AC1 edited' }) }), undefined],
+    ['spec-ok with a forged marker', 'issues', label('spec-ok', eve), state({ comments: () => [{ ...ready, user: app }] }), undefined],
     ['no assignee', 'issues', label('spec-review'), state({ issue: () => ({ ...issue, assignees: [] }) }), undefined],
     ['tests-ok review', 'pull_request_review', review('tests-ok', 'commented'), state(), 'deliver'],
     ['tests-ok on an old head', 'pull_request_review', review('tests-ok', 'commented', ada, 'h0'), state(), undefined],
@@ -98,13 +118,14 @@ function selfTest() {
     ['team-only code owners', 'pull_request_review', review('tests-ok', 'commented'), state({ own: owners('* @o/team\n') }), undefined],
     ['no ruleset', 'issues', label('spec-review'), state({ guarded: false }), undefined],
     ['private repository, where no ruleset can exist', 'issues', label('spec-review'), state({ guarded: false, private: true }), 'spec-review'],
-    ['edited marker', 'issues', label('spec-ok'), state({ comments: () => [{ ...ready, created_at: 'a', updated_at: 'b' }] }), undefined],
+    ['edited marker', 'issues', label('spec-ok', eve), state({ comments: () => [{ ...ready, created_at: 'a', updated_at: 'b' }] }), undefined],
     ['unknown event', 'push', {}, state(), undefined],
   ];
   for (const [title, name, ev, s, want] of cases) assert.equal(route(name, ev, s).stage, want, title);
   const tells = [
     ['no assignee', 'issues', label('spec-review'), state({ issue: () => ({ ...issue, assignees: [] }) }), 7],
-    ['spec-ok after an edit', 'issues', label('spec-ok'), state({ issue: () => ({ ...issue, body: 'AC1 edited' }) }), 7],
+    ['spec-ok after an edit', 'issues', label('spec-ok', eve), state({ issue: () => ({ ...issue, body: 'AC1 edited' }) }), 7],
+    ['tests-ok issue label', 'issues', label('tests-ok'), state(), 7],
     ['no ruleset', 'issues', label('spec-review'), state({ guarded: false }), 7],
     ['tests-ok on an old head', 'pull_request_review', review('tests-ok', 'commented', ada, 'h0'), state(), 9],
     ['tests-ok on a ready pull request', 'pull_request_review', { ...review('tests-ok', 'commented'), pull_request: { ...pr, draft: false } }, state({ pull: () => ({ ...pr, draft: false }) }), 9],
@@ -115,10 +136,23 @@ function selfTest() {
     ['team-only code owners', 'pull_request_review', review('tests-ok', 'commented'), state({ own: owners('* @o/team\n') }), 9],
   ];
   for (const [title, name, ev, s, want] of tells) assert.equal(route(name, ev, s).tell, want, title);
+  const bypass = route('issues', label('spec-ok'), state({ comments: () => [earlier] }));
+  assert.equal(bypass.bypass, 'ada');
+  assert.deepEqual(specMarker([{ user: actions, body: bypass.accept }], owners('* @ada\n')), { sha, verdict: 'ready', ac: [1, 2] });
+  assert.match(bypass.accept, /\| AC1 \| Given a \\| b, When x, Then y \| unit \|\n\| AC2 \| Given 2, When Add, Then 3 \| e2e \|/);
+  assert.match(bypass.accept, /\nAccepted by ada without a ready review; open questions stay on the earlier review\.\n/);
+  const posted = [{ user: actions, body: bypass.accept }], ok = (c) => check({ pr: { draft: false, head: pr.head, base: { repo: { full_name: 'o/r' } } }, issue: { ...issue, labels: [{ name: 'spec-ok' }] }, comments: c, reviews: [lock], own: owners('* @ada\n'), changed: () => ['src/a.mjs'] }).ok;
+  assert.deepEqual([ok(posted), ok([earlier])], [true, false]);
+  assert.match(route('issues', label('spec-ok'), state({ comments: () => [] })).stop, /no reviewed criteria to accept yet: add spec-review first/);
+  assert.equal(route('issues', label('spec-ok'), state({ comments: () => [] })).tell, 7);
+  assert.match(route('issues', label('spec-ok', eve), state({ comments: () => [earlier] })).stop, /code owner can accept the reviewed criteria by adding spec-ok/);
+  assert.match(route('issues', label('spec-ok', eve), state({ comments: () => [] })).stop, /add spec-review first/);
+  assert.match(route('issues', label('tests-ok'), state()).stop, /#9/);
+  assert.match(route('issues', label('tests-ok'), state({ openPulls: () => [] })).stop, /draft pull request from the tests run first/);
   const red = route('workflow_run', ci(), state());
   assert.equal(red.bot, true); assert.match(red.marker, /fix-ci v1 run=5 attempt=1 sha=h1/);
   assert.equal(route('workflow_run', ci(), state({ failures: () => [fail(3), fail(4), fail(5)] })).park, 9);
-  console.log(`route self-test: ${cases.length + tells.length + 3} checks passed`);
+  console.log(`route self-test: ${cases.length + tells.length + 12} checks passed`);
 }
 
 function main() {
@@ -132,14 +166,19 @@ function main() {
     comments: (n) => all(`repos/${repo}/issues/${n}/comments?per_page=100`),
     reviews: (n) => all(`repos/${repo}/pulls/${n}/reviews?per_page=100`),
     pull: (n) => one(`repos/${repo}/pulls/${n}`),
+    openPulls: () => all(`repos/${repo}/pulls?state=open&per_page=100`),
     pulls: (branch) => all(`repos/${repo}/pulls?state=open&head=${repo.split('/')[0]}:${branch}`),
   };
   const r = route(process.env.GITHUB_EVENT_NAME, ev, s);
-  if (r.tell) try { send('POST', `repos/${repo}/issues/${r.tell}/comments`, { body: note(`Not started: ${r.stop}.`, 'route', process.env.GITHUB_RUN_ID) }); } catch { }
+  if (r.tell) try { status(repo, r.tell, { now: `Not started: ${r.stop}.`, line: note(`Not started: ${r.stop}.`, 'route', process.env.GITHUB_RUN_ID) }); } catch { }
   if (r.park) park(repo, r.park, r.stop);
+  if (r.accept) {
+    send('POST', `repos/${repo}/issues/${r.issue}/comments`, { body: r.accept });
+    try { status(repo, r.issue, { now: `${r.bypass} bypassed the spec review and accepted the reviewed criteria.`, next: 'the tests run writes a draft pull request', line: note(`Bypass: ${r.bypass} accepted the reviewed criteria without a ready review`, 'bypass', process.env.GITHUB_RUN_ID) }); } catch { }
+  }
   if (r.marker) send('POST', `repos/${repo}/issues/${r.pr}/comments`, { body: r.marker });
   const [turns, timeout] = CAPS[r.stage] || [0, 1];
-  const out = { stage: r.stage || '', issue: r.issue || '', pr: r.pr || '', ref: r.ref || '', sha: r.sha || '', spec: r.spec || '', assignee: r.assignee || '', secret: r.assignee ? `CLAUDE_TOKEN_${r.assignee.toUpperCase().replace(/[^A-Z0-9]/g, '_')}` : '', bot: r.bot || '', turns, timeout };
+  const out = { stage: r.stage || '', issue: r.issue || '', pr: r.pr || '', ref: r.ref || '', sha: r.sha || '', spec: r.spec || '', assignee: r.assignee || '', secret: r.assignee ? `CLAUDE_TOKEN_${r.assignee.toUpperCase().replace(/[^A-Z0-9]/g, '_')}` : '', bot: r.bot || '', bypass: r.bypass || '', turns, timeout };
   appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(out).map(([k, v]) => `${k}=${v}\n`).join(''));
   console.log(r.stage ? `stage ${r.stage} for issue ${r.issue}` : `stop: ${r.stop}`);
 }
