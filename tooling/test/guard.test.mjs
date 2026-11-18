@@ -221,6 +221,6 @@ it('keeps every write token out of the model job and runs on a private repositor
 });
 it('blocks a spec review that asks consent for content the issue supplies, and a result judged by the step exit', () => {
   const skill = readFileSync(path.join(PLUGIN, 'skills', 'spec-review', 'SKILL.md'), 'utf8'), flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8');
-  assert.doesNotMatch(skill, /Personal data, paid calls and irreversible effects are named/);
+  assert.deepEqual(skill.split('\n').filter((l) => /consent|permission|rights/i.test(l) && !/Never ask for consent, permission or rights/.test(l)), []);
   assert.doesNotMatch(flow, /steps\.claude\.outcome|--json-schema '\{/);
 });
