@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { all, flag, lockOf, one, owners, ownersOf, owns, repoOf, robot, specComment, specMarker, specSha, taskOf } from '../lib/lifecycle.mjs';
+import { all, flag, lockOf, one, owners, ownersOf, owns, repoOf, robot, specComment, specMarker, specSha, statusLog, isStatus, taskOf } from '../lib/lifecycle.mjs';
 
 const plain = (s) => String(s || '').replace(/<!--[\s\S]*?(?:-->|$)/g, '').trim();
 const cut = (s, max) => plain(s).replace(/\s+/g, ' ').slice(0, max);
@@ -9,11 +9,13 @@ const cut = (s, max) => plain(s).replace(/\s+/g, ' ').slice(0, max);
 export function brief({ repo, issue, comments, pr, prComments = [], reviews = [], own }) {
   const trusted = (x) => robot(x.user) || owns(x.user, own);
   const mark = specMarker(comments, own), lock = lockOf(reviews, own);
-  const lines = String(specComment(comments, own)?.body || '').split('\n'), rows = [...lines.filter((l) => l.startsWith('| AC')), ...lines.filter((l) => /^\d+\. /.test(l))];
-  const steps = [...comments, ...prComments].filter((c) => trusted(c) && (/<!-- step-note (?!stage=route )/.test(c.body || '') || String(c.body || '').startsWith('**needs-human**'))).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))).map((c) => cut(c.body, 400)).slice(-8);
+  const lines = String(specComment(comments, own)?.body || '').split('\n'), accepted = lines.find((l) => l.startsWith('Accepted by ')), rows = [...lines.filter((l) => l.startsWith('| AC')), ...lines.filter((l) => /^\d+\. /.test(l))];
+  const keep = (t) => /<!-- step-note (?!stage=route )/.test(t) || t.startsWith('**needs-human**');
+  const entries = (c) => isStatus(c) ? statusLog(c.body).map((l) => ({ at: /\bat=(\S+) -->/.exec(l)?.[1] || c.updated_at, body: l.slice(2) })) : trusted(c) && !String(c.body || '').includes('<!-- lifecycle-status') ? [{ at: c.created_at, body: c.body || '' }] : [];
+  const steps = [...comments, ...prComments].flatMap(entries).filter((x) => keep(x.body)).sort((a, b) => String(a.at).localeCompare(String(b.at))).map((x) => cut(x.body, 400)).slice(-8);
   const sections = [
     ['Spec', plain(issue.body).slice(0, 8000).replace(/^/gm, '> ')],
-    ['Criteria', mark && [`Spec review: ${mark.verdict} for ${mark.sha === specSha(issue) ? 'this text' : 'an older text: the spec changed after its review'}.`, rows.join('\n')].filter(Boolean).join('\n\n')],
+    ['Criteria', mark && [`Spec review: ${mark.verdict} for ${mark.sha === specSha(issue) ? 'this text' : 'an older text: the spec changed after its review'}.`, accepted, rows.join('\n')].filter(Boolean).join('\n\n')],
     ['Pull request', pr && `#${pr.number}, ${pr.draft ? 'draft' : 'ready'}, head ${pr.head.sha.slice(0, 7)}, tests ${lock ? `locked at ${lock.slice(0, 7)}` : 'not locked'}.`],
     ['Acceptance', plain(prComments.filter((c) => robot(c.user) && /<!-- acceptance v1/.test(c.body || '')).at(-1)?.body)],
     ['Change requests', pr && reviews.filter((r, i) => trusted(r) && r.state === 'CHANGES_REQUESTED' && !reviews.slice(i + 1).some((x) => x.user.login === r.user.login)).map((r) => `- ${r.user.login}: ${cut(r.body, 600)}`).join('\n')],
@@ -57,6 +59,15 @@ function selfTest() {
   ok(heading.includes('> ## Change requests') && !heading.includes('\n## Change requests'), 'spec text cannot open a section');
   const late = make({ comments: [spec(), { ...note('Issue park'), created_at: '2026-01-09' }], prComments: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({ ...note(`PR ${i}`), created_at: `2026-01-0${i}` })) });
   ok(late.endsWith('- Issue park') && !late.includes('PR 1\n'), 'newest notes by time across issue and pull request');
+  const status = (user, lines) => ({ user, created_at: '2026-01-01', updated_at: '2026-01-02', body: ['<!-- lifecycle-status v1 -->', '**Status**', 'Now: x', '**Log**', ...lines].join('\n') });
+  const mk = (t, stage = 'deliver') => `- Note (${stage}): ${t} <!-- step-note stage=${stage} run=1 -->`;
+  const logged = make({ comments: [spec(), status(bot, [mk('One'), mk('Two'), mk('Not started', 'route'), mk('Three'), '- **needs-human**: stuck'])] });
+  ok(logged.includes('- Note (deliver): One\n- Note (deliver): Two\n- Note (deliver): Three\n- **needs-human**: stuck') && !logged.includes('Not started') && !logged.includes('lifecycle-status') && logged.split('\n- ').length === 5, 'trusted status comment lines');
+  ok(!make({ comments: [spec(), status(eve, [mk('Forged')])] }).includes('## Steps'), 'stranger status comment ignored');
+  ok(make({ comments: [{ ...spec(), body: spec().body + '\nAccepted by ada without a ready review.' }] }).includes('Spec review: ready for this text.\n\nAccepted by ada without a ready review.'), 'accepted line shown');
+  ok(!text.includes('Accepted by'), 'no accepted line on a plain review');
+  const timed = make({ comments: [spec(), status(bot, [mk('Later').replace('run=1', 'run=1 at=2026-03-01T00:00:00Z'), mk('Earlier').replace('run=1', 'run=1 at=2026-02-01T00:00:00Z')])] });
+  ok(timed.indexOf('Earlier') < timed.indexOf('Later'), 'status lines sort by at=');
   console.log(`brief self-test: ${n} checks passed`);
 }
 

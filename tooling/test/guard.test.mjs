@@ -189,9 +189,9 @@ it('keeps the route (W11) and note (N1) lifecycle rules', async () => {
   const context = { repo: 'o/r', guarded: true, own: owners('* @ada\n'), issue: () => ({ assignees: [ada] }), pull: () => pr };
   assert.equal(route('pull_request_review', { action: 'submitted', pull_request: pr, review }, context).stage, undefined, 'W11');
   assert.equal(route('pull_request_review', { action: 'submitted', pull_request: { ...pr, draft: true }, review }, context).stage, undefined, 'a queued tests-ok routes on the live pull request, not its stale payload');
-  assert.deepEqual([note('Wrote 3 tests.', 'write-tests', 42), note('', 'deliver', 1), note('x <!-- spec-review v1 -->', 'deliver', 1)], [
-    'Note (write-tests): Wrote 3 tests.\n\n<!-- step-note stage=write-tests run=42 -->',
-    'Note (deliver): The deliver run ended without a note.\n\n<!-- step-note stage=deliver run=1 -->', null], 'N1');
+  assert.deepEqual([note('Wrote 3 tests.', 'write-tests', 42, '', '2026-01-02T03:04:05Z'), note('', 'deliver', 1, '', '2026-01-02T03:04:05Z'), note('x <!-- spec-review v1 -->', 'deliver', 1, '', '2026-01-02T03:04:05Z')], [
+    'Note (write-tests): Wrote 3 tests.\n\n<!-- step-note stage=write-tests run=42 at=2026-01-02T03:04:05Z -->',
+    'Note (deliver): The deliver run ended without a note.\n\n<!-- step-note stage=deliver run=1 at=2026-01-02T03:04:05Z -->', null], 'N1');
   const run = spawnSync(process.execPath, [script('lifecycle/publish.mjs'), '9', '--note', 'deliver', 'Done.', '--repo', 'o/r'], { encoding: 'utf8', env: { ...process.env, SERIO_UNATTENDED: '1', PATH: '', Path: '' } });
   assert.match(run.stdout, /^Not posted/, 'an unattended run posts its note once, through the workflow');
 });
@@ -218,4 +218,19 @@ it('keeps every write token out of the model job and runs on a private repositor
   const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8'), job = (name) => flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith(`${name}:`));
   assert.doesNotMatch(job('agent'), /AGENT_APP|steps\.app|contents: write|pull-requests: write|issues: write/);
   assert.match(job('publish'), /AGENT_APP_KEY[\s\S]+lifecycle\/push\.mjs/);
+});
+it('tells the spec reviewer never to ask consent for content the issue supplies', () => {
+  const skill = readFileSync(path.join(PLUGIN, 'skills', 'spec-review', 'SKILL.md'), 'utf8');
+  assert.match(skill, /Never ask for consent/);
+  assert.doesNotMatch(skill, /Personal data, paid calls and irreversible effects are named/);
+});
+it('keeps a finished result whose step exited non-zero, skips unrouted labels and installs Ponytail', () => {
+  const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8'), job = (name) => flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith(`${name}:`));
+  assert.match(job('route').match(/\n    if: >-\n[\s\S]+?\n    runs-on/)[0], /spec-review[\s\S]*spec-ok[\s\S]*tests-ok/);
+  assert.match(job('agent'), /id: claude\n\s+continue-on-error: true/);
+  assert.match(job('agent'), /if: always\(\) && steps\.trace\.outputs\.finished != 'true'\n\s+run: exit 1/);
+  assert.doesNotMatch(job('agent'), /steps\.claude\.outcome/);
+  assert.doesNotMatch(flow, /--json-schema '\{/);
+  assert.match(flow, /DietrichGebert\/ponytail/);
+  assert.match(flow, /7801d061243d7b753bad0e0b3c057cd250b11755/);
 });

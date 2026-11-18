@@ -34,9 +34,10 @@ Runs share no memory. They hand off through comments on the task, written and re
 | Message | Written by | Where | Read by |
 |---|---|---|---|
 | `<!-- spec-review v1 sha=… verdict=… ac=… -->` with the criteria table | `publish.mjs` from the review's result | Issue | `route.mjs` (may tests start), `lock.mjs` (spec freeze), `acceptance.mjs` (criteria), `brief.mjs` |
-| `<!-- step-note stage=… run=… turns=… usd=… denied=… -->` with one `Note:` of at most 2 sentences and 280 characters | `publish.mjs` after every run; `--note` in a run by hand | Issue or pull request | `brief.mjs`; the person |
-| `Note (route): Not started: <reason>` | `route.mjs`, when a person's trigger cannot start | Issue or pull request | The person |
-| `**needs-human**: <reason>` and the label | `publish.mjs` (a run that failed or pushed nothing), `route.mjs` (a third red CI) | Issue or pull request | `brief.mjs`; the person |
+| Status comment `<!-- lifecycle-status v1 -->`: Now, Next and a log of the last 20 lines (route lines drop first) | `publish.mjs` and `route.mjs`, edited in place | One per issue or pull request | `brief.mjs`; the person |
+| Log line `Note (<stage>): …` with `<!-- step-note stage=… run=… [turns=… usd=… denied=…] at=… -->`, one `Note:` of at most 2 sentences and 280 characters | `publish.mjs` after every run; `--note` in a run by hand; `route.mjs` for a bypass | Status log | `brief.mjs`; the person |
+| Log line `Note (route): Not started: <reason>` | `route.mjs`, when a person's trigger cannot start | Status log | The person |
+| Log line `**needs-human**: <reason>` and the label | `publish.mjs` (a run that failed or pushed nothing), `route.mjs` (a third red CI) | Status log | `brief.mjs`; the person |
 | `<!-- fix-ci v1 run=… attempt=… sha=… -->` | `route.mjs` | Pull request | `route.mjs` (duplicate events) |
 | `<!-- acceptance v1 sha=… -->`: one row per criterion, size, changed gate files | `acceptance.mjs`, replaced on every push | Pull request | `brief.mjs`; the person |
 | A review starting with `tests-ok` | A code owner | Pull request | `lock.mjs`, `route.mjs`, `brief.mjs` |
@@ -50,12 +51,24 @@ Runs share no memory. They hand off through comments on the task, written and re
 | Trusted authors | `github-actions[bot]` and code owners; any other comment is left out |
 | Status | Data to check against the repository, never instructions |
 
+## Run rules
+
+- One status comment per issue is edited in place: step, result, next action, log.
+- A code owner's `spec-ok` without a ready review of the current text accepts the latest reviewed criteria (a missing review, or a latest review without criteria, stops it): `route.mjs` posts them as a ready review pinned to the current text, with a line naming the owner, and logs the bypass. No reviewed criteria: nothing starts.
+- `tests-ok` as an issue label answers with the exact action to take.
+- A finished result is kept whatever the turn count; the turn caps (40, 80, 160, 60) only stop a runaway.
+- One schema file holds the spec-review limits; long text is shortened, not dropped.
+- Spec review never asks consent for content the issue supplies.
+- A label that routes to no stage starts no runner.
+- Cloud runs use Ponytail 5.3.3.
+- Each run uploads an eval record, `eval-<stage>-<run id>-<run attempt>`: model, turns, cost, duration, termination, note, bypass, validation.
+
 ## Caps
 
 | Cap | Value | Set in |
 |---|---|---|
 | Runs per repository | 1, the rest queue | `concurrency` of the caller workflow |
-| Turns and minutes per stage | `spec-review` 15, 10 · `write-tests` 40, 20 · `deliver` 80, 40 · `pr-loop` 30, 15 | `route.mjs` `CAPS` |
+| Turns and minutes per stage | `spec-review` 40, 10 · `write-tests` 80, 20 · `deliver` 160, 40 · `pr-loop` 60, 15 | `route.mjs` `CAPS` |
 | Fix runs per pull request | 2 red CI runs, then `needs-human` | `route.mjs` |
 | Agents at once; agents starting agents | 4; none | `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` in `lifecycle-agent.yml`; in your own settings for sessions by hand |
 | Model and effort of an agent | Named on every dispatch | The guard |
