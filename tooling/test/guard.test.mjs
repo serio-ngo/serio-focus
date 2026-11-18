@@ -234,3 +234,18 @@ it('keeps a finished result whose step exited non-zero, skips unrouted labels an
   assert.match(flow, /DietrichGebert\/ponytail/);
   assert.match(flow, /7801d061243d7b753bad0e0b3c057cd250b11755/);
 });
+it('#84 AC1-AC4: tooling reads JSON, the plugin version and the Claude binary one way each; statusBody is private', () => {
+  const dir = path.join(REPO, 'tooling', 'cli'), src = (file) => readFileSync(file, 'utf8');
+  const cli = readdirSync(dir).map((name) => [name, src(path.join(dir, name))]);
+  const parses = cli.flatMap(([name, text]) => text.split('\n').filter((line) => line.includes('JSON.parse(') && !line.includes('run.stdout')).map(() => name));
+  assert.deepEqual(parses, ['generate.mjs']);
+  assert.doesNotMatch(cli.map(([, text]) => text).join('\n'), /JSON\.parse\(readFileSync\(|(const readJson =|function readJson\()[\s\S]*readJsonFile|readJsonFile[\s\S]*(const readJson =|function readJson\()/);
+  const serio = src(path.join(dir, 'serio.mjs'));
+  assert.equal(serio.split("'.local', 'bin'").length - 1, 1);
+  const tooling = [...walk(path.join(REPO, 'tooling')), ...walk(path.join(REPO, 'plugins'))].filter((file) => file !== fileURLToPath(import.meta.url));
+  assert.deepEqual(tooling.filter((file) => /\.(mjs|js)$/.test(file) && src(file).includes('pluginVersion')), []);
+  for (const name of ['serio.mjs', 'generate.mjs']) assert.match(src(path.join(dir, name)), /import \{[^}]*\bversion\b[^}]*\} from '[^']*runtime\.mjs'/);
+  const life = src(path.join(PLUGIN, 'scripts', 'lib', 'lifecycle.mjs'));
+  assert.doesNotMatch(life, /export (const|function) statusBody|export \{[^}]*\bstatusBody\b/);
+  assert.match(life, /statusBody\(/);
+});
