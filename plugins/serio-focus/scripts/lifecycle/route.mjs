@@ -29,7 +29,7 @@ export function route(name, ev, s) {
     if (mark?.verdict !== 'ready' || mark.sha !== specSha(s.issue(n))) {
       const earlier = specComment(s.comments(n), s.own), has = /^\| AC\d+ \|/m.test(earlier?.body || '');
       if (!owns(ev.sender, s.own)) return stop(`no ready spec review of the current issue text; ${has ? 'a code owner can accept the reviewed criteria by adding spec-ok' : 'add spec-review first'}`, n);
-      const criteria = [...(earlier?.body || '').matchAll(/^\| AC(\d+) \| (.*) \| (unit|e2e) \|$/gm)].map(([, id, text, level]) => ({ id: +id, text: text.replace(/\\\|/g, '|'), level }));
+      const criteria = [...(earlier?.body || '').matchAll(/^\| AC(\d+) \| (.*) \| (unit|e2e) \| `([^`]+)` \|$/gm)].map(([, id, text, level, test]) => ({ id: +id, text: text.replace(/\\\|/g, '|'), level, test }));
       const accept = comment({ verdict: 'ready', criteria }, specSha(s.issue(n)), `Accepted by ${ev.sender.login} without a ready review; open questions stay on the earlier review.`);
       return accept ? run('write-tests', n, { bypass: ev.sender.login, accept }) : stop('no reviewed criteria to accept yet: add spec-review first', n);
     }
@@ -68,7 +68,7 @@ function selfTest() {
   const issue = { number: 7, title: 'Sum', body: 'AC1', assignees: [ada] };
   const sha = specSha(issue);
   const ready = { user: actions, body: `<!-- spec-review v1 sha=${sha} verdict=ready ac=1 -->` };
-  const earlier = { user: actions, body: comment({ verdict: 'questions', criteria: [{ id: 1, text: 'Given a | b, When x, Then y', level: 'unit' }, { id: 2, text: 'Given 2, When Add, Then 3', level: 'e2e' }], questions: [{ question: 'Which locale?', recommended: 'pl-PL' }] }, '000000000000') };
+  const earlier = { user: actions, body: comment({ verdict: 'questions', criteria: [{ id: 1, text: 'Given a | b, When x, Then y', level: 'unit', test: 'x gives y' }, { id: 2, text: 'Given 2, When Add, Then 3', level: 'e2e', test: 'Add shows the sum' }], questions: [{ question: 'Which locale?', recommended: 'pl-PL' }] }, '000000000000') };
   const lock = { user: ada, body: 'tests-ok', commit_id: 'h1', state: 'COMMENTED', submitted_at: '2026-01-02' };
   const fail = (id, created_at = '2026-01-03') => ({ id, created_at });
   const fix = (run) => ({ user: actions, body: `<!-- fix-ci v1 run=${run} attempt=1 sha=abc -->` });
@@ -138,8 +138,8 @@ function selfTest() {
   for (const [title, name, ev, s, want] of tells) assert.equal(route(name, ev, s).tell, want, title);
   const bypass = route('issues', label('spec-ok'), state({ comments: () => [earlier] }));
   assert.equal(bypass.bypass, 'ada');
+  assert.match(bypass.accept, /\n\| AC1 \| Given a \\\| b, When x, Then y \| unit \| `x gives y` \|\n/);
   assert.deepEqual(specMarker([{ user: actions, body: bypass.accept }], owners('* @ada\n')), { sha, verdict: 'ready', ac: [1, 2] });
-  assert.match(bypass.accept, /\| AC1 \| Given a \\| b, When x, Then y \| unit \|\n\| AC2 \| Given 2, When Add, Then 3 \| e2e \|/);
   assert.match(bypass.accept, /\nAccepted by ada without a ready review; open questions stay on the earlier review\.\n/);
   const posted = [{ user: actions, body: bypass.accept }], ok = (c) => check({ pr: { draft: false, head: pr.head, base: { repo: { full_name: 'o/r' } } }, issue: { ...issue, labels: [{ name: 'spec-ok' }] }, comments: c, reviews: [lock], own: owners('* @ada\n'), changed: () => ['src/a.mjs'] }).ok;
   assert.deepEqual([ok(posted), ok([earlier])], [true, false]);
