@@ -2,13 +2,24 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { card } from '../../plugins/serio-focus/scripts/card.mjs';
+import { version } from '../../plugins/serio-focus/scripts/lib/runtime.mjs';
 
 export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const PLUGIN = path.join(REPO, 'plugins', 'serio-focus');
 
 export const read = (...parts) => readFileSync(path.join(REPO, ...parts), 'utf8');
-export const readJson = (...parts) => JSON.parse(read(...parts));
-export const pluginVersion = (dir = PLUGIN) => JSON.parse(readFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), 'utf8')).version;
+export const readJsonFile = (file, fallback) => {
+  if (!existsSync(file)) {
+    if (fallback !== undefined) return fallback;
+    throw new Error(`cannot read ${file}`);
+  }
+  try {
+    const text = readFileSync(file, 'utf8');
+    return text.trim() === '' ? fallback ?? {} : JSON.parse(text);
+  } catch (error) {
+    throw new Error(`failed to parse ${file} as valid JSON: ${error.message}`);
+  }
+};
 
 export const walk = (dir, base = '') => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }) : [])
   .flatMap((entry) => {
@@ -80,11 +91,11 @@ export const codexRoles = (root = REPO) => agents(root).map((agent) => {
 export function inventory(root = REPO) {
   const plugin = path.join(root, 'plugins', 'serio-focus');
   const scripts = walk(path.join(plugin, 'scripts')).filter((file) => file.endsWith('.mjs'));
-  const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const pkg = readJsonFile(path.join(root, 'package.json'));
   return {
     skills: skills(root).length,
     agents: walk(path.join(plugin, 'agents')).filter((file) => file.endsWith('.md')).length,
-    hookEvents: Object.keys(JSON.parse(readFileSync(path.join(plugin, 'hooks', 'hooks.json'), 'utf8')).hooks).length,
+    hookEvents: Object.keys(readJsonFile(path.join(plugin, 'hooks', 'hooks.json')).hooks).length,
     scripts: scripts.length,
     lines: scripts.reduce((n, file) => n + readFileSync(path.join(plugin, 'scripts', file), 'utf8').trimEnd().split('\n').length, 0),
     dependencies: Object.keys(pkg.dependencies || {}).length,
@@ -93,7 +104,7 @@ export function inventory(root = REPO) {
 }
 
 function hookRows() {
-  return Object.entries(readJson('plugins', 'serio-focus', 'hooks', 'hooks.json').hooks)
+  return Object.entries(readJsonFile(path.join(REPO, 'plugins', 'serio-focus', 'hooks', 'hooks.json')).hooks)
     .flatMap(([event, entries]) => entries.flatMap((entry) => entry.hooks.map((handler) => {
       const script = (/scripts\/[a-z-]+\.mjs/.exec(handler.command) || [])[0];
       return `| \`${event}\` | \`${cell(entry.matcher || '*')}\` | \`${script}\` | Claude, Codex |`;
@@ -106,7 +117,7 @@ export function manifest() {
   return [
     '# Manifest',
     '',
-    `<sub><b>Answers</b> · everything the plugin loads at version ${pluginVersion()} · generated, \`npm run upkeep\` rewrites it · <a href="../README.md">README</a></sub>`,
+    `<sub><b>Answers</b> · everything the plugin loads at version ${version()} · generated, \`npm run upkeep\` rewrites it · <a href="../README.md">README</a></sub>`,
     '',
     '## Hooks', '',
     table(['Event', 'Matcher', 'Script', 'Native host'], hookRows()), '',

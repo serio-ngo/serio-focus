@@ -4,14 +4,15 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
-import { PLUGIN, REPO, codexRoles, manifest, markdown, pluginVersion, readJson, walk } from './generate.mjs';
+import { version } from '../../plugins/serio-focus/scripts/lib/runtime.mjs';
+import { PLUGIN, REPO, codexRoles, manifest, markdown, readJsonFile, walk } from './generate.mjs';
 
 const CONFIG_DIR = process.env.SERIO_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
 const CODEX_AGENTS = path.join(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'agents');
 const RULE_LISTS = ['deny', 'ask', 'allow'];
 const TEXT = /\.(md|mjs|json|jsonc|ya?ml)$/;
 
-const marketplace = readJson('.claude-plugin', 'marketplace.json');
+const marketplace = readJsonFile(path.join(REPO, '.claude-plugin', 'marketplace.json'));
 const PLUGIN_NAME = marketplace.plugins[0].name;
 
 const fail = (message) => {
@@ -40,17 +41,9 @@ function parse(argv) {
   return args;
 }
 
-const readJsonFile = (file, fallback) => {
-  if (!existsSync(file)) {
-    if (fallback !== undefined) return fallback;
-    return fail(`cannot read ${file}`);
-  }
-  try {
-    const text = readFileSync(file, 'utf8');
-    return text.trim() === '' ? fallback ?? {} : JSON.parse(text);
-  } catch (error) {
-    return fail(`failed to parse ${file} as valid JSON: ${error.message}`);
-  }
+const claudeBin = () => {
+  const native = path.join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
+  return process.env.CLAUDE_CODE_EXECPATH || (existsSync(native) ? native : 'claude');
 };
 
 const writeJson = (file, value) => {
@@ -74,7 +67,7 @@ function merge(target, patch) {
 function sync(args) {
   const target = path.resolve(args.target || path.join(CONFIG_DIR, 'settings.json'));
   const before = readJsonFile(target, {});
-  const baseline = readJson('.claude', 'settings.json').permissions;
+  const baseline = readJsonFile(path.join(REPO, '.claude', 'settings.json')).permissions;
   const after = merge(before, { permissions: baseline });
   if (!args.dryRun) writeJson(target, after);
   const counts = RULE_LISTS
@@ -107,8 +100,7 @@ function install(args = {}, remove = false) {
     const text = readFileSync(file, 'utf8');
     if (digests[role.file] ? digest(text) !== digests[role.file] : text !== role.text && text !== role.legacy) fail(`role collision: ${file}`);
   }
-  const native = path.join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
-  const executable = host === 'claude' ? process.env.CLAUDE_CODE_EXECPATH || (existsSync(native) ? native : 'claude') : 'codex';
+  const executable = host === 'claude' ? claudeBin() : 'codex';
   const commands = remove ? [[ 'plugin', host === 'claude' ? 'uninstall' : 'remove', registryKey() ]] : host === 'claude'
     ? [['plugin', 'marketplace', 'add', REPO], ['plugin', 'install', registryKey(), '--scope', 'user']]
     : [['plugin', 'marketplace', 'add', REPO], ['plugin', 'add', registryKey(), '--json']];
@@ -135,8 +127,8 @@ const sources = () => walk(REPO)
 function upkeep(args = {}) {
   const pending = new Map(sources().map((file) => [file, readFileSync(path.join(REPO, file), 'utf8')]));
   const json = (file, value) => pending.set(file, `${JSON.stringify(value, null, 2)}\n`);
-  const plugin = readJson('plugins', 'serio-focus', '.claude-plugin', 'plugin.json');
-  json('package.json', { ...readJson('package.json'), description: plugin.description });
+  const plugin = readJsonFile(path.join(REPO, 'plugins', 'serio-focus', '.claude-plugin', 'plugin.json'));
+  json('package.json', { ...readJsonFile(path.join(REPO, 'package.json')), description: plugin.description });
   json('.claude-plugin/marketplace.json', { ...marketplace, description: plugin.description,
     plugins: marketplace.plugins.map((entry) => entry.name === plugin.name ? { ...entry, description: plugin.description } : entry) });
   json('plugins/serio-focus/.codex-plugin/plugin.json', {
@@ -179,18 +171,17 @@ function doctor(args = {}) {
   };
 
   if (host === 'claude') {
-    const native = path.join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
-    const claude = process.env.CLAUDE_CODE_EXECPATH || (existsSync(native) ? native : 'claude');
+    const claude = claudeBin();
     const run = spawnSync(claude, ['plugin', 'list', '--json'], { encoding: 'utf8' });
     let installed = [];
     try { installed = JSON.parse(run.stdout); } catch { }
-    check('native Claude installation is current and enabled', installed.some((plugin) => plugin.id === key && plugin.enabled && (plugin.folderVersion || plugin.version) === pluginVersion()));
+    check('native Claude installation is current and enabled', installed.some((plugin) => plugin.id === key && plugin.enabled && (plugin.folderVersion || plugin.version) === version()));
     check('plugin and marketplace pass strict validation', [PLUGIN, REPO].every((dir) => spawnSync(claude, ['plugin', 'validate', '--strict', dir]).status === 0));
   } else {
     const run = spawnSync('codex', ['plugin', 'list', '--marketplace', marketplace.name, '--json'], { encoding: 'utf8' });
     let installed = [];
     try { installed = JSON.parse(run.stdout).installed; } catch { }
-    check('native Codex installation is current and enabled', installed.some((plugin) => plugin.pluginId === key && plugin.enabled && plugin.version === pluginVersion()));
+    check('native Codex installation is current and enabled', installed.some((plugin) => plugin.pluginId === key && plugin.enabled && plugin.version === version()));
     check('Codex role agents are current', codexRoles().every((role) => existsSync(path.join(CODEX_AGENTS, role.file)) && readFileSync(path.join(CODEX_AGENTS, role.file), 'utf8') === role.text));
   }
 

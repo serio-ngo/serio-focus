@@ -38,7 +38,7 @@ const routed = (l) => /<!-- step-note stage=route /.test(l);
 const trim = (lines) => { const gone = new Set(lines.map((_, i) => i).sort((a, b) => routed(lines[b]) - routed(lines[a]) || a - b).slice(0, Math.max(0, lines.length - 20))); return lines.filter((_, i) => !gone.has(i)); };
 export const statusLog = (body) => String(body || '').split('**Log**\n')[1]?.split('\n').filter((l) => l.startsWith('- ')) || [];
 export const isStatus = (c) => robot(c.user) && String(c.body || '').includes(STATUS);
-export const statusBody = (previous, { now, next, line }) => [
+const statusBody = (previous, { now, next, line }) => [
   [STATUS, '**Status**', `Now: ${flat(now)}`, ...(next ? [`Next: ${flat(next)}`] : [])].join('\n\n'),
   `**Log**\n${trim([...statusLog(previous), ...(line ? [`- ${flat(line)}`] : [])]).join('\n')}`,
 ].join('\n\n');
