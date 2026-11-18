@@ -234,18 +234,26 @@ it('keeps a finished result whose step exited non-zero, skips unrouted labels an
   assert.match(flow, /DietrichGebert\/ponytail/);
   assert.match(flow, /7801d061243d7b753bad0e0b3c057cd250b11755/);
 });
-it('#84 AC1-AC4: tooling reads JSON, the plugin version and the Claude binary one way each; statusBody is private', () => {
+it('#84 AC1: tooling/cli reads every JSON file through one reader', () => {
   const dir = path.join(REPO, 'tooling', 'cli'), src = (file) => readFileSync(file, 'utf8');
   const cli = readdirSync(dir).map((name) => [name, src(path.join(dir, name))]);
   const parses = cli.flatMap(([name, text]) => text.split('\n').filter((line) => line.includes('JSON.parse(') && !line.includes('run.stdout')).map(() => name));
   assert.deepEqual(parses, ['generate.mjs']);
   assert.doesNotMatch(cli.map(([, text]) => text).join('\n'), /JSON\.parse\(readFileSync\(|(const readJson =|function readJson\()[\s\S]*readJsonFile|readJsonFile[\s\S]*(const readJson =|function readJson\()/);
+});
+it('#84 AC2: serio.mjs resolves the Claude binary in one place', () => {
+  const dir = path.join(REPO, 'tooling', 'cli'), src = (file) => readFileSync(file, 'utf8');
   const serio = src(path.join(dir, 'serio.mjs'));
   assert.equal(serio.split("'.local', 'bin'").length - 1, 1);
+});
+it('#84 AC3: only runtime.mjs reads the plugin version', () => {
+  const dir = path.join(REPO, 'tooling', 'cli'), src = (file) => readFileSync(file, 'utf8');
   const tooling = ['tooling', 'plugins'].flatMap((d) => walk(path.join(REPO, d)).map((f) => path.join(REPO, d, f))).filter((file) => file !== fileURLToPath(import.meta.url));
   assert.deepEqual(tooling.filter((file) => /\.(mjs|js)$/.test(file) && src(file).includes('pluginVersion')), []);
   for (const name of ['serio.mjs', 'generate.mjs']) assert.match(src(path.join(dir, name)), /import \{[^}]*\bversion\b[^}]*\} from '[^']*runtime\.mjs'/);
-  const life = src(path.join(PLUGIN, 'scripts', 'lib', 'lifecycle.mjs'));
+});
+it('#84 AC4: statusBody is private to lifecycle.mjs', () => {
+  const life = readFileSync(path.join(PLUGIN, 'scripts', 'lib', 'lifecycle.mjs'), 'utf8');
   assert.doesNotMatch(life, /export (const|function) statusBody|export \{[^}]*\bstatusBody\b/);
   assert.match(life, /statusBody\(/);
 });
