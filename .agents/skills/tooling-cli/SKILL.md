@@ -26,4 +26,4 @@ description: Use when editing tooling/cli/serio.mjs or tooling/cli/generate.mjs,
 | All JSON reads use it | marketplace.json, settings.json, plugin.json, package.json, hooks.json, ownership file |
 | No other parse | no `JSON.parse` of file content in tooling/cli |
 | Claude binary | one helper in serio.mjs for install and doctor: `CLAUDE_CODE_EXECPATH`, else `~/.local/bin/claude` (`claude.exe` on win32) if it exists, else `claude` |
-| Plugin version | `version` from plugins/serio-focus/scripts/lib/runtime.mjs; no own plugin.json version reader |
+| Plugin version | see the plugin-lib skill |
