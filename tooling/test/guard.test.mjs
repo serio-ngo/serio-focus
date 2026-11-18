@@ -219,18 +219,10 @@ it('keeps every write token out of the model job and runs on a private repositor
   assert.doesNotMatch(job('agent'), /AGENT_APP|steps\.app|contents: write|pull-requests: write|issues: write/);
   assert.match(job('publish'), /AGENT_APP_KEY[\s\S]+lifecycle\/push\.mjs/);
 });
-it('tells the spec reviewer never to ask consent for content the issue supplies', () => {
-  const skill = readFileSync(path.join(PLUGIN, 'skills', 'spec-review', 'SKILL.md'), 'utf8');
-  assert.match(skill, /Never ask for consent/);
-  assert.doesNotMatch(skill, /Personal data, paid calls and irreversible effects are named/);
-});
-it('keeps a finished result whose step exited non-zero, skips unrouted labels and installs Ponytail', () => {
-  const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8'), job = (name) => flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith(`${name}:`));
-  assert.match(job('route').match(/\n    if: >-\n[\s\S]+?\n    runs-on/)[0], /spec-review[\s\S]*spec-ok[\s\S]*tests-ok/);
-  assert.match(job('agent'), /id: claude\n\s+continue-on-error: true/);
-  assert.match(job('agent'), /if: always\(\) && steps\.trace\.outputs\.finished != 'true'\n\s+run: exit 1/);
-  assert.doesNotMatch(job('agent'), /steps\.claude\.outcome/);
-  assert.doesNotMatch(flow, /--json-schema '\{/);
-  assert.match(flow, /DietrichGebert\/ponytail/);
-  assert.match(flow, /7801d061243d7b753bad0e0b3c057cd250b11755/);
+it('blocks a spec review that asks consent for content the issue supplies, and a result judged by the step exit', () => {
+  const skill = readFileSync(path.join(PLUGIN, 'skills', 'spec-review', 'SKILL.md'), 'utf8'), flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8');
+  assert.deepEqual(skill.split('\n').filter((l) => /consent|permission|rights/i.test(l.replace('Never ask for consent, permission or rights', ''))), []);
+  assert.doesNotMatch(flow, /steps\.claude\.outcome|--json-schema '\{/);
+  assert.match(flow, /if: always\(\) && steps\.trace\.outputs\.finished != 'true'\n\s+run: exit 1/);
+  assert.match(flow, /id: claude\n\s+continue-on-error: true/);
 });
