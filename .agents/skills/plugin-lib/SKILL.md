@@ -19,7 +19,7 @@ description: Use when editing plugins/serio-focus/scripts/lib/ (runtime.mjs, lif
 | Actors | `person`, `robot`, `owns(user, own)`, `owners(text)`, `ownersOf(repo)` |
 | Spec | `specSha(issue)`, `specComment`, `specMarker` |
 | Tests lock | `testsOk(body)`, `lockReview`, `lockOf` |
-| Status | `statusLog(body)`, `isStatus(comment)`, `status(repo, target, update, io)`, `park(repo, number, why)` |
+| Status | `statusLog(body)`, `isStatus(comment, own)`, `status(repo, target, update, io)` with `io` `{ all, send, raw }`, `park(repo, number, why)` |
 
 ## Rules
 

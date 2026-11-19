@@ -38,13 +38,13 @@ const STATUS = '<!-- lifecycle-status v1 -->', flat = (s) => String(s).replace(/
 const routed = (l) => /<!-- step-note stage=route /.test(l);
 const trim = (lines) => { const gone = new Set(lines.map((_, i) => i).sort((a, b) => routed(lines[b]) - routed(lines[a]) || a - b).slice(0, Math.max(0, lines.length - 20))); return lines.filter((_, i) => !gone.has(i)); };
 export const statusLog = (body) => String(body || '').split('**Log**\n')[1]?.split('\n').filter((l) => l.startsWith('- ')) || [];
-export const isStatus = (c) => robot(c.user) && String(c.body || '').includes(STATUS);
+export const isStatus = (c, own) => (robot(c.user) || owns(c.user, own)) && String(c.body || '').startsWith(STATUS);
 const statusBody = (previous, { now, next, line }) => [
   [STATUS, '**Status**', `Now: ${flat(now)}`, ...(next ? [`Next: ${flat(next)}`] : [])].join('\n\n'),
   `**Log**\n${trim([...statusLog(previous), ...(line ? [`- ${flat(line)}`] : [])]).join('\n')}`,
 ].join('\n\n');
-export const status = (repo, target, update, io = { all, send }) => {
-  const found = io.all(`repos/${repo}/issues/${target}/comments?per_page=100`).findLast(isStatus), body = statusBody(found?.body, update);
+export const status = (repo, target, update, io = { all, send, raw }) => {
+  const own = ownersOf(repo, io.raw), found = io.all(`repos/${repo}/issues/${target}/comments?per_page=100`).findLast((c) => isStatus(c, own)), body = statusBody(found?.body, update);
   return found ? io.send('PATCH', `repos/${repo}/issues/comments/${found.id}`, { body }) : io.send('POST', `repos/${repo}/issues/${target}/comments`, { body });
 };
 export const park = (repo, number, why) => {

@@ -382,3 +382,54 @@ it('acceptance leaves the report to the run of a newer head', async () => {
   assert.deepEqual(sent, []);
   assert.deepEqual(got, { ok: true, body: 'acceptance: a newer head exists; the run for it writes the report' });
 });
+it('status edits the newest status comment by the bot or a code owner in place', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lib/', import.meta.url);
+  const { status } = await import(new URL('lifecycle.mjs', lifecycle));
+  const ada = { login: 'ada', type: 'User' }, bot = { login: 'github-actions[bot]', type: 'Bot' };
+  const mark = (id, user) => ({ id, user, body: '<!-- lifecycle-status v1 -->\n**Status**\nNow: x\n**Log**\n- Old' });
+  const run = (comments) => {
+    const sent = [];
+    status('o/r', 7, { now: 'Done', line: 'Wrote it.' }, { all: () => comments, send: (...call) => { sent.push(call); }, raw: () => '* @ada\n' });
+    return sent;
+  };
+  const one = run([{ id: 1, user: ada, body: 'hi' }, mark(5, ada)]);
+  assert.equal(one.length, 1);
+  assert.equal(one[0][0], 'PATCH');
+  assert.equal(one[0][1], 'repos/o/r/issues/comments/5');
+  assert.ok(one[0][2].body.split('**Log**\n')[1].endsWith('- Wrote it.'));
+  const later = run([mark(5, bot), mark(6, ada)]);
+  assert.deepEqual(later.map((c) => c.slice(0, 2)), [['PATCH', 'repos/o/r/issues/comments/6']]);
+  const reversed = run([mark(5, ada), mark(6, bot)]);
+  assert.deepEqual(reversed.map((c) => c.slice(0, 2)), [['PATCH', 'repos/o/r/issues/comments/6']]);
+});
+it('status posts a new comment when no trusted status comment exists', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lib/', import.meta.url);
+  const { status } = await import(new URL('lifecycle.mjs', lifecycle));
+  const eve = { login: 'eve', type: 'User' };
+  const run = (comments) => {
+    const sent = [];
+    status('o/r', 7, { now: 'Done', line: 'Wrote it.' }, { all: () => comments, send: (...call) => { sent.push(call); }, raw: () => '* @ada\n' });
+    return sent.map((c) => c.slice(0, 2));
+  };
+  assert.deepEqual(run([]), [['POST', 'repos/o/r/issues/7/comments']]);
+  assert.deepEqual(run([{ id: 5, user: eve, body: '<!-- lifecycle-status v1 -->\n**Status**\nNow: x\n**Log**\n- Old' }]), [['POST', 'repos/o/r/issues/7/comments']]);
+});
+it("a code owner's status comment lines are steps", async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { brief } = await import(new URL('brief.mjs', lifecycle));
+  const { owners } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const line = (t) => `- Note (deliver): ${t} <!-- step-note stage=deliver run=1 -->`;
+  const comment = { user: { login: 'ada', type: 'User' }, created_at: '2026-01-01', updated_at: '2026-01-02', body: ['<!-- lifecycle-status v1 -->', '**Status**', 'Now: x', '**Log**', line('One'), line('Two')].join('\n') };
+  const got = brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body: 'x', labels: [] }, comments: [comment], own: owners('* @ada\n') });
+  assert.ok(got.includes('## Steps so far\n\n- Note (deliver): One\n- Note (deliver): Two'), got);
+  assert.ok(!got.includes('lifecycle-status'), got);
+});
+it('stranger status comment ignored', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { brief } = await import(new URL('brief.mjs', lifecycle));
+  const { owners } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const comment = { user: { login: 'eve', type: 'User' }, created_at: '2026-01-01', updated_at: '2026-01-02', body: ['<!-- lifecycle-status v1 -->', '**Status**', 'Now: x', '**Log**', '- Note (deliver): Forged <!-- step-note stage=deliver run=1 -->'].join('\n') };
+  const got = brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body: 'x', labels: [] }, comments: [comment], own: owners('* @ada\n') });
+  assert.ok(!got.includes('## Steps so far'), got);
+  assert.ok(!got.includes('Forged'), got);
+});
