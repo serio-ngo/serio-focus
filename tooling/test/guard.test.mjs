@@ -586,15 +586,15 @@ it('the brief keeps the whole spec text', async () => {
   const body = 'x'.repeat(9000);
   assert.ok(brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body, labels: [] }, comments: [], own: owners('* @ada\n') }).includes(body));
 });
-it("upkeep check leaves the lifecycle's local records alone", () => {
+it("upkeep leaves the lifecycle's local records alone", () => {
   const repo = sandbox('records-');
   cpSync(REPO, repo, { recursive: true, filter: (file) => !/(?:^|[/\\])(?:\.git|\.claude|node_modules|audit|\.lifecycle)(?:[/\\]|$)/.test(file) });
   const upkeep = (...args) => spawnSync(process.execPath, [path.join(repo, 'tooling', 'cli', 'serio.mjs'), 'upkeep', ...args], { encoding: 'utf8' });
   assert.equal(upkeep().status, ALLOWED);
-  const record = path.join(repo, '.lifecycle', 'runs', 'x.md');
+  const record = path.join(repo, '.lifecycle', 'runs', 'x.json');
   mkdirSync(path.dirname(record), { recursive: true });
-  writeFileSync(record, 'a  \n  \n');
+  writeFileSync(record, '{"a":1}  ');
   const result = upkeep('--check');
   assert.equal(result.status, ALLOWED, result.stderr);
-  assert.equal(readFileSync(record, 'utf8'), 'a  \n  \n');
+  assert.equal(readFileSync(record, 'utf8'), '{"a":1}  ');
 });
