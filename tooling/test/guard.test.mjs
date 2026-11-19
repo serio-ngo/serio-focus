@@ -522,87 +522,40 @@ it("the test lock fails when a locked file's change has no line diff to compare"
   assert.equal(got.ok, false); assert.equal(got.note, 'locked paths changed after the lock: tests/logo.bin');
 });
 
-it('a deliver run without commits applies the card and marks the draft pull request ready', () => {
-  const box = sandbox('push-ac1-'), out = path.join(box, 'out'), log = path.join(box, 'log'), pre = path.join(box, 'gh.cjs');
-  mkdirSync(out); writeFileSync(path.join(out, 'ref'), 'agent/98-x'); writeFileSync(path.join(out, 'pr.md'), 'Card text');
-  writeFileSync(pre, `const cp = require('node:child_process'), fs = require('node:fs'), real = cp.execFileSync;
-cp.execFileSync = (f, a, o) => {
-  if (f !== 'gh') return real(f, a, o);
-  fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ a, i: o.input || '' }) + '\\n');
-  const p = a[1];
-  if (p.startsWith('repos/o/r/contents')) throw new Error('missing');
-  const r = p.startsWith('repos/o/r/pulls?') ? [JSON.parse(process.env.FAKE_PR)] : p.endsWith('/comments?per_page=100') ? [] : p === 'repos/o/r/issues/98' ? { title: 'T' } : {};
-  return JSON.stringify(a.includes('--paginate') ? [r] : r);
-};
-require('node:module').syncBuiltinESMExports();`);
-  const env = { ...process.env, NODE_OPTIONS: `--require="${pre.replaceAll('\\', '/')}"`, FAKE_LOG: log, FAKE_PR: JSON.stringify({ number: 5, node_id: 'N', draft: true, head: { ref: 'agent/98-x', sha: 'h1' } }), GITHUB_REPOSITORY: 'o/r', STAGE: 'deliver', ISSUE: '98', REF: 'agent/98-x', OUT: out };
-  delete env.GITHUB_RUN_ID;
-  spawnSync(process.execPath, [script('lifecycle/push.mjs')], { encoding: 'utf8', env });
-  const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
-  const patch = calls.find((c) => c.a[1] === 'repos/o/r/pulls/5' && c.a.includes('PATCH')), ready = calls.find((c) => c.a[1] === 'graphql');
-  assert.deepEqual(patch && JSON.parse(patch.i), { title: 'T', body: 'Card text' });
-  assert.deepEqual(ready && JSON.parse(ready.i).variables, { id: 'N' });
-  assert.match(ready.i, /markPullRequestReadyForReview/);
+it('a deliver run without commits applies the card and marks the draft pull request ready', async () => {
+  const { publishCard } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/push.mjs', import.meta.url));
+  const out = sandbox('push-ac1-'), calls = [];
+  writeFileSync(path.join(out, 'pr.md'), 'Card text');
+  const io = { one: (url) => url === 'repos/o/r/issues/98' ? { title: 'T' } : {}, all: (url) => url.includes('repos/o/r/pulls?state=open&head=o:agent/98-x') ? [{ number: 5, node_id: 'N', draft: true, head: { ref: 'agent/98-x', sha: 'h1' } }] : [], send: (...a) => calls.push(a), raw: () => '' };
+  publishCard({ repo: 'o/r', out, issue: 98, ref: 'agent/98-x', stage: 'deliver' }, io);
+  const patch = calls.find((c) => c[0] === 'PATCH' && c[1] === 'repos/o/r/pulls/5'), ready = calls.find((c) => c[1] === 'graphql');
+  assert.deepEqual(patch && patch[2], { title: 'T', body: 'Card text' });
+  assert.deepEqual(ready && ready[2].variables, { id: 'N' });
+  assert.match(ready[2].query, /markPullRequestReadyForReview/);
 });
-
-it('a run without commits changes no pull request unless it is a deliver run with a card', () => {
-  const box = sandbox('push-ac2-'), log = path.join(box, 'log'), pre = path.join(box, 'gh.cjs');
-  writeFileSync(pre, `const cp = require('node:child_process'), fs = require('node:fs'), real = cp.execFileSync;
-cp.execFileSync = (f, a, o) => {
-  if (f !== 'gh') return real(f, a, o);
-  fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ a, i: o.input || '' }) + '\\n');
-  return '{}';
-};
-require('node:module').syncBuiltinESMExports();`);
+it('a run without commits changes no pull request unless it is a deliver run with a card', async () => {
+  const { publishCard } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/push.mjs', import.meta.url));
   for (const [stage, card] of [['deliver', false], ['write-tests', true], ['pr-loop', true]]) {
-    const out = path.join(box, stage); mkdirSync(out); writeFileSync(path.join(out, 'ref'), 'agent/98-x'); if (card) writeFileSync(path.join(out, 'pr.md'), 'Card text');
-    const env = { ...process.env, NODE_OPTIONS: `--require="${pre.replaceAll('\\', '/')}"`, FAKE_LOG: log, GITHUB_REPOSITORY: 'o/r', STAGE: stage, ISSUE: '98', REF: 'agent/98-x', OUT: out };
-    delete env.GITHUB_RUN_ID;
-    const run = spawnSync(process.execPath, [script('lifecycle/push.mjs')], { encoding: 'utf8', env });
-    assert.match(run.stdout, /no new commit/, stage);
-    assert.equal(existsSync(log), false, stage);
+    const out = sandbox('push-ac2-'), calls = [];
+    if (card) writeFileSync(path.join(out, 'pr.md'), 'Card text');
+    const io = { one: () => ({ title: 'T' }), all: () => [{ number: 5, node_id: 'N', draft: true, head: { ref: 'agent/98-x', sha: 'h1' } }], send: (...a) => calls.push(a), raw: () => '' };
+    publishCard({ repo: 'o/r', out, issue: 98, ref: 'agent/98-x', stage }, io);
+    assert.equal(calls.length, 0, stage);
   }
 });
-
-it('a deliver run without a new push is not parked when its pull request is ready', () => {
-  const box = sandbox('pub-ac3-'), log = path.join(box, 'log'), pre = path.join(box, 'gh.cjs');
-  writeFileSync(pre, `const cp = require('node:child_process'), fs = require('node:fs'), real = cp.execFileSync;
-cp.execFileSync = (f, a, o) => {
-  if (f !== 'gh') return real(f, a, o);
-  fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ a, i: o.input || '' }) + '\\n');
-  const p = a[1];
-  if (p.startsWith('repos/o/r/contents')) throw new Error('missing');
-  const r = p.startsWith('repos/o/r/pulls?') ? [JSON.parse(process.env.FAKE_PR)] : p.endsWith('/comments?per_page=100') ? [] : {};
-  return JSON.stringify(a.includes('--paginate') ? [r] : r);
-};
-require('node:module').syncBuiltinESMExports();`);
-  const env = { ...process.env, NODE_OPTIONS: `--require="${pre.replaceAll('\\', '/')}"`, FAKE_LOG: log, FAKE_PR: JSON.stringify({ number: 5, node_id: 'N', draft: false, head: { ref: 'agent/98-x', sha: 'h1' } }), GITHUB_REPOSITORY: 'o/r', STAGE: 'deliver', BEFORE_SHA: 'h1' };
-  delete env.GITHUB_RUN_ID;
-  spawnSync(process.execPath, [script('lifecycle/publish.mjs'), '98', '--pushed'], { encoding: 'utf8', env });
-  const calls = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  assert.equal(calls.some((c) => c.a[1] === 'repos/o/r/issues/98/labels' && c.a.includes('POST')), false);
+it('a deliver run without a new push is not parked when its pull request is ready', async () => {
+  const { pushed } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url)), calls = [];
+  pushed({ repo: 'o/r', number: 98, stage: 'deliver', before: 'h1', note: '', reason: '' }, { one: () => ({}), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, node_id: 'N', draft: false, head: { ref: 'agent/98-x', sha: 'h1' } }] : [], send: (...a) => calls.push(a), raw: () => '' });
+  assert.equal(calls.some((c) => c[0] === 'POST' && c[1] === 'repos/o/r/issues/98/labels'), false);
+  assert.equal(calls.some((c) => JSON.stringify(c[2]).includes('the run ended without a new push')), false);
 });
-
-it('a run without a new push is parked unless it is a deliver run with a ready pull request', () => {
-  const box = sandbox('pub-ac4-'), pre = path.join(box, 'gh.cjs');
-  writeFileSync(pre, `const cp = require('node:child_process'), fs = require('node:fs'), real = cp.execFileSync;
-cp.execFileSync = (f, a, o) => {
-  if (f !== 'gh') return real(f, a, o);
-  fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ a, i: o.input || '' }) + '\\n');
-  const p = a[1];
-  if (p.startsWith('repos/o/r/contents')) throw new Error('missing');
-  const r = p.startsWith('repos/o/r/pulls?') ? [JSON.parse(process.env.FAKE_PR)] : p.endsWith('/comments?per_page=100') ? [] : {};
-  return JSON.stringify(a.includes('--paginate') ? [r] : r);
-};
-require('node:module').syncBuiltinESMExports();`);
+it('a run without a new push is parked unless it is a deliver run with a ready pull request', async () => {
+  const { pushed } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
   for (const [stage, draft] of [['deliver', true], ['write-tests', false], ['pr-loop', false]]) {
-    const log = path.join(box, stage);
-    const env = { ...process.env, NODE_OPTIONS: `--require="${pre.replaceAll('\\', '/')}"`, FAKE_LOG: log, FAKE_PR: JSON.stringify({ number: 5, node_id: 'N', draft, head: { ref: 'agent/98-x', sha: 'h1' } }), GITHUB_REPOSITORY: 'o/r', STAGE: stage, BEFORE_SHA: 'h1' };
-    delete env.GITHUB_RUN_ID;
-    spawnSync(process.execPath, [script('lifecycle/publish.mjs'), '98', '--pushed'], { encoding: 'utf8', env });
-    const calls = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    const label = calls.find((c) => c.a[1] === 'repos/o/r/issues/98/labels' && c.a.includes('POST'));
-    assert.deepEqual(label && JSON.parse(label.i).labels, ['needs-human'], stage);
-    assert.ok(calls.some((c) => c.a[1] === 'repos/o/r/issues/98/comments' && c.i.includes('the run ended without a new push')), stage);
+    const calls = [];
+    pushed({ repo: 'o/r', number: 98, stage, before: 'h1', note: '', reason: '' }, { one: () => ({}), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, node_id: 'N', draft, head: { ref: 'agent/98-x', sha: 'h1' } }] : [], send: (...a) => calls.push(a), raw: () => '' });
+    const label = calls.find((c) => c[0] === 'POST' && c[1] === 'repos/o/r/issues/98/labels');
+    assert.deepEqual(label && label[2], { labels: ['needs-human'] }, stage);
+    assert.ok(calls.some((c) => JSON.stringify(c[2]).includes('the run ended without a new push')), stage);
   }
 });
