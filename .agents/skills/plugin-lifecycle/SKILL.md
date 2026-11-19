@@ -1,6 +1,6 @@
 ---
 name: plugin-lifecycle
-description: Use when editing plugins/serio-focus/scripts/lifecycle/ (publish.mjs, route.mjs, acceptance.mjs), the scripts the lifecycle workflows run. Covers the spec-review result, its criteria table and the acceptance report.
+description: Use when editing plugins/serio-focus/scripts/lifecycle/ (publish.mjs, route.mjs, acceptance.mjs, lock.mjs), the scripts the lifecycle workflows run. Covers the spec-review result, its criteria table, the acceptance report and the test lock.
 ---
 
 ## Exports
@@ -12,6 +12,8 @@ description: Use when editing plugins/serio-focus/scripts/lifecycle/ (publish.mj
 | acceptance.mjs | `cases(xml)` | JUnit XML to `[{ name, result }]`, result `passed`, `skipped` or `failed` |
 | acceptance.mjs | `report({ issue, review, tests, sha, lock?, link?, files?, size? })` | `review` is the body of the trusted spec-review comment, `tests` the output of `cases`; returns `{ ok, body }` |
 | acceptance.mjs | `accept({ repo, number, dir, tested, lock, link, post }, io?)` | `io` is `{ one, all, send, raw }`, the real `gh` calls by default; builds the report for `tested`, or for the current head when `tested` is empty, and with `post` writes or edits the one report comment; when `tested` is not the current head it sends nothing and returns `ok: true` with a one-line body; reads no environment; `main()` passes `TESTED_SHA`, `LOCK_NOTE` and the run link, prints `body` and exits 1 when `ok` is false |
+| lock.mjs | `check({ pr, issue, comments, reviews, own, changed })` | `{ ok, locked, note }`; `changed(lock)` returns the paths changed after the lock, or `null` when the lock is not in the branch history |
+| lock.mjs | `load(repo, number, io?)` | `io` is `{ one, all, raw }`, the real `gh` calls by default; returns the input of `check` |
 
 ## Data
 

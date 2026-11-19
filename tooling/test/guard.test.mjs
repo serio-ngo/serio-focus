@@ -433,3 +433,91 @@ it('stranger status comment ignored', async () => {
   assert.ok(!got.includes('## Steps so far'), got);
   assert.ok(!got.includes('Forged'), got);
 });
+it('the test lock holds when a merge from the base changes other lines of a locked file', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { check, load } = await import(new URL('lock.mjs', lifecycle));
+  const { specSha } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const L = 'a'.repeat(40), H = 'c'.repeat(40), M = 'b'.repeat(40), repo = { full_name: 'o/r' };
+  const atLock = [{ filename: 'tests/a.test.mjs', status: 'modified', patch: '@@ -1,3 +1,4 @@\n l1\n l2\n+added\n l3' }], atHead = [{ filename: 'tests/a.test.mjs', status: 'modified', patch: '@@ -1,3 +1,4 @@\n l1\n l2\n+added\n l3' }], since = [{ filename: 'tests/a.test.mjs', status: 'modified', patch: '@@ -38,1 +38,1 @@\n-l38\n+l38x' }];
+  const body = `<!-- spec-review v1 sha=${specSha({ title: 'Sum', body: 'AC1' })} verdict=ready ac=1 -->`;
+  const io = {
+    one: (url) => {
+      if (url.endsWith('/pulls/7')) return { draft: false, head: { ref: 'agent/7-sum', sha: H, repo }, base: { ref: 'main', sha: M, repo } };
+      if (url.endsWith('/issues/7')) return { title: 'Sum', body: 'AC1', labels: [{ name: 'spec-ok' }] };
+      const [a, b] = url.split('/compare/')[1].split('?')[0].split('...');
+      return { status: 'ahead', files: a === L ? since : b === L ? atLock : atHead };
+    },
+    all: (url) => url.includes('/files') ? atHead : url.includes('/comments')
+      ? [{ user: { login: 'github-actions[bot]', type: 'Bot' }, created_at: 't', updated_at: 't', body }]
+      : [{ user: { login: 'ada', type: 'User' }, body: 'tests-ok', commit_id: L, state: 'APPROVED' }],
+    raw: (url) => url.endsWith('.github/CODEOWNERS') ? '* @ada\n' : '',
+  };
+  const got = check(load('o/r', 7, io));
+  assert.equal(got.ok, true); assert.equal(got.note, `locked at ${L.slice(0, 7)}`);
+});
+it('the test lock fails when the pull request changes its own lines in a locked file after the lock', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { check, load } = await import(new URL('lock.mjs', lifecycle));
+  const { specSha } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const L = 'a'.repeat(40), H = 'c'.repeat(40), M = 'b'.repeat(40), repo = { full_name: 'o/r' };
+  const atLock = [{ filename: 'tests/a.test.mjs', status: 'modified', patch: '@@ -1,3 +1,4 @@\n l1\n l2\n+added\n l3' }], atHead = [{ filename: 'tests/a.test.mjs', status: 'modified', patch: '@@ -1,3 +1,4 @@\n l1\n l2\n+edited\n l3' }], since = [{ filename: 'tests/a.test.mjs', status: 'modified', patch: '@@ -3,1 +3,1 @@\n-added\n+edited' }];
+  const body = `<!-- spec-review v1 sha=${specSha({ title: 'Sum', body: 'AC1' })} verdict=ready ac=1 -->`;
+  const io = {
+    one: (url) => {
+      if (url.endsWith('/pulls/7')) return { draft: false, head: { ref: 'agent/7-sum', sha: H, repo }, base: { ref: 'main', sha: M, repo } };
+      if (url.endsWith('/issues/7')) return { title: 'Sum', body: 'AC1', labels: [{ name: 'spec-ok' }] };
+      const [a, b] = url.split('/compare/')[1].split('?')[0].split('...');
+      return { status: 'ahead', files: a === L ? since : b === L ? atLock : atHead };
+    },
+    all: (url) => url.includes('/files') ? atHead : url.includes('/comments')
+      ? [{ user: { login: 'github-actions[bot]', type: 'Bot' }, created_at: 't', updated_at: 't', body }]
+      : [{ user: { login: 'ada', type: 'User' }, body: 'tests-ok', commit_id: L, state: 'APPROVED' }],
+    raw: (url) => url.endsWith('.github/CODEOWNERS') ? '* @ada\n' : '',
+  };
+  const got = check(load('o/r', 7, io));
+  assert.equal(got.ok, false); assert.equal(got.note, 'locked paths changed after the lock: tests/a.test.mjs');
+});
+it('the test lock holds when a merge from the base adds a locked file', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { check, load } = await import(new URL('lock.mjs', lifecycle));
+  const { specSha } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const L = 'a'.repeat(40), H = 'c'.repeat(40), M = 'b'.repeat(40), repo = { full_name: 'o/r' };
+  const atLock = [{ filename: 'tests/a.test.mjs', status: 'modified', patch: '@@ -1,3 +1,4 @@\n l1\n l2\n+added\n l3' }], atHead = [{ filename: 'tests/a.test.mjs', status: 'modified', patch: '@@ -1,3 +1,4 @@\n l1\n l2\n+added\n l3' }], since = [{ filename: 'tests/b.test.mjs', status: 'added', patch: '@@ -0,0 +1 @@\n+b' }];
+  const body = `<!-- spec-review v1 sha=${specSha({ title: 'Sum', body: 'AC1' })} verdict=ready ac=1 -->`;
+  const io = {
+    one: (url) => {
+      if (url.endsWith('/pulls/7')) return { draft: false, head: { ref: 'agent/7-sum', sha: H, repo }, base: { ref: 'main', sha: M, repo } };
+      if (url.endsWith('/issues/7')) return { title: 'Sum', body: 'AC1', labels: [{ name: 'spec-ok' }] };
+      const [a, b] = url.split('/compare/')[1].split('?')[0].split('...');
+      return { status: 'ahead', files: a === L ? since : b === L ? atLock : atHead };
+    },
+    all: (url) => url.includes('/files') ? atHead : url.includes('/comments')
+      ? [{ user: { login: 'github-actions[bot]', type: 'Bot' }, created_at: 't', updated_at: 't', body }]
+      : [{ user: { login: 'ada', type: 'User' }, body: 'tests-ok', commit_id: L, state: 'APPROVED' }],
+    raw: (url) => url.endsWith('.github/CODEOWNERS') ? '* @ada\n' : '',
+  };
+  const got = check(load('o/r', 7, io));
+  assert.equal(got.ok, true); assert.equal(got.note, `locked at ${L.slice(0, 7)}`);
+});
+it("the test lock fails when a locked file's change has no line diff to compare", async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { check, load } = await import(new URL('lock.mjs', lifecycle));
+  const { specSha } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const L = 'a'.repeat(40), H = 'c'.repeat(40), M = 'b'.repeat(40), repo = { full_name: 'o/r' };
+  const atLock = [{ filename: 'tests/logo.bin', status: 'added' }], atHead = [{ filename: 'tests/logo.bin', status: 'added' }], since = [{ filename: 'tests/logo.bin', status: 'modified' }];
+  const body = `<!-- spec-review v1 sha=${specSha({ title: 'Sum', body: 'AC1' })} verdict=ready ac=1 -->`;
+  const io = {
+    one: (url) => {
+      if (url.endsWith('/pulls/7')) return { draft: false, head: { ref: 'agent/7-sum', sha: H, repo }, base: { ref: 'main', sha: M, repo } };
+      if (url.endsWith('/issues/7')) return { title: 'Sum', body: 'AC1', labels: [{ name: 'spec-ok' }] };
+      const [a, b] = url.split('/compare/')[1].split('?')[0].split('...');
+      return { status: 'ahead', files: a === L ? since : b === L ? atLock : atHead };
+    },
+    all: (url) => url.includes('/files') ? atHead : url.includes('/comments')
+      ? [{ user: { login: 'github-actions[bot]', type: 'Bot' }, created_at: 't', updated_at: 't', body }]
+      : [{ user: { login: 'ada', type: 'User' }, body: 'tests-ok', commit_id: L, state: 'APPROVED' }],
+    raw: (url) => url.endsWith('.github/CODEOWNERS') ? '* @ada\n' : '',
+  };
+  const got = check(load('o/r', 7, io));
+  assert.equal(got.ok, false); assert.equal(got.note, 'locked paths changed after the lock: tests/logo.bin');
+});
