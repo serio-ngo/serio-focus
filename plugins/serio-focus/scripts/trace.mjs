@@ -60,6 +60,7 @@ export function trace(file) {
     totals.turns += a.turns;
     add(totals.calls, a.calls);
     add(totals.tokens, a.tokens);
+    for (const k of ['errors', 'denied', 'repeats']) out[k].push(...a[k]);
   }
   return { ...out, totals };
 }
