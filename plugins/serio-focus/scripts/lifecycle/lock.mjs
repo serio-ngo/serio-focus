@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { all, flag, lockOf, one, owners, ownersOf, repoOf, specMarker, specSha, taskOf } from '../lib/lifecycle.mjs';
+import { all, flag, lockOf, one, owners, ownersOf, raw, repoOf, specMarker, specSha, taskOf } from '../lib/lifecycle.mjs';
 
 const LOCKED = /^\.(claude|agents)\/skills\/|(^|\/)(tests?|__tests__|e2e)\/|[._-](test|spec)\.[^/]+$|(^|\/)test-[^/]+$|(^|\/)(playwright|vitest|jest)\.config\.[^/]+$/;
 
@@ -55,14 +55,28 @@ function selfTest() {
   console.log(`lock self-test: ${cases.length} checks passed`);
 }
 
-export function load(repo, number) {
-  const pr = one(`repos/${repo}/pulls/${number}`), n = taskOf(pr);
+export function load(repo, number, io = { one, all, raw }) {
+  const pr = io.one(`repos/${repo}/pulls/${number}`), n = taskOf(pr);
+  const cut = ['tests/ (300 or more files changed; the list is cut)'];
   const changed = (lock) => {
-    const diff = one(`repos/${repo}/compare/${lock}...${pr.head.sha}?per_page=1`), files = diff.files || [];
+    const diff = io.one(`repos/${repo}/compare/${lock}...${pr.head.sha}?per_page=1`), files = diff.files || [];
     if (!['ahead', 'identical'].includes(diff.status)) return null;
-    return files.length >= 300 ? ['tests/ (300 or more files changed; the list is cut)'] : files.flatMap((f) => [f.filename, f.previous_filename].filter(Boolean));
+    if (files.length >= 300) return cut;
+    const names = [...new Set(files.flatMap((f) => [f.filename, f.previous_filename].filter(Boolean)))].filter((name) => LOCKED.test(name));
+    if (!names.length) return [];
+    const atLock = io.one(`repos/${repo}/compare/${pr.base.ref}...${lock}?per_page=100`).files || [];
+    if (atLock.length >= 300) return cut;
+    const atHead = io.all(`repos/${repo}/pulls/${number}/files?per_page=100`);
+    const side = (list, name) => {
+      const f = list.find((x) => x.filename === name || x.previous_filename === name);
+      return f ? f.patch === undefined ? null : f.patch.replace(/^@@.*$/gm, '@@') : '';
+    };
+    return names.filter((name) => {
+      const a = side(atLock, name), b = side(atHead, name);
+      return a === null || b === null || a !== b;
+    });
   };
-  return { pr, issue: n ? one(`repos/${repo}/issues/${n}`) : null, comments: n ? all(`repos/${repo}/issues/${n}/comments?per_page=100`) : [], reviews: all(`repos/${repo}/pulls/${number}/reviews?per_page=100`), own: ownersOf(repo), changed };
+  return { pr, issue: n ? io.one(`repos/${repo}/issues/${n}`) : null, comments: n ? io.all(`repos/${repo}/issues/${n}/comments?per_page=100`) : [], reviews: io.all(`repos/${repo}/pulls/${number}/reviews?per_page=100`), own: ownersOf(repo, io.raw), changed };
 }
 
 function main() {
