@@ -13,7 +13,7 @@ export const flag = (name) => { const i = process.argv.indexOf(name); return i <
 
 export const person = (user) => user?.type === 'User';
 export const owners = (text) => new Set([...String(text || '').replace(/#.*$/gm, '').split('\n').filter((line) => /^\s*\*\s/.test(line)).join('\n').matchAll(/(?<=\s)@([A-Za-z0-9-]+)(?![A-Za-z0-9/-])/g)].map((m) => m[1].toLowerCase()));
-export const ownersOf = (repo) => owners(['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'].map((file) => raw(`repos/${repo}/contents/${file}`)).find(Boolean));
+export const ownersOf = (repo, get = raw) => owners(['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'].map((file) => get(`repos/${repo}/contents/${file}`)).find(Boolean));
 export const owns = (user, own) => person(user) && own.has(user.login.toLowerCase());
 export const robot = (user) => user?.login === 'github-actions[bot]' && user.type === 'Bot';
 
