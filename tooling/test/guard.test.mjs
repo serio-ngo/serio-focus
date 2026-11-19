@@ -562,20 +562,24 @@ it('trace lists failed, denied and repeated calls once each with the start of th
 it('trace adds the agents a transcript started and sums them into totals', async () => {
   const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
   const dir = sandbox('trace-'), usage = (n) => ({ input_tokens: n, output_tokens: n + 1, cache_read_input_tokens: n + 2, cache_creation_input_tokens: n + 3 });
-  const agent = (name, tool, n, meta) => {
-    writeFileSync(path.join(dir, `agent-${name}.jsonl`), JSON.stringify({ type: 'assistant', message: { id: name, model: 'x', content: [{ type: 'tool_use', id: name, name: tool, input: {} }], usage: usage(n) } }));
+  const agent = (name, tool, n, meta, more = []) => {
+    writeFileSync(path.join(dir, `agent-${name}.jsonl`), [{ type: 'assistant', message: { id: name, model: 'x', content: [{ type: 'tool_use', id: name, name: tool, input: {} }], usage: usage(n) } }, ...more].map((row) => JSON.stringify(row)).join('\n'));
     if (meta) writeFileSync(path.join(dir, `agent-${name}.meta.json`), JSON.stringify(meta));
   };
   agent('a', 'Read', 1);
-  agent('b', 'Grep', 10, { agentType: 'reviewer', model: 'mb', parentAgentId: 'a' });
+  const bash = { command: 'false' };
+  agent('b', 'Grep', 10, { agentType: 'reviewer', model: 'mb', parentAgentId: 'a' }, [
+    { type: 'assistant', message: { id: 'b2', model: 'x', content: [{ type: 'tool_use', id: 'bx', name: 'Bash', input: bash }], usage: usage(20) } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'bx', is_error: true, content: 'x' }] } }]);
   agent('c', 'Read', 100, { agentType: 'tester', model: 'mc', parentAgentId: 'a' });
   agent('d', 'Bash', 1000, { agentType: 'coder', model: 'md', parentAgentId: 'z' });
   const got = trace(path.join(dir, 'agent-a.jsonl'));
   const tokens = (n) => ({ input: n, output: n + 1, cacheRead: n + 2, cacheWrite: n + 3 });
   assert.deepEqual([...got.agents].sort((x, y) => x.type.localeCompare(y.type)), [
-    { type: 'reviewer', model: 'mb', turns: 1, calls: { Grep: 1 }, tokens: tokens(10) },
+    { type: 'reviewer', model: 'mb', turns: 2, calls: { Grep: 1, Bash: 1 }, tokens: { input: 30, output: 32, cacheRead: 34, cacheWrite: 36 } },
     { type: 'tester', model: 'mc', turns: 1, calls: { Read: 1 }, tokens: tokens(100) }]);
-  assert.deepEqual(got.totals, { turns: 3, calls: { Read: 2, Grep: 1 }, tokens: { input: 111, output: 114, cacheRead: 117, cacheWrite: 120 } });
+  assert.deepEqual(got.totals, { turns: 4, calls: { Read: 2, Grep: 1, Bash: 1 }, tokens: { input: 131, output: 135, cacheRead: 139, cacheWrite: 143 } });
+  assert.deepEqual(got.errors, [{ tool: 'Bash', input: JSON.stringify(bash) }]);
   const alone = sandbox('trace-');
   writeFileSync(path.join(alone, 'agent-a.jsonl'), readFileSync(path.join(dir, 'agent-a.jsonl')));
   assert.deepEqual(trace(path.join(alone, 'agent-a.jsonl')).agents, []);
