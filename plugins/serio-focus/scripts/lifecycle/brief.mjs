@@ -11,7 +11,7 @@ export function brief({ repo, issue, comments, pr, prComments = [], reviews = []
   const mark = specMarker(comments, own), lock = lockOf(reviews, own);
   const lines = String(specComment(comments, own)?.body || '').split('\n'), accepted = lines.find((l) => l.startsWith('Accepted by ')), rows = [...lines.filter((l) => l.startsWith('| AC')), ...lines.filter((l) => /^\d+\. /.test(l))];
   const keep = (t) => /<!-- step-note (?!stage=route )/.test(t) || t.startsWith('**needs-human**');
-  const entries = (c) => isStatus(c) ? statusLog(c.body).map((l) => ({ at: /\bat=(\S+) -->/.exec(l)?.[1] || c.updated_at, body: l.slice(2) })) : trusted(c) && !String(c.body || '').includes('<!-- lifecycle-status') ? [{ at: c.created_at, body: c.body || '' }] : [];
+  const entries = (c) => isStatus(c, own) ? statusLog(c.body).map((l) => ({ at: /\bat=(\S+) -->/.exec(l)?.[1] || c.updated_at, body: l.slice(2) })) : trusted(c) && !String(c.body || '').includes('<!-- lifecycle-status') ? [{ at: c.created_at, body: c.body || '' }] : [];
   const steps = [...comments, ...prComments].flatMap(entries).filter((x) => keep(x.body)).sort((a, b) => String(a.at).localeCompare(String(b.at))).map((x) => cut(x.body, 400)).slice(-8);
   const sections = [
     ['Spec', plain(issue.body).slice(0, 8000).replace(/^/gm, '> ')],
