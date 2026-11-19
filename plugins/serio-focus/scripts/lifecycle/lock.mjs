@@ -69,7 +69,7 @@ export function load(repo, number, io = { one, all, raw }) {
     const atHead = io.all(`repos/${repo}/pulls/${number}/files?per_page=100`);
     const side = (list, name) => {
       const f = list.find((x) => x.filename === name || x.previous_filename === name);
-      return f ? f.patch === undefined ? null : f.patch.replace(/^@@.*$/gm, '@@') : '';
+      return f ? f.patch === undefined ? null : f.patch.split('\n').filter((l) => /^[+-]/.test(l)).join('\n') : '';
     };
     return names.filter((name) => {
       const a = side(atLock, name), b = side(atHead, name);
