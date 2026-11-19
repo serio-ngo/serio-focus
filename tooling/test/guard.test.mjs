@@ -173,7 +173,7 @@ it('denies every mail send on every attempt and allows other connector sends', (
 });
 it('denies main-session edits only when orchestrating', () => {
   const edit = { tool_name: 'Edit', tool_input: { file_path: 'a.js' } };
-  assert.deepEqual([guard(edit, orchestrate), guard({ ...edit, agent_id: 'coder-1' }, orchestrate), guard(edit)], [DENY, ALLOWED, ALLOWED]);
+  assert.deepEqual([guard(edit, orchestrate), guard({ ...edit, agent_id: 'coder-1' }, orchestrate), guard(edit, { ...process.env, SERIO_ORCHESTRATE: '' })], [DENY, ALLOWED, ALLOWED]);
 });
 it('denies a malformed payload that names a tool', () => {
   assert.equal(fire(script('guard.mjs'), '{"tool_name":"Agent",').deny, DENY);
