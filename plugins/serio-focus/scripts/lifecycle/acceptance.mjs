@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { all, flag, one, ownersOf, repoOf, runLink, send, specComment, specOf, taskOf } from '../lib/lifecycle.mjs';
+import { all, flag, one, ownersOf, raw, repoOf, runLink, send, specComment, specOf, taskOf } from '../lib/lifecycle.mjs';
 
 const text = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 const cell = (s) => s.replace(/[|\r\n<>]/g, ' ').slice(0, 120);
@@ -56,22 +56,29 @@ function selfTest() {
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.xml') ? [path.join(dir, e.name)] : []);
 
-function main() {
-  const repo = flag('--repo') || repoOf(), [number, dir] = process.argv.slice(2);
-  const pr = one(`repos/${repo}/pulls/${number}`), n = taskOf(pr);
-  if (!n) return console.log('acceptance: not a lifecycle pull request');
-  const review = specComment(all(`repos/${repo}/issues/${n}/comments?per_page=100`), ownersOf(repo))?.body;
+export function accept({ repo, number, dir, tested, lock, link, post }, io = { one, all, send, raw }) {
+  const pr = io.one(`repos/${repo}/pulls/${number}`), n = taskOf(pr);
+  if (!n) return { ok: true, body: 'acceptance: not a lifecycle pull request' };
+  if (tested && tested !== pr.head.sha) return { ok: true, body: 'acceptance: a newer head exists; the run for it writes the report' };
+  const own = ownersOf(repo, io.raw);
+  const review = specComment(io.all(`repos/${repo}/issues/${n}/comments?per_page=100`), own)?.body;
   let xml = [];
   try { xml = walk(dir); } catch { }
-  const files = all(`repos/${repo}/pulls/${number}/files?per_page=100`).map((f) => f.filename), size = `+${pr.additions} −${pr.deletions} in ${pr.changed_files} files`;
-  const got = report({ review, tests: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: pr.head.sha, lock: process.env.LOCK_NOTE, link: process.env.GITHUB_RUN_ID ? runLink() : '', files, size });
-  if (process.argv.includes('--post')) {
-    const old = all(`repos/${repo}/issues/${number}/comments?per_page=100`).find((c) => c.user?.login === 'github-actions[bot]' && /<!-- acceptance v1 /.test(c.body || ''));
-    if (old) send('PATCH', `repos/${repo}/issues/comments/${old.id}`, { body: got.body });
-    else send('POST', `repos/${repo}/issues/${number}/comments`, { body: got.body });
+  const files = io.all(`repos/${repo}/pulls/${number}/files?per_page=100`).map((f) => f.filename), size = `+${pr.additions} −${pr.deletions} in ${pr.changed_files} files`;
+  const got = report({ review, tests: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: pr.head.sha, lock, link, files, size });
+  if (post) {
+    const old = io.all(`repos/${repo}/issues/${number}/comments?per_page=100`).find((c) => c.user?.login === 'github-actions[bot]' && /<!-- acceptance v1 /.test(c.body || ''));
+    if (old) io.send('PATCH', `repos/${repo}/issues/comments/${old.id}`, { body: got.body });
+    else io.send('POST', `repos/${repo}/issues/${number}/comments`, { body: got.body });
   }
-  console.log(got.body);
-  process.exit(got.ok ? 0 : 1);
+  return got;
+}
+
+function main() {
+  const [number, dir] = process.argv.slice(2);
+  const { ok, body } = accept({ repo: flag('--repo') || repoOf(), number, dir, tested: process.env.TESTED_SHA || '', lock: process.env.LOCK_NOTE, link: process.env.GITHUB_RUN_ID ? runLink() : '', post: process.argv.includes('--post') });
+  console.log(body);
+  process.exit(ok ? 0 : 1);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) (process.argv.includes('--self-test') ? selfTest : main)();
