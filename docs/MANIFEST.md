@@ -25,6 +25,7 @@
 |---|---|
 | `deliver` | Use when asked to build or change something end to end. Runs the role agents in order - architect plans, tester writes a failing test, coder builds each task, reviewer checks the diff - then opens the pull request. |
 | `gate` | Use to check a task pull request by script before asking for review. Runs the test lock and builds the acceptance report from JUnit results - one row per criterion - without a model deciding the result. |
+| `improve` | Use when a code owner runs one task issue through every stage locally (spec review, tests, delivery, gate), judges each stage, and fixes defects in the lifecycle itself. |
 | `pr-loop` | Use when a pull request has failing checks or unresolved review feedback from any reviewer, person or bot. Verifies each finding, has the coder fix it, reruns checks and requests re-review until the head is clean. |
 | `spec-review` | Use before any test or code when an issue is a task spec. Reads the issue, the product contract and the code it names, then returns a verdict, questions with recommended answers and numbered Given, When, Then criteria, each with the test that proves it. Changes no repository file. |
 | `write-tests` | Use after a spec is approved and before any production code. Writes a failing test for each behaviour no test covers yet, edits the repository skill when a boundary changes, proves the set is red and opens a draft pull request with the criterion-to-test table for a person to approve. |
@@ -33,9 +34,9 @@
 
 | What ships | Count |
 |---|---|
-| Script lines | **838** across 12 files |
+| Script lines | **903** across 13 files |
 | Hook events | **3** |
-| Skills | **5** |
+| Skills | **6** |
 | Subagents | **4** |
 | Startup context: card, agent and skill descriptions | **~476** tokens |
 | Third-party packages | **0** |

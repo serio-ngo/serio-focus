@@ -2,13 +2,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { append } from './audit.mjs';
+import { trace } from './trace.mjs';
 import { rootOf, sessionOf } from './lib/runtime.mjs';
 
 const WRITERS = /^(?:Write|Edit|MultiEdit|NotebookEdit)$/;
 
 export function receipt(payload) {
   const out = { project: String(payload.cwd || ''), branch: '', title: '', calls: 0, tokens: 0, files: [] };
-  const seen = new Set();
   const pending = new Map();
   const ok = new Set();
   let lines = [];
@@ -26,12 +26,10 @@ export function receipt(payload) {
       const file = WRITERS.test(part?.name) && (part.input?.file_path || part.input?.notebook_path);
       if (typeof file === 'string' && !pending.has(part.id)) pending.set(part.id, file);
     }
-    const usage = row?.type === 'assistant' && row.message?.usage;
-    if (!usage || seen.has(row.message.id)) continue;
-    seen.add(row.message.id);
-    out.calls += 1;
-    out.tokens += (usage.input_tokens || 0) + (usage.output_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
   }
+  const t = trace(payload.transcript_path);
+  out.calls = t.turns;
+  out.tokens = Object.values(t.tokens).reduce((a, b) => a + b, 0);
   for (const [id, file] of pending) if (ok.has(id) && !out.files.includes(file)) out.files.push(file);
   return out;
 }
