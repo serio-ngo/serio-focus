@@ -433,3 +433,73 @@ it('stranger status comment ignored', async () => {
   assert.ok(!got.includes('## Steps so far'), got);
   assert.ok(!got.includes('Forged'), got);
 });
+const LOCK_LINES = Array.from({ length: 40 }, (_, i) => `l${i + 1}\n`).join('');
+let fakeGh;
+const lockRun = async (lockStep, afterStep) => {
+  const { specSha } = await import('../../plugins/serio-focus/scripts/lib/lifecycle.mjs');
+  if (!fakeGh) {
+    const bin = path.join(sandbox('gh-'), 'bin'), preload = path.join(bin, '..', 'fake.cjs');
+    mkdirSync(bin); copyFileSync(process.execPath, path.join(bin, process.platform === 'win32' ? 'gh.exe' : 'gh'));
+    writeFileSync(preload, `const p = require('node:path'), cp = require('node:child_process');
+if (/^gh(?:\\.exe)?$/i.test(p.basename(process.execPath))) {
+  const c = JSON.parse(process.env.FAKE), g = (...a) => cp.execFileSync('git', a, { cwd: c.dir, encoding: 'utf8', maxBuffer: 64e6 }).trim();
+  const url = process.argv[2].split('?')[0], out = (v) => { process.stdout.write(process.argv.includes('--paginate') ? JSON.stringify([v]) : JSON.stringify(v)); process.exit(0); };
+  const cmp = /compare\\/(.+)\\.\\.\\.(.+)$/.exec(url);
+  if (/\\/pulls\\/7$/.test(url)) out({ draft: false, head: { ref: 'agent/7-sum', sha: c.head, repo: { full_name: 'o/r' } }, base: { ref: 'main', sha: c.main, repo: { full_name: 'o/r' } } });
+  if (/\\/issues\\/7$/.test(url)) out({ title: 'Sum', body: 'AC1', labels: [{ name: 'spec-ok' }] });
+  if (/\\/issues\\/7\\/comments$/.test(url)) out([{ user: { login: 'github-actions[bot]', type: 'Bot' }, body: c.spec, created_at: 't', updated_at: 't' }]);
+  if (/\\/pulls\\/7\\/reviews$/.test(url)) out([{ user: { login: 'ada', type: 'User' }, body: 'tests-ok', commit_id: c.lock, state: 'APPROVED' }]);
+  if (/contents\\/\\.github\\/CODEOWNERS$/.test(url)) { process.stdout.write('* @ada\\n'); process.exit(0); }
+  const diff = (a, b) => g('diff', '--name-status', '-M', a + '...' + b).split('\\n').filter(Boolean).map((line) => {
+      const [s, x, y] = line.split('\\t'), filename = y || x, f = { filename, status: { A: 'added', D: 'removed', R: 'renamed' }[s[0]] || 'modified' };
+      if (y) f.previous_filename = x;
+      const d = cp.execFileSync('git', ['diff', a + '...' + b, '--', filename], { cwd: c.dir, encoding: 'utf8', maxBuffer: 64e6 }), i = d.indexOf('\\n@@');
+      if (i >= 0) f.patch = d.slice(i + 1).replace(/\\n$/, '');
+      return f;
+    });
+  if (/\\/pulls\\/7\\/files$/.test(url)) out(diff(c.main, c.head));
+  if (cmp) {
+    const [, a, b] = cmp, base = g('merge-base', a, b), ra = g('rev-parse', a), rb = g('rev-parse', b), files = diff(a, b);
+    out({ status: ra === rb ? 'identical' : base === ra ? 'ahead' : base === rb ? 'behind' : 'diverged', ahead_by: +g('rev-list', '--count', a + '..' + b), behind_by: +g('rev-list', '--count', b + '..' + a), merge_base_commit: { sha: base }, files });
+  }
+  process.stderr.write('unknown ' + url); process.exit(1);
+}`);
+    fakeGh = { bin, preload };
+  }
+  const dir = path.join(sandbox('lock-'), 'work'), git = (...a) => {
+    const run = spawnSync('git', a, { cwd: dir, encoding: 'utf8' }); assert.equal(run.status, 0, run.stderr); return run.stdout.trim();
+  };
+  const put = (file, data) => {
+    mkdirSync(path.dirname(path.join(dir, file)), { recursive: true }); writeFileSync(path.join(dir, file), data);
+    git('add', '-A'); git('commit', '-m', file);
+  };
+  mkdirSync(dir); git('init', '-b', 'main'); git('config', 'user.name', 't'); git('config', 'user.email', 't@t'); git('config', 'core.autocrlf', 'false');
+  put('tests/a.test.mjs', LOCK_LINES); git('checkout', '-b', 'agent/7-sum');
+  lockStep(put); const lock = git('rev-parse', 'HEAD');
+  afterStep({ git, put });
+  const spec = `<!-- spec-review v1 sha=${specSha({ title: 'Sum', body: 'AC1' })} verdict=ready ac=1 -->`;
+  const env = { ...process.env, GITHUB_OUTPUT: '', FAKE: JSON.stringify({ dir, lock, spec, head: git('rev-parse', 'HEAD'), main: git('rev-parse', 'main') }),
+    PATH: `${fakeGh.bin}${path.delimiter}${process.env.PATH}`, NODE_OPTIONS: `--require="${fakeGh.preload.replaceAll('\\', '/')}"` };
+  const run = spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'lifecycle', 'lock.mjs'), '7', '--repo', 'o/r'], { encoding: 'utf8', env });
+  return { code: run.status, out: run.stdout.trim(), at: lock.slice(0, 7) };
+};
+const addTest = (put) => put('tests/a.test.mjs', LOCK_LINES.replace('l2\n', 'l2\nadded\n'));
+const mergeMain = ({ git, put }, file, data) => {
+  git('checkout', 'main'); put(file, data); git('checkout', 'agent/7-sum'); git('merge', '--no-edit', 'main');
+};
+it('the test lock holds when a merge from the base changes other lines of a locked file', async () => {
+  const got = await lockRun(addTest, (s) => mergeMain(s, 'tests/a.test.mjs', LOCK_LINES.replace('l38\n', 'l38x\n')));
+  assert.equal(got.out, `test lock: pass - locked at ${got.at}`); assert.equal(got.code, 0);
+});
+it('the test lock fails when the pull request changes its own lines in a locked file after the lock', async () => {
+  const got = await lockRun(addTest, ({ put }) => put('tests/a.test.mjs', LOCK_LINES.replace('l2\n', 'l2\nedited\n')));
+  assert.equal(got.out, 'test lock: fail - locked paths changed after the lock: tests/a.test.mjs'); assert.equal(got.code, 1);
+});
+it('the test lock holds when a merge from the base adds a locked file', async () => {
+  const got = await lockRun(addTest, (s) => mergeMain(s, 'tests/b.test.mjs', 'b\n'));
+  assert.equal(got.out, `test lock: pass - locked at ${got.at}`); assert.equal(got.code, 0);
+});
+it("the test lock fails when a locked file's change has no line diff to compare", async () => {
+  const got = await lockRun((put) => put('tests/logo.bin', Buffer.from([0, 1, 2])), ({ put }) => put('tests/logo.bin', Buffer.from([0, 9, 9])));
+  assert.equal(got.out, 'test lock: fail - locked paths changed after the lock: tests/logo.bin'); assert.equal(got.code, 1);
+});
