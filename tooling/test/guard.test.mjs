@@ -521,3 +521,84 @@ it("the test lock fails when a locked file's change has no line diff to compare"
   const got = check(load('o/r', 7, io));
   assert.equal(got.ok, false); assert.equal(got.note, 'locked paths changed after the lock: tests/logo.bin');
 });
+it('trace counts each assistant message once with its tool calls, tokens, duration and models', async () => {
+  const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
+  const row = (id, at, name, input, usage) => ({ type: 'assistant', timestamp: at, message: { id, model: 'm1', content: [{ type: 'tool_use', id: `${id}${name}`, name, input }], usage } });
+  const second = { input_tokens: 20, output_tokens: 6, cache_read_input_tokens: 0, cache_creation_input_tokens: 7 };
+  const file = path.join(sandbox('trace-'), 't.jsonl');
+  writeFileSync(file, [
+    row('a', '2026-01-01T10:00:00.000Z', 'Read', { file_path: 'a' }, { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 }),
+    row('b', '2026-01-01T10:00:01.000Z', 'Grep', { pattern: 'p' }, second),
+    row('b', '2026-01-01T10:00:01.500Z', 'Read', { file_path: 'b' }, second),
+  ].map((r) => JSON.stringify(r)).join('\nnot json\n'));
+  const got = trace(file);
+  assert.equal(got.turns, 2);
+  assert.deepEqual(got.calls, { Read: 2, Grep: 1 });
+  assert.deepEqual(got.tokens, { input: 30, output: 11, cacheRead: 100, cacheWrite: 7 });
+  assert.equal(got.durationMs, 1500);
+  assert.deepEqual(got.models, ['m1']);
+});
+it('trace lists failed, denied and repeated calls once each with the start of their input', async () => {
+  const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
+  const dir = sandbox('trace-'), bash = { command: 'false' }, write = { file_path: 'w', content: 'y'.repeat(220) };
+  assert.equal(JSON.stringify(write).length, 250);
+  const call = (id, name, input) => ({ type: 'assistant', message: { id: `m${id}`, content: [{ type: 'tool_use', id, name, input }] } });
+  const result = (id, extra, error) => ({ type: 'user', ...extra, message: { content: [{ type: 'tool_result', tool_use_id: id, ...(error && { is_error: true }), content: 'x' }] } });
+  const file = path.join(dir, 't.jsonl');
+  writeFileSync(file, [call('1', 'Bash', bash), result('1', {}, true), call('2', 'Write', write),
+    result('2', { toolDenialKind: 'user', permissionDecision: { decision: 'reject' } }, true),
+    call('3', 'Read', { file_path: 'a' }), result('3', {}), call('4', 'Read', { file_path: 'a' }), result('4', {})]
+    .map((r) => JSON.stringify(r)).join('\n'));
+  const got = trace(file);
+  assert.deepEqual(got.errors, [{ tool: 'Bash', input: JSON.stringify(bash) }]);
+  assert.deepEqual(got.denied, [{ tool: 'Write', input: JSON.stringify(write).slice(0, 200) }]);
+  assert.deepEqual(got.repeats, [{ tool: 'Read', input: '{"file_path":"a"}', times: 2 }]);
+  const empty = path.join(dir, 'empty.jsonl');
+  writeFileSync(empty, '');
+  const none = trace(empty);
+  assert.equal(none.turns, 0);
+  assert.deepEqual([none.errors, none.denied, none.repeats], [[], [], []]);
+});
+it('trace adds the agents a transcript started and sums them into totals', async () => {
+  const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
+  const dir = sandbox('trace-'), usage = (n) => ({ input_tokens: n, output_tokens: n + 1, cache_read_input_tokens: n + 2, cache_creation_input_tokens: n + 3 });
+  const agent = (name, tool, n, meta, more = []) => {
+    writeFileSync(path.join(dir, `agent-${name}.jsonl`), [{ type: 'assistant', message: { id: name, model: 'x', content: [{ type: 'tool_use', id: name, name: tool, input: {} }], usage: usage(n) } }, ...more].map((row) => JSON.stringify(row)).join('\n'));
+    if (meta) writeFileSync(path.join(dir, `agent-${name}.meta.json`), JSON.stringify(meta));
+  };
+  agent('a', 'Read', 1);
+  const bash = { command: 'false' };
+  agent('b', 'Grep', 10, { agentType: 'reviewer', model: 'mb', parentAgentId: 'a' }, [
+    { type: 'assistant', message: { id: 'b2', model: 'x', content: [{ type: 'tool_use', id: 'bx', name: 'Bash', input: bash }], usage: usage(20) } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'bx', is_error: true, content: 'x' }] } }]);
+  agent('c', 'Read', 100, { agentType: 'tester', model: 'mc', parentAgentId: 'a' });
+  agent('d', 'Bash', 1000, { agentType: 'coder', model: 'md', parentAgentId: 'z' });
+  const got = trace(path.join(dir, 'agent-a.jsonl'));
+  const tokens = (n) => ({ input: n, output: n + 1, cacheRead: n + 2, cacheWrite: n + 3 });
+  assert.deepEqual([...got.agents].sort((x, y) => x.type.localeCompare(y.type)), [
+    { type: 'reviewer', model: 'mb', turns: 2, calls: { Grep: 1, Bash: 1 }, tokens: { input: 30, output: 32, cacheRead: 34, cacheWrite: 36 } },
+    { type: 'tester', model: 'mc', turns: 1, calls: { Read: 1 }, tokens: tokens(100) }]);
+  assert.deepEqual(got.totals, { turns: 4, calls: { Read: 2, Grep: 1, Bash: 1 }, tokens: { input: 131, output: 135, cacheRead: 139, cacheWrite: 143 } });
+  assert.deepEqual(got.errors, [{ tool: 'Bash', input: JSON.stringify(bash) }]);
+  const alone = sandbox('trace-');
+  writeFileSync(path.join(alone, 'agent-a.jsonl'), readFileSync(path.join(dir, 'agent-a.jsonl')));
+  assert.deepEqual(trace(path.join(alone, 'agent-a.jsonl')).agents, []);
+});
+it('the brief keeps the whole spec text', async () => {
+  const { brief } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/brief.mjs', import.meta.url));
+  const { owners } = await import(new URL('../../plugins/serio-focus/scripts/lib/lifecycle.mjs', import.meta.url));
+  const body = 'x'.repeat(9000);
+  assert.ok(brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body, labels: [] }, comments: [], own: owners('* @ada\n') }).includes(body));
+});
+it("upkeep leaves the lifecycle's local records alone", () => {
+  const repo = sandbox('records-');
+  cpSync(REPO, repo, { recursive: true, filter: (file) => !/(?:^|[/\\])(?:\.git|\.claude|node_modules|audit|\.lifecycle)(?:[/\\]|$)/.test(file) });
+  const upkeep = (...args) => spawnSync(process.execPath, [path.join(repo, 'tooling', 'cli', 'serio.mjs'), 'upkeep', ...args], { encoding: 'utf8' });
+  assert.equal(upkeep().status, ALLOWED);
+  const record = path.join(repo, '.lifecycle', 'runs', 'x.json');
+  mkdirSync(path.dirname(record), { recursive: true });
+  writeFileSync(record, '{"a":1}  ');
+  const result = upkeep('--check');
+  assert.equal(result.status, ALLOWED, result.stderr);
+  assert.equal(readFileSync(record, 'utf8'), '{"a":1}  ');
+});

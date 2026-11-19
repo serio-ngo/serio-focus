@@ -21,9 +21,9 @@
 |---|---|---|
 | 1 | you | Write the spec as an issue |
 | 2 | agent | `spec-review`: a verdict, questions and criteria `AC1…ACn`, each with the test that proves it |
-| 3 | you | Label the issue `spec-ok` |
+| 3 | you | Label the issue `spec-ok`; `improve` gives it for the code owner who runs it |
 | 4 | agent | `write-tests`: a failing test for each behaviour no test covers yet, and the repository skill when a boundary changes, as a draft pull request |
-| 5 | you | Submit a review that starts with `tests-ok`: it locks the tests and the skill |
+| 5 | you | Submit a review that starts with `tests-ok`: it locks the tests and the skill; `improve` gives it for the code owner who runs it |
 | 6 | agent | `deliver`: code until the locked tests pass, a fresh-context review, the pull request marked ready |
 | 7 | script | The test lock and the acceptance report: one row per criterion |
 | 8 | you | Approve and merge |
@@ -36,6 +36,7 @@ Scripts route, lock, report and publish; models only write. Every run leaves a n
 |---|---|
 | Any change, by hand | `/serio-focus:deliver <goal>`, then `/serio-focus:pr-loop <PR>` |
 | One stage of a task, by hand | `/serio-focus:spec-review <issue>` · `/serio-focus:write-tests <issue>` · `/serio-focus:deliver task issue #<N> on pull request #<PR>` · `/serio-focus:gate <PR>` |
+| One task through every stage, locally, as a code owner | `/serio-focus:improve <issue>` |
 | Unattended, in GitHub Actions | Start from [lifecycle-sandbox](https://github.com/serio-ngo/lifecycle-sandbox): its two workflows call `lifecycle-agent.yml` and `lifecycle-gate.yml` of this repository |
 
 Agents: `architect` plans and edits nothing, `tester` writes one failing test per behaviour, `coder` builds one task per dispatch, `reviewer` reviews the diff in a fresh context. The main session orchestrates on the model you chose and names a cheaper model for every agent.
