@@ -7,10 +7,12 @@ import { all, flag, issueOf, one, park, repoOf, runLink, send, specSha, status }
 const SCHEMA = JSON.parse(readFileSync(new URL('../lib/spec-review.schema.json', import.meta.url))), { criteria: C, questions: Q } = SCHEMA.properties;
 const MAX = { text: C.items.properties.text.maxLength, question: Q.items.properties.question.maxLength, recommended: Q.items.properties.recommended.maxLength };
 const fit = (s, max) => (s.length > max ? `${Array.from(s).slice(0, max - 13).join('')}… (shortened)` : s);
-const clean = (s, max = Infinity) => typeof s === 'string' && s.trim().length > 0 && s.length <= max && !/<!--|-->/.test(s);
-const line = (s) => s.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim();
+const text = (s, max = Infinity) => typeof s === 'string' && s.trim().length > 0 && s.length <= max;
+const clean = (s, max) => text(s, max) && !/<!--|-->/.test(s);
+const safe = (s) => s.replace(/<!--/g, '&lt;!--').replace(/-->/g, '--&gt;');
+const line = (s) => safe(s.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim());
 const tidy = (s) => line(s).replace(/[<>*`]/g, '');
-const name = (s) => s.replace(/[`|]/g, '').replace(/\s+/g, ' ').trim();
+const name = (s) => safe(s.replace(/[`|]/g, '').replace(/\s+/g, ' ').trim());
 export const why = (reason) => (clean(reason, 300) ? ` The agent said: ${tidy(reason)}` : '');
 export const note = (text, stage, run, stats = '', at = new Date().toISOString().slice(0, 19) + 'Z') => { const t = String(text || `The ${stage} run ended without a note.`).slice(0, 280); return clean(t, 280) ? `Note (${stage}): ${tidy(t)}\n\n<!-- step-note stage=${stage} run=${run}${/^turns=\d+ usd=\d+(\.\d+)? denied=\d+$/.test(stats) ? ` ${stats}` : ''} at=${at} -->` : null; };
 const say = (text, target, stage = process.env.STAGE) => { const body = note(text, stage, process.env.GITHUB_RUN_ID || 'local', process.env.STATS); if (body) try { status(flag('--repo') || repoOf(), target, { now: body.split('\n')[0], line: body }); } catch { } };
@@ -19,8 +21,8 @@ export function comment(out, sha, extra = '') {
   if (!out || !['ready', 'questions'].includes(out.verdict)) return null;
   const criteria = out.criteria || [], questions = out.questions || [];
   if (!Array.isArray(criteria) || !Array.isArray(questions) || criteria.length > 5 || questions.length > 5) return null;
-  if (!criteria.every((c, i) => c?.id === i + 1 && clean(c.text) && ['unit', 'e2e'].includes(c.level) && clean(c.test) && name(c.test))) return null;
-  if (!questions.every((q) => clean(q?.question) && clean(q.recommended)) || (extra && !clean(extra))) return null;
+  if (!criteria.every((c, i) => c?.id === i + 1 && text(c.text) && ['unit', 'e2e'].includes(c.level) && text(c.test) && name(c.test))) return null;
+  if (!questions.every((q) => text(q?.question) && text(q.recommended)) || (extra && !text(extra))) return null;
   if (out.verdict === 'ready' ? !criteria.length || questions.length : !questions.length) return null;
   return [
     `**Spec review: ${out.verdict}**`, '',
