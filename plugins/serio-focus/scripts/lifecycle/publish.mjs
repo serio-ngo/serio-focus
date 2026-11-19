@@ -101,7 +101,10 @@ function selfTest() {
   const fresh = [];
   status('o/r', 7, { now: 'Hi' }, { all: () => [{ id: 1, user: { login: 'eve', type: 'User' }, body: old.body }], send: (...a) => fresh.push(a), raw: () => '' });
   assert.deepEqual(fresh.map((a) => a[0] + a[1]), ['POSTrepos/o/r/issues/7/comments']);
-  console.log(`publish self-test: ${bad.length + 32} checks passed`);
+  const quoted = [];
+  status('o/r', 7, { now: 'Hi' }, { all: () => [{ id: 1, user: old.user, body: `See ${old.body}` }], send: (...a) => quoted.push(a), raw: () => '' });
+  assert.deepEqual(quoted.map((a) => a[0] + a[1]), ['POSTrepos/o/r/issues/7/comments']);
+  console.log(`publish self-test: ${bad.length + 33} checks passed`);
 }
 
 function main() {
