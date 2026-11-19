@@ -5,7 +5,7 @@ description: Use when editing plugins/serio-focus/scripts/trace.mjs or receipt.m
 
 ## Record
 
-`trace(file)` takes a transcript path (one JSON row per line; a line that is not JSON is skipped) and returns this record; a missing or empty file gives zero turns and empty lists.
+`trace(file)` takes a transcript path (one JSON row per line) and returns this record.
 
 | Field | Shape |
 |---|---|
@@ -24,7 +24,4 @@ description: Use when editing plugins/serio-focus/scripts/trace.mjs or receipt.m
 |---|---|
 | Command | `node trace.mjs <transcript>` prints the record as JSON |
 | Agent files | `agent-<id>.jsonl` and `agent-<id>.meta.json` (`agentType`, `model`, `effort`, `parentAgentId`) lie beside the parent transcript |
-| Listed agent | an agent is in `agents` when its meta file's `parentAgentId` is the read transcript's id |
-| One reader | trace.mjs is the only transcript reader in plugins/ |
-| Receipt | receipt.mjs (Stop hook) takes its calls and tokens from trace.mjs |
-| Tests | trace.mjs has no `--self-test`; its tests are suite cases |
+| Receipt | receipt.mjs (Stop hook) writes `calls` as the record's `turns` and `tokens` as the sum of its four `tokens` kinds; it reads `files` from the transcript itself |
