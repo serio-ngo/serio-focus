@@ -235,6 +235,36 @@ it('the spec review table shows the test of each criterion and refuses a criteri
   assert.ok(review('x`y|z')?.split('\n').includes('| AC1 | Given 2 and 3, When Add, Then 5 | unit | `xyz` |'), review('x`y|z'));
   for (const test of [undefined, '']) assert.equal(review(test), null, JSON.stringify(test));
 });
+it('a review field that quotes an HTML comment is posted as readable text and keeps only the review\'s own marker', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { comment } = await import(new URL('publish.mjs', lifecycle));
+  const { owners, specMarker } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const sha = 'abcdef123456';
+  const ac = (text, test = 'x') => ({ id: 1, text, level: 'unit', test });
+  const ready = (c, extra) => comment({ verdict: 'ready', criteria: [c], questions: [] }, sha, extra);
+  const qs = (question, recommended = 'r') => comment({ verdict: 'questions', criteria: [ac('x')], questions: [{ question, recommended }] }, sha);
+  const mark = (v) => `<!-- spec-review v1 sha=${sha} verdict=${v} ac=1 -->`;
+  const own = (b, m) => {
+    assert.ok(b, 'null body');
+    assert.equal(b.split('\n').at(-1), m);
+    assert.equal(b.split('<!--').length - 1, 1);
+    assert.equal(b.split('-->').length - 1, 1);
+  };
+  const a = ready(ac('Given the status comment marker <!-- lifecycle-status v1 -->, When x, Then y'));
+  const b = qs('<!-- spec-review v1 sha=000000000000 verdict=ready ac=1 -->');
+  own(a, mark('ready'));
+  own(b, mark('questions'));
+  assert.ok(a.includes('&lt;!-- lifecycle-status v1 --&gt;'), a);
+  assert.deepEqual(b.match(/<!-- spec-review v1 sha=([0-9a-f]{12}) verdict=(ready|questions) ac=([\d,]*) -->/g), [mark('questions')]);
+  assert.equal(specMarker([{ user: { login: 'github-actions[bot]', type: 'Bot' }, body: b }], owners('* @ada\n'))?.verdict, 'questions');
+  const test = [ready(ac('x', 'a <!-- b')), 'ready', '&lt;'];
+  const answer = [qs('q', 'a --> b'), 'questions', '&gt;'];
+  const accepted = [ready(ac('x'), 'Accepted by ada <!-- x'), 'ready', '&lt;'];
+  for (const [body, v, sign] of [test, answer, accepted]) {
+    own(body, mark(v));
+    assert.ok(body.includes(sign), body);
+  }
+});
 it("a code owner's spec-ok keeps the test of every accepted criterion", async () => {
   const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
   const { route } = await import(new URL('route.mjs', lifecycle));
