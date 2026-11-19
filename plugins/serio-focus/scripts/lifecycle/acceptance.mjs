@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { all, flag, one, owners, raw, repoOf, runLink, send, specComment, specOf, taskOf } from '../lib/lifecycle.mjs';
+import { all, flag, one, ownersOf, raw, repoOf, runLink, send, specComment, specOf, taskOf } from '../lib/lifecycle.mjs';
 
 const text = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 const cell = (s) => s.replace(/[|\r\n<>]/g, ' ').slice(0, 120);
@@ -60,12 +60,12 @@ export function accept({ repo, number, dir, tested, lock, link, post }, io = { o
   const pr = io.one(`repos/${repo}/pulls/${number}`), n = taskOf(pr);
   if (!n) return { ok: true, body: 'acceptance: not a lifecycle pull request' };
   if (tested && tested !== pr.head.sha) return { ok: true, body: 'acceptance: a newer head exists; the run for it writes the report' };
-  const own = owners(['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'].map((file) => io.raw(`repos/${repo}/contents/${file}`)).find(Boolean));
+  const own = ownersOf(repo, io.raw);
   const review = specComment(io.all(`repos/${repo}/issues/${n}/comments?per_page=100`), own)?.body;
   let xml = [];
   try { xml = walk(dir); } catch { }
   const files = io.all(`repos/${repo}/pulls/${number}/files?per_page=100`).map((f) => f.filename), size = `+${pr.additions} −${pr.deletions} in ${pr.changed_files} files`;
-  const got = report({ review, tests: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: tested || pr.head.sha, lock, link, files, size });
+  const got = report({ review, tests: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: pr.head.sha, lock, link, files, size });
   if (post) {
     const old = io.all(`repos/${repo}/issues/${number}/comments?per_page=100`).find((c) => c.user?.login === 'github-actions[bot]' && /<!-- acceptance v1 /.test(c.body || ''));
     if (old) io.send('PATCH', `repos/${repo}/issues/comments/${old.id}`, { body: got.body });
