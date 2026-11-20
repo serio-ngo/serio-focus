@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { all, flag, issueOf, one, park, repoOf, runLink, send, specSha, status } from '../lib/lifecycle.mjs';
+import { gzipSync } from 'node:zlib';
+import { all, flag, issueOf, one, park, redact, repoOf, runLink, send, specSha, status } from '../lib/lifecycle.mjs';
 
 const SCHEMA = JSON.parse(readFileSync(new URL('../lib/spec-review.schema.json', import.meta.url))), { criteria: C, questions: Q } = SCHEMA.properties;
 const MAX = { text: C.items.properties.text.maxLength, question: Q.items.properties.question.maxLength, recommended: Q.items.properties.recommended.maxLength };
@@ -13,8 +14,8 @@ const safe = (s) => s.replace(/<!--/g, '&lt;!--').replace(/-->/g, '--&gt;');
 const line = (s) => safe(s.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim());
 const tidy = (s) => line(s).replace(/[<>*`]/g, '');
 const name = (s) => safe(s.replace(/[`|]/g, '').replace(/\s+/g, ' ').trim());
-export const why = (reason) => (clean(reason, 300) ? ` The agent said: ${tidy(reason)}` : '');
-export const note = (text, stage, run, stats = '', at = new Date().toISOString().slice(0, 19) + 'Z') => { const t = String(text || `The ${stage} run ended without a note.`).slice(0, 280); return clean(t, 280) ? `Note (${stage}): ${tidy(t)}\n\n<!-- step-note stage=${stage} run=${run}${/^turns=\d+ usd=\d+(\.\d+)? denied=\d+$/.test(stats) ? ` ${stats}` : ''} at=${at} -->` : null; };
+export const why = (reason) => (clean(reason, 300) ? ` The agent said: ${tidy(redact(reason))}` : '');
+export const note = (text, stage, run, stats = '', at = new Date().toISOString().slice(0, 19) + 'Z') => { const t = redact(String(text || `The ${stage} run ended without a note.`)).slice(0, 280); return clean(t, 280) ? `Note (${stage}): ${tidy(t)}\n\n<!-- step-note stage=${stage} run=${run}${/^turns=\d+ usd=\d+(\.\d+)? denied=\d+$/.test(stats) ? ` ${stats}` : ''} at=${at} -->` : null; };
 const say = (text, target, stage = process.env.STAGE) => { const body = note(text, stage, process.env.GITHUB_RUN_ID || 'local', process.env.STATS); if (body) try { status(flag('--repo') || repoOf(), target, { now: body.split('\n')[0], line: body }); } catch { } };
 
 export function comment(out, sha, extra = '') {
@@ -34,13 +35,38 @@ export function comment(out, sha, extra = '') {
   ].join('\n');
 }
 
+const scrub = (v) => JSON.parse(JSON.stringify(v), (k, x) => (typeof x === 'string' ? redact(x) : x));
+const str = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
+const trace = (r) => {
+  if (r.type === 'assistant') return (r.message?.content || []).filter((c) => c.type === 'tool_use').map((c) => `trace: ${r.parent_tool_use_id ? 'agent' : 'main'} call ${c.name} ${str(c.input).slice(0, 300)}`);
+  if (r.type === 'user') return (r.message?.content || []).filter((c) => c.type === 'tool_result' && c.is_error === true).map((c) => `trace: error ${str(c.content).slice(0, 400)}`);
+  if (r.type === 'result') return [`trace: result turns=${r.num_turns} ${String(r.result ?? '').slice(0, 800)}`, ...(r.permission_denials || []).map((d) => `trace: denied ${d.tool_name} ${str(d.tool_input).slice(0, 300)}`)];
+  return [];
+};
+export const transcriptFile = (rows) => scrub(rows).map((r) => `${JSON.stringify(r)}\n`).join('');
+export const logText = (rows, isPrivate) => { const clean = scrub(rows); return [...clean.flatMap(trace), ...(isPrivate ? clean.map((r) => JSON.stringify(r)) : [])].join('\n'); };
+export const evalOf = (file) => scrub(JSON.parse(readFileSync(file, 'utf8')));
+export function archive({ repo, run, attempt, stage, at, transcript, evaluation, artifact, isPrivate, to }, io) {
+  const base = `repos/${to}/contents/runs/${repo}/${new Date(at).toISOString().slice(0, 10)}/${run}-${attempt}-${stage}`;
+  const put = (suffix, content) => {
+    let sha; try { sha = io.one(base + suffix).sha; } catch { }
+    io.send('PUT', base + suffix, { message: `Archive run ${run}-${attempt}-${stage}`, content: content.toString('base64'), sha });
+  };
+  try {
+    put('.jsonl.gz', gzipSync(transcript));
+    put('.eval.json', Buffer.from(JSON.stringify(evaluation)));
+    if (!isPrivate) io.drop(artifact);
+    return { ok: true, note: '' };
+  } catch (e) { return { ok: false, note: redact(`The run archive was not written: ${String(e.message).split('\n')[0].slice(0, 100)}`) }; }
+}
+
 export function outcome(rows) {
   const r = rows.findLast((x) => x.type === 'result') || {};
   const sn = r.structured_output?.note;
   const found = typeof sn === 'string' && sn.trim() ? sn : String(r.result || '').split('\n').map((l) => /^[*_`>\s]*Note:[*_`]*\s+(.+)$/.exec(l)?.[1]).filter(Boolean).at(-1) || '';
   const model = rows.find((x) => x.type === 'system' && x.subtype === 'init')?.model || '';
   const termination = [r.subtype || 'none', r.is_error && 'error', r.terminal_reason].filter(Boolean).join('/');
-  return { model, turns: r.num_turns || 0, usd: +Number(r.total_cost_usd || 0).toFixed(2), duration_ms: r.duration_ms || 0, termination, note: found.replace(/\s+/g, ' ').trim().slice(0, 300), stats: `turns=${r.num_turns || 0} usd=${+Number(r.total_cost_usd || 0).toFixed(2)} denied=${r.permission_denials?.length || 0}` };
+  return { model, reason: String(r.result || '').replace(/\s+/g, ' ').trim().slice(0, 300), turns: r.num_turns || 0, usd: +Number(r.total_cost_usd || 0).toFixed(2), duration_ms: r.duration_ms || 0, termination, note: found.replace(/\s+/g, ' ').trim().slice(0, 300), stats: `turns=${r.num_turns || 0} usd=${+Number(r.total_cost_usd || 0).toFixed(2)} denied=${r.permission_denials?.length || 0}` };
 }
 
 function selfTest() {
@@ -110,14 +136,21 @@ function selfTest() {
 function main() {
   const outFile = flag('--outcome');
   if (outFile) {
-    let rows = []; try { rows = JSON.parse(readFileSync(outFile, 'utf8')); } catch { }
+    let rows = []; try { rows = scrub(JSON.parse(readFileSync(outFile, 'utf8'))); } catch { }
     const o = outcome(rows), e = process.env, structured = rows.findLast((x) => x.type === 'result')?.structured_output;
     const ok = o.termination.startsWith('success') && !o.termination.includes('/error') && (e.STAGE !== 'spec-review' || structured != null);
     const validation = e.STAGE === 'spec-review' ? (comment(structured, 'x'.repeat(12)) ? 'valid' : 'invalid') : 'n/a';
-    if (e.RUNNER_TEMP) writeFileSync(`${e.RUNNER_TEMP}/eval.json`, JSON.stringify({ repository: e.GITHUB_REPOSITORY, issue: e.ISSUE, stage: e.STAGE, bypass: e.BYPASS || '', run: e.GITHUB_RUN_ID, ...o, validation }));
+    if (e.RUNNER_TEMP) writeFileSync(`${e.RUNNER_TEMP}/eval.json`, JSON.stringify({ repository: e.GITHUB_REPOSITORY, issue: e.ISSUE, stage: e.STAGE, bypass: e.BYPASS || '', run: e.GITHUB_RUN_ID, ...o, structured, validation }));
     if (e.GITHUB_STEP_SUMMARY) appendFileSync(e.GITHUB_STEP_SUMMARY, `\n| Stage | Result | Turns | Cost | Termination | Note | Next |\n|---|---|---|---|---|---|---|\n| ${e.STAGE} | ${ok ? 'finished' : 'not finished'} | ${o.turns} | ${'$'}${o.usd} | ${o.termination} | ${line(o.note)} | ${ok ? 'publish job' : 'see the log'} |\n`);
-    return console.log(`note=${o.note}\nstats=${o.stats}`);
+    return console.log(`stats=${o.stats}`);
   }
+  const logFile = flag('--log');
+  if (logFile) {
+    let rows = []; try { rows = JSON.parse(readFileSync(logFile, 'utf8')); } catch { }
+    if (process.env.RUNNER_TEMP) writeFileSync(`${process.env.RUNNER_TEMP}/transcript.jsonl`, transcriptFile(rows));
+    return console.log(logText(rows, process.env.PRIVATE === 'true'));
+  }
+  let ev = {}; try { ev = evalOf(flag('--eval')); } catch { }
   const repo = flag('--repo') || repoOf(), [number, file] = process.argv.slice(2);
   if (process.argv[3] === '--note') {
     const [stage, ...text] = process.argv.slice(4);
@@ -126,21 +159,27 @@ function main() {
     return say(text.join(' '), number, stage);
   }
   const failed = flag('--failed');
-  if (failed) { say(process.env.NOTE, number); return park(repo, number, `the ${failed} run did not finish: ${runLink()}.${why(process.env.REASON)}`); }
+  if (failed) { say(ev.note, number); return park(repo, number, `the ${failed} run did not finish: ${runLink()}.${why(ev.reason)}`); }
+  if (process.argv.includes('--archive')) {
+    const e = process.env, drop = (id) => { const token = e.GH_TOKEN; e.GH_TOKEN = e.RUN_TOKEN; try { send('DELETE', `repos/${repo}/actions/artifacts/${id}`, {}); } finally { e.GH_TOKEN = token; } };
+    const r = archive({ repo, run: e.GITHUB_RUN_ID, attempt: e.GITHUB_RUN_ATTEMPT, stage: e.STAGE, at: new Date().toISOString(), transcript: readFileSync(e.TRANSCRIPT, 'utf8'), evaluation: ev, artifact: e.ARTIFACT, isPrivate: e.PRIVATE === 'true', to: 'serio-ngo/lifecycle-runs' }, { one, send, drop });
+    if (!r.ok) writeFileSync(flag('--eval'), JSON.stringify({ ...ev, note: `${r.note} ${ev.note || ''}`.trim() }));
+    return console.log(r.note || 'archived');
+  }
   if (process.argv.includes('--pushed')) {
     const pr = all(`repos/${repo}/pulls?state=open&per_page=100`).find((p) => issueOf(p.head.ref) === Number(number)), head = pr?.head.sha;
-    say(process.env.NOTE, pr?.number || number);
+    say(ev.note, pr?.number || number);
     if (head && head !== process.env.BEFORE_SHA) for (const n of [number, pr.number]) try { send('DELETE', `repos/${repo}/issues/${n}/labels/needs-human`, {}); } catch { }
     if (head && head !== process.env.BEFORE_SHA) console.log(`pushed ${head}`);
-    else park(repo, number, `the run ended without a new push: ${runLink()}.${why(process.env.REASON)}`);
+    else park(repo, number, `the run ended without a new push: ${runLink()}.${why(ev.reason)}`);
     return;
   }
   let out = null;
-  try { out = JSON.parse(file ? readFileSync(file, 'utf8') : process.env.STRUCTURED_OUTPUT); } catch { }
+  try { out = scrub(ev.structured ?? JSON.parse(file ? readFileSync(file, 'utf8') : process.env.STRUCTURED_OUTPUT)); } catch { }
   const body = comment(out, process.env.SPEC_SHA || specSha(one(`repos/${repo}/issues/${number}`)));
   if (!body) { park(repo, number, `the spec review returned no valid result: ${runLink()}`); process.exit(1); }
   send('POST', `repos/${repo}/issues/${number}/comments`, { body });
-  say(out.note, number, 'spec-review');
+  say(ev.note || out.note, number, 'spec-review');
   console.log(body);
 }
 

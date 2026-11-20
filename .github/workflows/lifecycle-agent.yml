@@ -78,10 +78,8 @@ jobs:
       pull-requests: read
       actions: read
     outputs:
-      structured_output: ${{ steps.claude.outputs.structured_output || steps.trace.outputs.structured }}
-      reason: ${{ steps.trace.outputs.reason }}
-      note: ${{ steps.trace.outputs.note }}
       stats: ${{ steps.trace.outputs.stats }}
+      transcript: ${{ steps.transcript.outputs.artifact-id }}
     steps:
       - id: bot
         env:
@@ -185,22 +183,25 @@ jobs:
           STAGE: ${{ needs.route.outputs.stage }}
           ISSUE: ${{ needs.route.outputs.issue }}
           BYPASS: ${{ needs.route.outputs.bypass }}
+          PRIVATE: ${{ github.event.repository.private }}
         run: |
+          publish="$RUNNER_TEMP/serio-focus/plugins/serio-focus/scripts/lifecycle/publish.mjs"
           {
             echo '```text'
-            jq -r '.[] |
-              if .type == "assistant" then (if .parent_tool_use_id then "agent" else "main" end) as $who | (.message.content[]? | select(.type == "tool_use") | "trace: \($who) call \(.name) \(.input | tostring | .[0:300])")
-              elif .type == "user" then (.message.content[]? | select(.type == "tool_result" and .is_error == true) | "trace: error \(.content | tostring | .[0:400])")
-              elif .type == "result" then "trace: result turns=\(.num_turns) \((.result // "") | .[0:800])", (.permission_denials[]? | "trace: denied \(.tool_name) \(.tool_input | tostring | .[0:300])")
-              else empty end' "$LOG" || true
+            PRIVATE=false node "$publish" --log "$LOG" || true
             echo '```'
-          } | tee -a "$GITHUB_STEP_SUMMARY"
-          echo '::group::Full transcript'
-          jq -c '.[]' "$LOG" || cat "$LOG"
-          echo '::endgroup::'
-          echo "reason=$(jq -r '[.[] | select(.type == "result") | .result // ""] | last // "" | gsub("\\s+"; " ") | .[0:300]' "$LOG" || true)" >> "$GITHUB_OUTPUT"
-          jq -r --arg stage "$STAGE" '[.[] | select(.type == "result")] | last // {} | (if .subtype == "success" and .is_error == false and ($stage != "spec-review" or .structured_output != null) then "finished=true" else empty end), (if .structured_output != null then "structured=\(.structured_output | tojson)" else empty end)' "$LOG" >> "$GITHUB_OUTPUT" || true
-          node "$RUNNER_TEMP/serio-focus/plugins/serio-focus/scripts/lifecycle/publish.mjs" --outcome "$LOG" >> "$GITHUB_OUTPUT" || true
+          } >> "$GITHUB_STEP_SUMMARY"
+          node "$publish" --log "$LOG" || true
+          jq -r --arg stage "$STAGE" '[.[] | select(.type == "result")] | last // {} | if .subtype == "success" and .is_error == false and ($stage != "spec-review" or .structured_output != null) then "finished=true" else empty end' "$LOG" >> "$GITHUB_OUTPUT" || true
+          node "$publish" --outcome "$LOG" >> "$GITHUB_OUTPUT" || true
+      - id: transcript
+        if: always() && steps.claude.outputs.execution_file != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: transcript
+          path: ${{ runner.temp }}/transcript.jsonl
+          retention-days: 1
+          if-no-files-found: ignore
       - name: Hand the commits to the publish job
         if: needs.route.outputs.stage != 'spec-review' && steps.trace.outputs.finished == 'true'
         env:
@@ -236,12 +237,44 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: serio-ngo/serio-focus
           ref: ${{ inputs.focus_ref }}
           persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          name: eval-${{ needs.route.outputs.stage }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/eval
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: needs.agent.outputs.transcript != ''
+        continue-on-error: true
+        with:
+          name: transcript
+          path: ${{ runner.temp }}/transcript
+      - id: archive_app
+        if: always() && needs.agent.outputs.transcript != ''
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_KEY }}
+          owner: serio-ngo
+          repositories: lifecycle-runs
+      - name: Archive the run
+        if: always() && needs.agent.outputs.transcript != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.archive_app.outputs.token }}
+          RUN_TOKEN: ${{ github.token }}
+          STAGE: ${{ needs.route.outputs.stage }}
+          ARTIFACT: ${{ needs.agent.outputs.transcript }}
+          PRIVATE: ${{ github.event.repository.private }}
+          TRANSCRIPT: ${{ runner.temp }}/transcript/transcript.jsonl
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs --archive --eval "$RUNNER_TEMP/eval/eval.json"
       - name: Publish the spec review
         if: needs.route.outputs.stage == 'spec-review' && needs.agent.result == 'success'
         env:
@@ -250,8 +283,7 @@ jobs:
           SPEC_SHA: ${{ needs.route.outputs.spec }}
           STATS: ${{ needs.agent.outputs.stats }}
           STAGE: ${{ needs.route.outputs.stage }}
-          STRUCTURED_OUTPUT: ${{ needs.agent.outputs.structured_output }}
-        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE"
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE" --eval "$RUNNER_TEMP/eval/eval.json"
       - id: app
         if: needs.route.outputs.stage != 'spec-review' && needs.agent.result == 'success'
         continue-on-error: true
@@ -282,10 +314,8 @@ jobs:
           ISSUE: ${{ needs.route.outputs.issue }}
           BEFORE_SHA: ${{ needs.route.outputs.sha }}
           STATS: ${{ needs.agent.outputs.stats }}
-          REASON: ${{ needs.agent.outputs.reason }}
-          NOTE: ${{ needs.agent.outputs.note }}
           STAGE: ${{ needs.route.outputs.stage }}
-        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE" --pushed
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE" --pushed --eval "$RUNNER_TEMP/eval/eval.json"
       - name: Park a failed run
         if: needs.agent.result != 'success'
         env:
@@ -293,6 +323,4 @@ jobs:
           STAGE: ${{ needs.route.outputs.stage }}
           TARGET: ${{ needs.route.outputs.pr || needs.route.outputs.issue }}
           STATS: ${{ needs.agent.outputs.stats }}
-          REASON: ${{ needs.agent.outputs.reason }}
-          NOTE: ${{ needs.agent.outputs.note }}
-        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$TARGET" --failed "$STAGE"
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$TARGET" --failed "$STAGE" --eval "$RUNNER_TEMP/eval/eval.json"
