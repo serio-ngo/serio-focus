@@ -59,7 +59,7 @@ const SECRETS = [
   ['anthropic-key', /sk-ant-[\w-]{20,}/g],
   ['oauth-url', /x-access-token:[^@\s"'\\]+(?=@)/g],
   ['bearer', /Authorization:\s*Bearer\s+[\w.~+/=-]+/gi],
-  ['email', /(?<!\\)[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g],
+  ['email', /(?<![\\\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g],
 ];
 const KEEP = /^noreply@|@users\.noreply\.github\.com$/;
 export const redact = (text) => SECRETS.reduce((s, [kind, re]) => s.replace(re, (m) => (kind === 'email' && KEEP.test(m) ? m : `[redacted:${kind}]`)), String(text));
