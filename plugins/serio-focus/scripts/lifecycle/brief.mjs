@@ -14,7 +14,7 @@ export function brief({ repo, issue, comments, pr, prComments = [], reviews = []
   const entries = (c) => isStatus(c, own) ? statusLog(c.body).map((l) => ({ at: /\bat=(\S+) -->/.exec(l)?.[1] || c.updated_at, body: l.slice(2) })) : trusted(c) && !String(c.body || '').includes('<!-- lifecycle-status') ? [{ at: c.created_at, body: c.body || '' }] : [];
   const steps = [...comments, ...prComments].flatMap(entries).filter((x) => keep(x.body)).sort((a, b) => String(a.at).localeCompare(String(b.at))).map((x) => cut(x.body, 400)).slice(-8);
   const sections = [
-    ['Spec', plain(issue.body).slice(0, 8000).replace(/^/gm, '> ')],
+    ['Spec', plain(issue.body).replace(/^/gm, '> ')],
     ['Criteria', mark && [`Spec review: ${mark.verdict} for ${mark.sha === specSha(issue) ? 'this text' : 'an older text: the spec changed after its review'}.`, accepted, rows.join('\n')].filter(Boolean).join('\n\n')],
     ['Pull request', pr && `#${pr.number}, ${pr.draft ? 'draft' : 'ready'}, head ${pr.head.sha.slice(0, 7)}, tests ${lock ? `locked at ${lock.slice(0, 7)}` : 'not locked'}.`],
     ['Acceptance', plain(prComments.filter((c) => robot(c.user) && /<!-- acceptance v1/.test(c.body || '')).at(-1)?.body)],

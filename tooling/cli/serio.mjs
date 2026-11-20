@@ -122,7 +122,7 @@ function install(args = {}, remove = false) {
 
 const sources = () => walk(REPO)
     .filter((file) => TEXT.test(file) || file.endsWith('.svg'))
-    .filter((file) => !/(?:^|\/)(?:\.git|\.claude|node_modules|audit)\//.test(file));
+    .filter((file) => !/(?:^|\/)(?:\.git|\.claude|node_modules|audit|\.lifecycle)\//.test(file));
 
 function upkeep(args = {}) {
   const pending = new Map(sources().map((file) => [file, readFileSync(path.join(REPO, file), 'utf8')]));
