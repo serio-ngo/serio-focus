@@ -60,7 +60,8 @@ export function archive({ repo, run, attempt, stage, at, transcript, trace, eval
   const day = new Date(at).toISOString(), file = `runs/${repo}/${day.slice(0, 10)}/${run}-${attempt}-${stage}.json`, api = `repos/${to}/contents/${file}`, rel = `repos/${to}/releases`;
   const asset = `${repo.replace('/', '-')}-${run}-${attempt}-${stage}.jsonl.gz`, tag = `raw-${day.slice(0, 7)}`;
   const rows = transcript ? transcript.split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [], init = rows.find((x) => x.type === 'system' && x.subtype === 'init');
-  const record = { trace: trace ?? (transcript ? withDir((dir) => (writeFileSync(join(dir, 't.jsonl'), transcript), traced(join(dir, 't.jsonl')))) : null), eval: evaluation, result: rows.findLast((x) => x.type === 'result')?.structured_output ?? null, gate, transcript: null, revision: rev, plugin, model: init?.model ?? null, effort: init?.effort ?? null, dropped: [] };
+  const record = { trace: trace ?? (transcript ? withDir((dir) => (writeFileSync(join(dir, 't.jsonl'), transcript), traced(join(dir, 't.jsonl')))) : null), eval: evaluation, result: rows.findLast((x) => x.type === 'result')?.structured_output ?? null, gate, transcript: null, revision: rev, plugin, model: null, effort: init?.effort ?? null, dropped: [] };
+  record.model = init?.model ?? record.trace?.models?.[0] ?? null;
   try {
     let hits;
     try { hits = withDir((dir) => { for (const [k, v] of Object.entries(record)) if (k !== 'transcript' && k !== 'dropped' && v !== null) writeFileSync(join(dir, `${k}.json`), JSON.stringify(v)); return io.scan(dir); }); } catch { return { ok: false, note: 'The run archive was not written: gitleaks unavailable' }; }
