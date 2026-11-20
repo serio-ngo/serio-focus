@@ -44,6 +44,8 @@ Runs share no memory. They hand off through comments on the task, written and re
 | A review starting with `tests-ok` | A code owner | Pull request | `lock.mjs`, `route.mjs`, `brief.mjs` |
 | The commits of a run as a bundle, the branch name and `.lifecycle/pr.md` | The agent job, after the model session ends | Run artifact `commits`, kept 1 day | `push.mjs` |
 | The whole transcript and a trace of calls, errors and denials | The Trace step | Job log and summary | Whoever debugs a run |
+| One allowlisted record per run (`trace`, `eval`, `result`, `gate`, `transcript`, `revision`, `plugin`, `model`, `effort`, `dropped`); a field gitleaks flags is dropped | `publish.mjs archive`, gitleaks 8.30.1 | `serio-ngo/lifecycle-runs` `runs/<repo>/<date>/<run>-<attempt>-<stage>.json` | Whoever debugs a run |
+| The gzipped redacted transcript | `publish.mjs archive` | Asset of release `raw-<YYYY-MM>` in `serio-ngo/lifecycle-runs`, deleted after 90 days | Members of the organisation |
 
 | Brief rule | Value |
 |---|---|
