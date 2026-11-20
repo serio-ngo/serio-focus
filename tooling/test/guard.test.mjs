@@ -864,6 +864,6 @@ it("the gate archive writes only the gate record under the run's path in the arc
 it('every default io of a lifecycle script names helpers the script has', () => {
   for (const dir of [path.join(PLUGIN, 'scripts', 'lifecycle'), path.join(PLUGIN, 'scripts', 'lib')]) for (const file of readdirSync(dir).filter((f) => f.endsWith('.mjs'))) {
     const text = readFileSync(path.join(dir, file), 'utf8'), imported = new Set([...text.matchAll(/^import \{([^}]+)\} from/gm)].flatMap((m) => m[1].split(',').map((s) => s.trim().split(/\s+as\s+/).pop())));
-    for (const [, names] of text.matchAll(/\bio = \{ ([^}]+) \}/g)) for (const name of names.split(',').map((s) => s.trim())) assert.ok(imported.has(name) || new RegExp(`^(?:export )?(?:const|function) ${name}\b`, 'm').test(text), `${file}: ${name}`);
+    for (const [, names] of text.matchAll(/\bio = \{ ([^}]+) \}/g)) for (const name of names.split(',').map((s) => s.trim())) assert.ok(imported.has(name) || new RegExp(`^(?:export )?(?:const|function) ${name}\\b`, 'm').test(text), `${file}: ${name}`);
   }
 });
