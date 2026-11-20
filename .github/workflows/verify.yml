@@ -64,6 +64,7 @@ jobs:
 
   gate:
     uses: ./.github/workflows/lifecycle-gate.yml
+    secrets: inherit
     permissions:
       contents: read
       packages: read

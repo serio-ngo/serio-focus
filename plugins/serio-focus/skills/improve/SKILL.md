@@ -16,7 +16,7 @@ Improve issue $ARGUMENTS. Agents, models and efforts are as in `deliver`. The is
 | Pass | Publish what the stage held (the review's object; push and a draft pull request after `write-tests`; push, card and ready after `deliver`). Then take the next gate as the code owner: label `spec-ok`, a review starting `tests-ok` |
 | Fail | Reset the branch to the stage's start and keep the held result in `.lifecycle/runs/` as evidence. Undo a published stage with `git revert`, never a forced push. A cause in the task is answered in the issue text; a cause in the lifecycle is fixed in the plugin checkout and the stage runs again on the same input. Keep the fix as a patch beside the defect and its replay; it lands with this run's plugin task, one per repository: a script fix with a unit test, a skill or agent text fix with its replay as proof. Keep a fix only when its replay removes the defect and adds none; a defect the replay does not show again is recorded, not fixed |
 | Stop | Three runs of one stage on the same input without a perfect verdict: label `needs-human` with the defects |
-| End | The pull request waits for the owner's merge; the issue holds one note per stage: runs, defects, fixes, tokens |
+| End | Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/publish.mjs" --session "${CLAUDE_SESSION_ID}"` to archive this session to `serio-ngo/lifecycle-runs`; the pull request waits for the owner's merge; the issue holds one note per stage: runs, defects, fixes, tokens |
 
 - The code owner who types this command consents to `spec-ok` and `tests-ok` for this task.
 - The merge stays a person's. Never force-push.

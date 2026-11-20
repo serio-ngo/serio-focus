@@ -742,3 +742,128 @@ it("the publish job posts results it reads from the run's files with secrets red
   const upload = agent.split(/\n      - /).find((step) => /upload-artifact/.test(step) && /name: transcript/.test(step));
   assert.match(upload || '', /retention-days: 1\b/);
 });
+it('the session archive writes each local transcript redacted and gzipped with its totals to the archive repository only', async () => {
+  const { session } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
+  const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
+  assert.equal(typeof session, 'function');
+  const projects = sandbox('session-'), dir = path.join(projects, 'p'), subs = path.join(dir, 's1', 'subagents');
+  mkdirSync(subs, { recursive: true });
+  const lines = (list) => list.map((r) => JSON.stringify(r)).join('\n') + '\n';
+  const used = { type: 'assistant', message: { id: 'm1', model: 'm', usage: { input_tokens: 5, output_tokens: 7 }, content: [] } };
+  const meta = { agentType: 'tester', model: 'm', parentAgentId: 'a' };
+  writeFileSync(path.join(dir, 's1.jsonl'), lines([{ ...rows[0], timestamp: '2026-11-19T10:00:00Z' }, ...rows.slice(1)]));
+  writeFileSync(path.join(subs, 'agent-a.jsonl'), lines([used, ...rows]));
+  writeFileSync(path.join(subs, 'agent-b.jsonl'), lines([used, ...rows]));
+  writeFileSync(path.join(subs, 'agent-b.meta.json'), JSON.stringify(meta));
+  const coder = { agentType: 'coder', model: 'm' };
+  writeFileSync(path.join(subs, 'agent-a.meta.json'), JSON.stringify(coder));
+  writeFileSync(path.join(dir, 's2.jsonl'), lines([{ ...rows[0], timestamp: '2026-11-19T10:00:00Z' }]));
+  const to = 'serio-ngo/lifecycle-runs', base = `repos/${to}/contents/runs/o/r/2026-11-19/local-s1-1-`;
+  const run = async (id) => {
+    const calls = [];
+    const result = await session({ projects, id, repo: 'o/r' }, { one: () => { throw new Error('404'); }, send: (...a) => calls.push(a) });
+    return { calls, result };
+  };
+  const { calls, result } = await run('s1');
+  assert.equal(result.ok, true, result.note);
+  const seen = [], unknown = await session({ projects, id: 'zz', repo: 'o/r' }, { one: (...a) => seen.push(a), send: (...a) => seen.push(a) });
+  assert.deepEqual(unknown, { ok: false, note: 'no session zz' });
+  assert.deepEqual(seen, []);
+  assert.ok(calls.every((c) => c[1].startsWith(`repos/${to}/`)), JSON.stringify(calls));
+  const puts = calls.filter((c) => c[0] === 'PUT');
+  assert.deepEqual(puts.map((c) => c[1]).sort(), ['session', 'agent-a', 'agent-b'].flatMap((s) => [`${base}${s}.eval.json`, `${base}${s}.jsonl.gz`]).sort());
+  const body = (suffix) => Buffer.from(puts.find((c) => c[1] === base + suffix)[2].content, 'base64');
+  const source = { session: path.join(dir, 's1.jsonl'), 'agent-a': path.join(subs, 'agent-a.jsonl'), 'agent-b': path.join(subs, 'agent-b.jsonl') };
+  for (const [stage, file] of Object.entries(source)) {
+    const text = gunzipSync(body(`${stage}.jsonl.gz`)).toString(), got = text.split('\n').filter(Boolean);
+    assert.equal(got.length, readFileSync(file, 'utf8').split('\n').filter(Boolean).length);
+    got.forEach((l) => JSON.parse(l));
+    assert.ok(!text.includes('ghp_') && !text.includes('jan.kowalski'), text);
+    const evaluation = JSON.parse(body(`${stage}.eval.json`));
+    assert.deepEqual(evaluation.totals, trace(file).totals);
+    if (stage === 'session') assert.equal(evaluation.meta, null);
+    if (stage === 'agent-a') assert.deepEqual(evaluation.meta, coder);
+    if (stage === 'agent-b') assert.deepEqual(evaluation.meta, meta);
+  }
+  const second = await run('s2');
+  assert.deepEqual(second.calls.filter((c) => c[0] === 'PUT').map((c) => c[1]).sort(), ['eval.json', 'jsonl.gz'].map((x) => `repos/${to}/contents/runs/o/r/2026-11-19/local-s2-1-session.${x}`));
+});
+it('the archive command stops on an unknown session and writes nothing', () => {
+  const config = sandbox('config-'), dir = path.join(config, 'projects', 'p');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 's1.jsonl'), JSON.stringify({ ...rows[0], timestamp: '2026-11-19T10:00:00Z' }) + '\n');
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: config, PATH: '', Path: '' };
+  const tree = () => readdirSync(config, { recursive: true }).sort();
+  const before = tree();
+  const cli = (...args) => { const r = spawnSync(process.execPath, [path.join(REPO, 'tooling', 'cli', 'serio.mjs'), 'archive', ...args], { encoding: 'utf8', env }); return { status: r.status, out: r.stdout + r.stderr }; };
+  const unknown = cli('zz');
+  assert.ok(unknown.out.includes('no session zz'), unknown.out);
+  assert.notEqual(unknown.status, 0);
+  assert.deepEqual(tree(), before);
+  const known = cli('s1', '--repo', 'o/r');
+  assert.ok(!known.out.includes('no session'), known.out);
+  assert.ok(known.out.includes('The run archive was not written'), known.out);
+  const skill = readFileSync(path.join(PLUGIN, 'skills', 'improve', 'SKILL.md'), 'utf8'), end = skill.split('\n').find((l) => l.startsWith('| End |'));
+  for (const part of ['${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/publish.mjs', '--session', '${CLAUDE_SESSION_ID}']) assert.ok(end.includes(part), end);
+  assert.ok(!skill.includes('tooling/cli'));
+});
+it('the gate record holds the lock line, every JUnit case and the tests result', async () => {
+  const { accept, record } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/acceptance.mjs', import.meta.url));
+  const { comment } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
+  assert.equal(typeof record, 'function');
+  const bot = { login: 'github-actions[bot]', type: 'Bot' }, repo = { full_name: 'o/r' }, head = 'abc'.padEnd(40, '0');
+  const criteria = [{ id: 1, text: 'Given 2 and 3, When Add, Then 5', level: 'unit', test: 'adds two' }, { id: 2, text: 'Given a, When Clear, Then 0', level: 'unit', test: 'clears' }];
+  const review = { user: bot, created_at: 't', updated_at: 't', body: comment({ verdict: 'ready', criteria, questions: [] }, 'abcdef123456') };
+  const dir = sandbox('record-');
+  writeFileSync(path.join(dir, 'unit.xml'), '<testsuites><testsuite><testcase name="adds two"/><testcase name="clears"><failure/></testcase></testsuite></testsuites>');
+  const pr = { number: 5, additions: 3, deletions: 1, changed_files: 1, head: { sha: head, ref: 'agent/7-sum', repo }, base: { repo } };
+  const io = { one: () => pr, all: (url) => url.includes('/files') ? [{ filename: 'src/sum.mjs' }] : [review], raw: () => '', send: () => { } };
+  const args = { repo: 'o/r', number: 5, dir, tested: head, lock: 'success', note: 'locked at 41e9082', verifier: 'v'.padEnd(40, '0'), run: '7', attempt: 2, jobs: { tests: 'failure' } };
+  const got = record(args, io), cases = [{ name: 'adds two', result: 'passed' }, { name: 'clears', result: 'failed' }];
+  const want = await accept({ repo: 'o/r', number: 5, dir, tested: head, lock: 'locked at 41e9082', link: '', post: false }, io);
+  assert.deepEqual([got.repository, got.pr, got.run, got.attempt, got.head_sha, got.tested_sha, got.reported_sha, got.verifier, got.lock, got.jobs], ['o/r', 5, '7', 2, head, head, head, 'v'.padEnd(40, '0'), 'test lock: pass - locked at 41e9082', { tests: 'failure' }]);
+  assert.ok(!Number.isNaN(Date.parse(got.at)), got.at);
+  assert.equal(got.acceptance, want.body);
+  assert.deepEqual(got.cases, cases);
+  const failed = record({ ...args, lock: 'failure' }, io);
+  assert.equal(failed.acceptance, null);
+  assert.deepEqual(failed.cases, cases);
+  assert.equal(failed.lock, 'test lock: fail - locked at 41e9082');
+  assert.equal(failed.reported_sha, null);
+  const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-gate.yml'), 'utf8'), steps = flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith('control:')).split('\n').map((line) => line.trim()).join('\n').split(/\n(?=- )/).slice(1), after = steps.findIndex((s) => s.includes('acceptance.mjs') && s.includes('--post'));
+  assert.ok(after >= 0);
+  assert.ok(steps.slice(after + 1).some((s) => s.includes('acceptance.mjs') && s.includes('--record') && /^(?:- )?if:.*always\(\)/m.test(s)), steps.join('\n'));
+});
+it("the gate archive writes only the gate record under the run's path in the archive repository", async () => {
+  const { archive } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
+  const rec = { repository: 'o/r', run: '7', attempt: 2, lock: 'test lock: pass - x', acceptance: null, cases: [], jobs: { tests: 'failure' } };
+  const to = 'serio-ngo/lifecycle-runs', path1 = `repos/${to}/contents/runs/o/r/2026-11-20/7-2-gate.eval.json`;
+  const run = (one, send) => {
+    const calls = [];
+    const result = archive({ repo: 'o/r', run: 7, attempt: 2, stage: 'gate', at: '2026-11-20T23:59:00Z', evaluation: rec, isPrivate: false, to }, { one, send: send || ((...a) => calls.push(a)) });
+    return { calls, result };
+  };
+  const fresh = run(() => { throw new Error('404'); });
+  assert.equal(fresh.result.ok, true, fresh.result.note);
+  assert.deepEqual(fresh.calls.map((c) => c[1]), [path1]);
+  assert.deepEqual(JSON.parse(Buffer.from(fresh.calls[0][2].content, 'base64').toString()), rec);
+  assert.equal(run(() => ({ sha: 'old' })).calls[0][2].sha, 'old');
+  const failed = run(() => ({ sha: 'old' }), () => { throw new Error('boom'); });
+  assert.equal(failed.result.ok, false);
+  const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-gate.yml'), 'utf8'), steps = flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith('control:')).split('\n').map((line) => line.trim()).join('\n').split(/\n(?=- )/).slice(1), after = steps.findIndex((s) => s.includes('acceptance.mjs') && s.includes('--post'));
+  const make = steps.findIndex((s, i) => i > after && s.includes('actions/create-github-app-token@'));
+  assert.ok(make > after, steps.join('\n'));
+  assert.match(steps[make], /^(?:- )?if:.*always\(\)/m);
+  assert.match(steps[make], /^(?:- )?continue-on-error: true$/m);
+  assert.match(steps[make], /owner: serio-ngo\b/);
+  assert.match(steps[make], /repositories: lifecycle-runs\b/);
+  const id = /^(?:- )?id: (\S+)/m.exec(steps[make])?.[1];
+  assert.ok(id, steps[make]);
+  assert.ok(steps.slice(make + 1).some((s) => s.includes(`steps.${id}.outputs.token`) && s.includes('publish.mjs') && s.includes('--gate') && /^(?:- )?if:.*always\(\)/m.test(s) && /^(?:- )?continue-on-error: true$/m.test(s)), steps.join('\n'));
+});
+it('every default io of a lifecycle script names helpers the script has', () => {
+  for (const dir of [path.join(PLUGIN, 'scripts', 'lifecycle'), path.join(PLUGIN, 'scripts', 'lib')]) for (const file of readdirSync(dir).filter((f) => f.endsWith('.mjs'))) {
+    const text = readFileSync(path.join(dir, file), 'utf8'), imported = new Set([...text.matchAll(/^import \{([^}]+)\} from/gm)].flatMap((m) => m[1].split(',').map((s) => s.trim().split(/\s+as\s+/).pop())));
+    for (const [, names] of text.matchAll(/\bio = \{ ([^}]+) \}/g)) for (const name of names.split(',').map((s) => s.trim())) assert.ok(imported.has(name) || new RegExp(`^(?:export )?(?:const|function) ${name}\\b`, 'm').test(text), `${file}: ${name}`);
+  }
+});
