@@ -47,8 +47,8 @@ export const status = (repo, target, update, io = { all, send, raw }) => {
   const own = ownersOf(repo, io.raw), found = io.all(`repos/${repo}/issues/${target}/comments?per_page=100`).findLast((c) => isStatus(c, own)), body = statusBody(found?.body, update);
   return found ? io.send('PATCH', `repos/${repo}/issues/comments/${found.id}`, { body }) : io.send('POST', `repos/${repo}/issues/${target}/comments`, { body });
 };
-export const park = (repo, number, why) => {
-  send('POST', `repos/${repo}/issues/${number}/labels`, { labels: ['needs-human'] });
-  status(repo, number, { now: why, next: 'a person reads the run log, then continues or closes the task', line: `**needs-human**: ${why} <!-- park at=${new Date().toISOString().replace(/\.\d+Z$/, 'Z')} -->` });
+export const park = (repo, number, why, io = { one, all, send, raw }) => {
+  io.send('POST', `repos/${repo}/issues/${number}/labels`, { labels: ['needs-human'] });
+  status(repo, number, { now: why, next: 'a person reads the run log, then continues or closes the task', line: `**needs-human**: ${why} <!-- park at=${new Date().toISOString().replace(/\.\d+Z$/, 'Z')} -->` }, io);
 };
 export const runLink = () => process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : 'local run';

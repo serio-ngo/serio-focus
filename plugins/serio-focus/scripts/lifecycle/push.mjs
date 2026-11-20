@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { all, issueOf, one, repoOf, send } from '../lib/lifecycle.mjs';
+import { all, issueOf, one, raw, repoOf, send } from '../lib/lifecycle.mjs';
 
 const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
@@ -44,9 +44,18 @@ function selfTest() {
   console.log('push self-test: 9 checks passed');
 }
 
+export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, send, raw }) {
+  const card = join(out, 'pr.md');
+  if (stage !== 'deliver' || !existsSync(card)) return;
+  const pr = io.all(`repos/${repo}/pulls?state=open&head=${repo.split('/')[0]}:${ref}`)[0];
+  if (!pr) return;
+  io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title: io.one(`repos/${repo}/issues/${issue}`).title, body: readFileSync(card, 'utf8').slice(0, 60000) });
+  if (pr.draft) io.send('POST', 'graphql', { query: 'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } });
+}
+
 function main() {
   const { OUT, ISSUE, REF, STAGE, GH_TOKEN } = process.env, repo = repoOf(), bundle = join(OUT, 'commits.bundle'), card = join(OUT, 'pr.md');
-  if (!existsSync(bundle)) return console.log('no new commit');
+  if (!existsSync(bundle)) { publishCard({ repo, out: OUT, issue: ISSUE, ref: REF, stage: STAGE }); return console.log('no new commit'); }
   const ref = target(readFileSync(join(OUT, 'ref'), 'utf8'), ISSUE, REF);
   const head = push(`https://x-access-token:${GH_TOKEN}@github.com/${repo}.git`, bundle, ref, mkdtempSync(join(tmpdir(), 'serio-push-')));
   const body = existsSync(card) ? readFileSync(card, 'utf8').slice(0, 60000) : undefined, title = one(`repos/${repo}/issues/${ISSUE}`).title;
