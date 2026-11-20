@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { all, flag, one, ownersOf, raw, repoOf, runLink, send, specComment, specOf, taskOf } from '../lib/lifecycle.mjs';
@@ -74,9 +74,24 @@ export function accept({ repo, number, dir, tested, lock, link, post }, io = { o
   return got;
 }
 
+export function record({ repo, number, dir, tested, lock, note, verifier, run, attempt, jobs }, io = { one, all, raw }) {
+  const pr = io.one(`repos/${repo}/pulls/${number}`), ok = lock === 'success';
+  const body = !ok ? null : accept({ repo, number, dir, tested, lock: note, link: '', post: false }, { ...io, send: () => { } }).body;
+  let xml = [];
+  try { xml = walk(dir); } catch { }
+  return {
+    repository: repo, pr: Number(number), run, attempt, at: new Date().toISOString(), head_sha: pr.head.sha, tested_sha: tested, reported_sha: /<!-- acceptance v1 sha=(\S+) -->/.exec(body || '')?.[1] || null, verifier,
+    lock: `test lock: ${ok ? 'pass' : 'fail'} - ${note}`, acceptance: body, cases: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), jobs,
+  };
+}
+
 function main() {
-  const [number, dir] = process.argv.slice(2);
-  const { ok, body } = accept({ repo: flag('--repo') || repoOf(), number, dir, tested: process.env.TESTED_SHA || '', lock: process.env.LOCK_NOTE, link: process.env.GITHUB_RUN_ID ? runLink() : '', post: process.argv.includes('--post') });
+  const [number, dir] = process.argv.slice(2), repo = flag('--repo') || repoOf(), file = flag('--record');
+  if (file) {
+    const { env } = process;
+    return writeFileSync(file, JSON.stringify(record({ repo, number, dir, tested: env.TESTED_SHA || '', lock: env.LOCK, note: env.LOCK_NOTE, verifier: env.VERIFIER, run: env.GITHUB_RUN_ID, attempt: Number(env.GITHUB_RUN_ATTEMPT), jobs: { tests: env.TESTS } }, { one, all, raw })));
+  }
+  const { ok, body } = accept({ repo, number, dir, tested: process.env.TESTED_SHA || '', lock: process.env.LOCK_NOTE, link: process.env.GITHUB_RUN_ID ? runLink() : '', post: process.argv.includes('--post') });
   console.log(body);
   process.exit(ok ? 0 : 1);
 }

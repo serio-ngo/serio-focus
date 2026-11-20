@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
-import { all, flag, issueOf, one, park, redact, repoOf, runLink, send, specSha, status } from '../lib/lifecycle.mjs';
+import { trace as traced } from '../trace.mjs';
+import { all, flag, issueOf, one, park, raw, redact, repoOf, runLink, send, specSha, status } from '../lib/lifecycle.mjs';
 
 const SCHEMA = JSON.parse(readFileSync(new URL('../lib/spec-review.schema.json', import.meta.url))), { criteria: C, questions: Q } = SCHEMA.properties;
 const MAX = { text: C.items.properties.text.maxLength, question: Q.items.properties.question.maxLength, recommended: Q.items.properties.recommended.maxLength };
@@ -54,11 +56,26 @@ export function archive({ repo, run, attempt, stage, at, transcript, evaluation,
     io.send('PUT', base + suffix, { message: `Archive run ${run}-${attempt}-${stage}`, content: content.toString('base64'), sha });
   };
   try {
-    put('.jsonl.gz', gzipSync(transcript));
+    if (transcript) put('.jsonl.gz', gzipSync(transcript));
     put('.eval.json', Buffer.from(JSON.stringify(evaluation)));
-    if (!isPrivate) io.drop(artifact);
+    if (artifact && !isPrivate) io.drop(artifact);
     return { ok: true, note: '' };
   } catch (e) { return { ok: false, note: redact(`The run archive was not written: ${String(e.message).split('\n')[0].slice(0, 100)}`) }; }
+}
+
+export function session({ projects, id, repo }, io) {
+  const names = (d, recursive = false) => { try { return readdirSync(d, { recursive }); } catch { return []; } };
+  const dir = names(projects).map((p) => join(projects, p)).find((d) => existsSync(join(d, `${id}.jsonl`)));
+  if (!dir) return { ok: false, note: `no session ${id}` };
+  const subs = join(dir, id, 'subagents'), parse = (f) => readFileSync(f, 'utf8').split('\n').flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
+  const files = [['session', join(dir, `${id}.jsonl`)], ...names(subs, true).filter((n) => /^agent-.+\.jsonl$/.test(basename(n))).map((n) => [basename(n).slice(0, -6), join(subs, n)])];
+  const at = parse(files[0][1]).find((r) => r.timestamp)?.timestamp;
+  for (const [stage, file] of files) {
+    let meta = null; if (stage !== 'session') try { meta = evalOf(join(dirname(file), `${stage}.meta.json`)); } catch { }
+    const r = archive({ repo, run: `local-${id}`, attempt: 1, stage, at, transcript: transcriptFile(parse(file)), evaluation: { meta, totals: traced(file).totals }, isPrivate: true, to: 'serio-ngo/lifecycle-runs' }, io);
+    if (!r.ok) return r;
+  }
+  return { ok: true, note: '' };
 }
 
 export function outcome(rows) {
@@ -161,6 +178,16 @@ function main() {
     let rows = []; try { rows = JSON.parse(readFileSync(logFile, 'utf8')); } catch { }
     if (process.env.RUNNER_TEMP) writeFileSync(`${process.env.RUNNER_TEMP}/transcript.jsonl`, transcriptFile(rows));
     return console.log(logText(rows, process.env.PRIVATE === 'true'));
+  }
+  const sid = flag('--session'), gate = flag('--gate');
+  if (sid || gate) {
+    const g = gate && JSON.parse(readFileSync(gate, 'utf8'));
+    const r = g
+      ? archive({ repo: g.repository, run: g.run, attempt: g.attempt, stage: 'gate', at: g.at, evaluation: scrub(g), isPrivate: true, to: 'serio-ngo/lifecycle-runs' }, { one, send })
+      : session({ projects: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), id: sid, repo: flag('--repo') || (() => { try { return repoOf(); } catch { return ''; } })() }, { one, send });
+    console.log(r.note || 'archived');
+    if (!r.ok) process.exit(1);
+    return;
   }
   let ev = {}; try { ev = evalOf(flag('--eval')); } catch { }
   const repo = flag('--repo') || repoOf(), [number, file] = process.argv.slice(2);

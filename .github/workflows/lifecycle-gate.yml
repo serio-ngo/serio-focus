@@ -112,6 +112,30 @@ jobs:
           LOCK_NOTE: ${{ steps.lock.outputs.note }}
           RESULTS: ${{ runner.temp }}/junit
         run: node plugins/serio-focus/scripts/lifecycle/acceptance.mjs "$PR" "$RESULTS" --post
+      - name: Gate record
+        if: always()
+        continue-on-error: true
+        env:
+          LOCK: ${{ steps.lock.outcome }}
+          LOCK_NOTE: ${{ steps.lock.outputs.note }}
+          RESULTS: ${{ runner.temp }}/junit
+          TESTS: ${{ needs.tests.result }}
+        run: VERIFIER=$(git rev-parse HEAD) node plugins/serio-focus/scripts/lifecycle/acceptance.mjs "$PR" "$RESULTS" --record "$RUNNER_TEMP/gate.json"
+      - id: archive-token
+        if: always()
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_KEY }}
+          owner: serio-ngo
+          repositories: lifecycle-runs
+      - name: Archive gate result
+        if: always() && steps.archive-token.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.archive-token.outputs.token }}
+        run: node plugins/serio-focus/scripts/lifecycle/publish.mjs --gate "$RUNNER_TEMP/gate.json"
       - name: Tests job
         if: steps.lock.outputs.locked == 'true' && needs.tests.result != 'success'
         run: exit 1
