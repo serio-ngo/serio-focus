@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { trace as traced } from '../trace.mjs';
+import { scan } from '../lib/gitleaks.mjs';
 import { all, flag, issueOf, one, park, raw, redact, repoOf, runLink, send, specSha, status } from '../lib/lifecycle.mjs';
 
 const SCHEMA = JSON.parse(readFileSync(new URL('../lib/spec-review.schema.json', import.meta.url))), { criteria: C, questions: Q } = SCHEMA.properties;
@@ -49,18 +51,40 @@ const trace = (r) => {
 export const transcriptFile = (rows) => scrub(rows).map((r) => `${JSON.stringify(r)}\n`).join('');
 export const logText = (rows, isPrivate) => { const clean = scrub(rows); return [...clean.flatMap(trace), ...(isPrivate ? clean.map((r) => JSON.stringify(r)) : [])].join('\n'); };
 export const evalOf = (file) => scrub(JSON.parse(readFileSync(file, 'utf8')));
-export function archive({ repo, run, attempt, stage, at, transcript, evaluation, artifact, isPrivate, to }, io) {
-  const base = `repos/${to}/contents/runs/${repo}/${new Date(at).toISOString().slice(0, 10)}/${run}-${attempt}-${stage}`;
-  const put = (suffix, content) => {
-    let sha; try { sha = io.one(base + suffix).sha; } catch { }
-    io.send('PUT', base + suffix, { message: `Archive run ${run}-${attempt}-${stage}`, content: content.toString('base64'), sha });
-  };
+const PLUGIN = JSON.parse(readFileSync(new URL('../../.claude-plugin/plugin.json', import.meta.url))).version;
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const upload = (release, name, buffer) => withDir((dir) => (writeFileSync(join(dir, name), buffer), execFileSync('gh', ['api', '-X', 'POST', `${release.upload_url.replace(/\{.*$/, '')}?name=${encodeURIComponent(name)}`, '-H', 'Content-Type: application/gzip', '--input', join(dir, name)], { maxBuffer: 64e6, stdio: ['pipe', 'pipe', 'pipe'] })));
+const revision = () => { const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: dirname(fileURLToPath(import.meta.url)), encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : null; };
+const withDir = (fn) => { const dir = mkdtempSync(join(tmpdir(), 'serio-')); try { return fn(dir); } finally { rmSync(dir, { recursive: true, force: true }); } };
+export function archive({ repo, run, attempt, stage, at, transcript, trace, evaluation = null, gate = null, artifact, isPrivate, to, rev = revision(), plugin = PLUGIN }, io) {
+  const day = new Date(at).toISOString(), file = `runs/${repo}/${day.slice(0, 10)}/${run}-${attempt}-${stage}.json`, api = `repos/${to}/contents/${file}`, rel = `repos/${to}/releases`;
+  const asset = `${repo.replace('/', '-')}-${run}-${attempt}-${stage}.jsonl.gz`, tag = `raw-${day.slice(0, 7)}`;
+  const rows = transcript ? transcript.split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [], init = rows.find((x) => x.type === 'system' && x.subtype === 'init');
+  const record = { trace: trace ?? (transcript ? withDir((dir) => (writeFileSync(join(dir, 't.jsonl'), transcript), traced(join(dir, 't.jsonl')))) : null), eval: evaluation, result: rows.findLast((x) => x.type === 'result')?.structured_output ?? null, gate, transcript: null, revision: rev, plugin, model: init?.model ?? null, effort: init?.effort ?? null, dropped: [] };
   try {
-    if (transcript) put('.jsonl.gz', gzipSync(transcript));
-    put('.eval.json', Buffer.from(JSON.stringify(evaluation)));
+    let hits;
+    try { hits = withDir((dir) => { for (const [k, v] of Object.entries(record)) if (k !== 'transcript' && k !== 'dropped' && v !== null) writeFileSync(join(dir, `${k}.json`), JSON.stringify(v)); return io.scan(dir); }); } catch { return { ok: false, note: 'The run archive was not written: gitleaks unavailable' }; }
+    for (const h of hits) { const k = h.replace(/\.json$/, ''); if (k in record) (record[k] = null, record.dropped.push(k)); }
+    if (transcript) {
+      let release; try { release = io.one(`${rel}/tags/${tag}`); } catch { try { release = io.send('POST', rel, { tag_name: tag, name: tag }); } catch { release = io.one(`${rel}/tags/${tag}`); } }
+      for (const a of release.assets || []) if (a.name === asset) io.send('DELETE', `${rel}/assets/${a.id}`, {});
+      io.upload(release, asset, gzipSync(transcript));
+      record.transcript = { release: tag, asset };
+    }
+    const content = Buffer.from(JSON.stringify(record)).toString('base64');
+    for (let i = 1; ; i++) {
+      let sha; try { sha = io.one(api).sha; } catch { }
+      try { io.send('PUT', api, { message: `Archive run ${run}-${attempt}-${stage}`, content, sha }); break; } catch (e) { if (i === 4 || !/HTTP 409/.test(e.message)) throw e; io.sleep(i * 1000); }
+    }
     if (artifact && !isPrivate) io.drop(artifact);
+    const cutoff = new Date(new Date(at).getTime() - 90 * 864e5).toISOString();
+    try { for (const r of io.all(`${rel}?per_page=100`).filter((x) => x.tag_name?.startsWith('raw-'))) {
+      const old = (r.assets || []).filter((a) => a.created_at < cutoff);
+      for (const a of old) io.send('DELETE', `${rel}/assets/${a.id}`, {});
+      if (old.length && old.length === r.assets.length) io.send('DELETE', `${rel}/${r.id}`, {});
+    } } catch { }
     return { ok: true, note: '' };
-  } catch (e) { return { ok: false, note: redact(`The run archive was not written: ${String(e.message).split('\n')[0].slice(0, 100)}`) }; }
+  } catch (e) { return { ok: false, note: redact(`The run archive was not written: ${file}: ${String(e.message).trim().split('\n').at(-1).slice(0, 160)}`) }; }
 }
 
 export function session({ projects, id, repo }, io) {
@@ -70,9 +94,9 @@ export function session({ projects, id, repo }, io) {
   const subs = join(dir, id, 'subagents'), parse = (f) => readFileSync(f, 'utf8').split('\n').flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
   const files = [['session', join(dir, `${id}.jsonl`)], ...names(subs, true).filter((n) => /^agent-.+\.jsonl$/.test(basename(n))).map((n) => [basename(n).slice(0, -6), join(subs, n)])];
   const at = parse(files[0][1]).find((r) => r.timestamp)?.timestamp;
-  for (const [stage, file] of files) {
-    let meta = null; if (stage !== 'session') try { meta = evalOf(join(dirname(file), `${stage}.meta.json`)); } catch { }
-    const r = archive({ repo, run: `local-${id}`, attempt: 1, stage, at, transcript: transcriptFile(parse(file)), evaluation: { meta, totals: traced(file).totals }, isPrivate: true, to: 'serio-ngo/lifecycle-runs' }, io);
+  for (const [stage, source] of files) {
+    let meta = null; if (stage !== 'session') try { meta = evalOf(join(dirname(source), `${stage}.meta.json`)); } catch { }
+    const r = archive({ repo, run: `local-${id}`, attempt: 1, stage, at, transcript: transcriptFile(parse(source)), trace: scrub(traced(source)), evaluation: meta, isPrivate: true, to: 'serio-ngo/lifecycle-runs' }, io);
     if (!r.ok) return r;
   }
   return { ok: true, note: '' };
@@ -162,6 +186,7 @@ export function pushed({ repo, number, stage, before, note: text, reason }, io =
   park(repo, number, `the run ended without a new push: ${runLink()}.${why(reason)}`, io);
 }
 
+const io = { one, all, send, upload, scan, sleep };
 function main() {
   const outFile = flag('--outcome');
   if (outFile) {
@@ -183,11 +208,10 @@ function main() {
   if (process.argv.includes('--session') || gate) {
     const g = gate && JSON.parse(readFileSync(gate, 'utf8'));
     const r = g
-      ? archive({ repo: g.repository, run: g.run, attempt: g.attempt, stage: 'gate', at: g.at, evaluation: scrub(g), isPrivate: true, to: 'serio-ngo/lifecycle-runs' }, { one, send })
-      : session({ projects: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), id: sid, repo: flag('--repo') || (() => { try { return repoOf(); } catch { return ''; } })() }, { one, send });
-    console.log(r.note || 'archived');
-    if (!r.ok) process.exit(1);
-    return;
+      ? archive({ repo: g.repository, run: g.run, attempt: g.attempt, stage: 'gate', at: g.at, gate: scrub(g), isPrivate: true, to: 'serio-ngo/lifecycle-runs' }, io)
+      : session({ projects: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), id: sid, repo: flag('--repo') || (() => { try { return repoOf(); } catch { return ''; } })() }, io);
+    if (!r.ok) { console.log(`::error::${r.note}`); process.exit(1); }
+    return console.log('archived');
   }
   let ev = {}; try { ev = evalOf(flag('--eval')); } catch { }
   const repo = flag('--repo') || repoOf(), [number, file] = process.argv.slice(2);
@@ -201,9 +225,10 @@ function main() {
   if (failed) { say(ev.note, number); return park(repo, number, `the ${failed} run did not finish: ${runLink()}.${why(ev.reason)}`); }
   if (process.argv.includes('--archive')) {
     const e = process.env, drop = (id) => { const token = e.GH_TOKEN; e.GH_TOKEN = e.RUN_TOKEN; try { send('DELETE', `repos/${repo}/actions/artifacts/${id}`, {}); } finally { e.GH_TOKEN = token; } };
-    const r = existsSync(e.TRANSCRIPT) ? archive({ repo, run: e.GITHUB_RUN_ID, attempt: e.GITHUB_RUN_ATTEMPT, stage: e.STAGE, at: new Date().toISOString(), transcript: readFileSync(e.TRANSCRIPT, 'utf8'), evaluation: ev, artifact: e.ARTIFACT, isPrivate: e.PRIVATE === 'true', to: 'serio-ngo/lifecycle-runs' }, { one, send, drop }) : { ok: false, note: 'The run archive failed: the transcript did not reach the publish job.' };
+    const r = existsSync(e.TRANSCRIPT) ? archive({ repo, run: e.GITHUB_RUN_ID, attempt: e.GITHUB_RUN_ATTEMPT, stage: e.STAGE, at: new Date().toISOString(), transcript: readFileSync(e.TRANSCRIPT, 'utf8'), evaluation: ev, artifact: e.ARTIFACT, isPrivate: e.PRIVATE === 'true', to: 'serio-ngo/lifecycle-runs' }, { ...io, drop }) : { ok: false, note: 'The run archive failed: the transcript did not reach the publish job.' };
     if (!r.ok) mkdirSync(dirname(flag('--eval')), { recursive: true }), writeFileSync(flag('--eval'),JSON.stringify({ ...ev, note: `${r.note} ${ev.note || ''}`.trim() }));
-    return console.log(r.note || 'archived');
+    if (!r.ok) { console.log(`::error::${r.note}`); process.exit(1); }
+    return console.log('archived');
   }
   if (process.argv.includes('--pushed')) return pushed({ repo, number, stage: process.env.STAGE, before: process.env.BEFORE_SHA, note: ev.note, reason: ev.reason });
   let out = null;
