@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { gunzipSync } from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { walk } from '../cli/generate.mjs';
@@ -684,7 +683,7 @@ it("a private repository's job log and transcript file hold every row redacted",
   assert.ok(file.includes('[redacted:github-token]') && !file.includes('ghp_') && !file.includes('jan.kowalski'), file);
 });
 const LR = 'serio-ngo/lifecycle-runs', PUBLISH = new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url);
-const KEYS = ['dropped', 'effort', 'eval', 'gate', 'model', 'plugin', 'result', 'revision', 'trace', 'transcript'];
+const KEYS = ['dropped', 'effort', 'eval', 'gate', 'model', 'plugin', 'result', 'revision', 'trace'];
 const decode = (put) => JSON.parse(Buffer.from(put[1].content, 'base64').toString());
 const runRows = [
   { type: 'system', subtype: 'init', model: 'claude-x' },
@@ -715,49 +714,58 @@ const lifecycleIo = ({ releases = [], fresh = false, put, createFails, scan = ()
   };
   return { io, events, puts, ups };
 };
-it('the archive writes one allowlisted record per run and keeps tool output and thinking out of it', async () => {
+const errRows = [
+  { type: 'system', subtype: 'init', model: 'claude-x' },
+  { type: 'assistant', message: { id: 'm1', model: 'claude-x', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'cd /c/Users/x/Repos && ls' } }, { type: 'tool_use', id: 't2', name: 'Read', input: { file_path: 'a.md' } }] } },
+  { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'OUTPUT-BODY-1' }] } },
+  { type: 'assistant', message: { id: 'm2', model: 'claude-x', content: [{ type: 'thinking', thinking: 'THINKING-1' }, { type: 'tool_use', id: 't3', name: 'Read', input: { file_path: 'a.md' } }] } },
+  { type: 'result', subtype: 'success', num_turns: 1, result: 'Done.', structured_output: { note: 'Done.' } }];
+it('the archive writes one record per run with no release asset and no tool input', async () => {
   const { archive, transcriptFile } = await import(PUBLISH);
-  const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
-  const transcript = transcriptFile(runRows), file = path.join(sandbox('trace-'), 'run.jsonl');
-  writeFileSync(file, transcript);
-  const { io, puts } = lifecycleIo();
+  const transcript = transcriptFile(errRows), head = spawnSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
+  const { io, puts, events, ups } = lifecycleIo();
   const done = await archive({ ...runBase, transcript }, io);
   assert.equal(done.ok, true, done.note);
   assert.deepEqual(puts.map((c) => c[0]), [`repos/${LR}/contents/runs/o/r/2026-11-20/7-2-deliver.json`]);
-  const got = decode(puts[0]), text = Buffer.from(puts[0][1].content, 'base64').toString(), head = spawnSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
+  const got = decode(puts[0]), text = Buffer.from(puts[0][1].content, 'base64').toString();
   assert.deepEqual(Object.keys(got).sort(), KEYS);
-  assert.deepEqual(got.trace, trace(file));
+  assert.deepEqual([events.filter((e) => e[0] === 'POST').length, ups.length], [0, 0]);
   assert.deepEqual([got.eval, got.result, got.gate, got.model, got.effort, got.dropped], [runBase.evaluation, { note: 'Done.' }, null, 'claude-x', null, []]);
   assert.equal(got.plugin, JSON.parse(readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')).version);
   assert.equal(got.revision, head.status === 0 ? head.stdout.trim() : null);
-  assert.ok(!text.includes('OUTPUT-BODY-1') && !text.includes('THINKING-1'), text);
+  assert.ok(!text.includes('/c/Users/x') && !text.includes('OUTPUT-BODY-1') && !text.includes('THINKING-1'), text);
+  const gate = lifecycleIo({ fresh: true });
+  await archive({ repo: 'o/r', run: 7, attempt: 2, stage: 'gate', at: runBase.at, gate: { lock: 'x' }, isPrivate: true, to: LR }, gate.io);
+  assert.deepEqual(Object.keys(decode(gate.puts[0])).sort(), KEYS);
+  assert.deepEqual([gate.events.filter((e) => e[0] === 'POST').length, gate.ups.length], [0, 0]);
   const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8'), job = (name) => flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith(`${name}:`));
   assert.match(job('publish'), /owner: serio-ngo\b/);
   assert.match(job('publish'), /repositories: lifecycle-runs\b/);
 });
-it('the raw transcript is a release asset of its month and assets past the retention are deleted', async () => {
+it('the archived trace counts errors, denials and repeats per tool while trace.mjs keeps each input', async () => {
   const { archive, transcriptFile } = await import(PUBLISH);
-  const transcript = transcriptFile(runRows), name = 'o-r-7-2-deliver.jsonl.gz', rel = `repos/${LR}/releases`;
-  const first = lifecycleIo({ releases: [
-    { id: 10, tag_name: 'raw-2026-08', assets: [{ id: 1, name: 'a', created_at: '2026-08-21T00:00:00Z' }, { id: 2, name: 'b', created_at: '2026-08-23T00:00:00Z' }] },
-    { id: 11, tag_name: 'raw-2026-07', assets: [{ id: 3, name: 'c', created_at: '2026-07-01T00:00:00Z' }] },
-    { id: 12, tag_name: 'raw-2026-06', assets: [] }] });
-  const done = await archive({ ...runBase, transcript }, first.io);
+  const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
+  const file = path.join(sandbox('trace-'), 'run.jsonl');
+  writeFileSync(file, transcriptFile(errRows));
+  const hit = lifecycleIo(), none = lifecycleIo();
+  await archive({ ...runBase, transcript: transcriptFile(errRows) }, hit.io);
+  await archive({ ...runBase, transcript: transcriptFile(runRows) }, none.io);
+  assert.deepEqual(decode(hit.puts[0]).trace, { ...trace(file), errors: { Bash: 1 }, denied: {}, repeats: { Read: 1 } });
+  const empty = decode(none.puts[0]).trace;
+  assert.deepEqual([empty.errors, empty.denied, empty.repeats], [{}, {}, {}]);
+  const cli = JSON.parse(spawnSync(process.execPath, [script('trace.mjs'), file], { encoding: 'utf8' }).stdout);
+  assert.ok(cli.errors[0].input.includes('cd /c/Users/x/Repos'), JSON.stringify(cli.errors));
+  assert.ok(cli.repeats[0].input.includes('a.md'), JSON.stringify(cli.repeats));
+});
+it('an archive write sweeps assets past the retention and makes no other release call', async () => {
+  const { archive, transcriptFile } = await import(PUBLISH);
+  const rel = `repos/${LR}/releases`, api = `repos/${LR}/contents/runs/o/r/2026-11-20/7-2-deliver.json`;
+  const { io } = lifecycleIo({ releases: [{ id: 10, tag_name: 'raw-2026-08', assets: [{ id: 1, name: 'a', created_at: '2026-08-21T00:00:00Z' }, { id: 2, name: 'b', created_at: '2026-08-23T00:00:00Z' }] }] });
+  const calls = [], spy = Object.fromEntries(Object.entries(io).map(([k, f]) => [k, (...a) => (calls.push([k, ...(k === 'scan' ? [] : a.slice(0, 2))]), f(...a))]));
+  const done = await archive({ ...runBase, transcript: transcriptFile(errRows) }, spy);
   assert.equal(done.ok, true, done.note);
-  assert.deepEqual(first.events.filter((e) => e[0] === 'POST').map((e) => e[1]), [rel]);
-  assert.deepEqual(first.ups.map((u) => [u.name, u.release.tag_name]), [[name, 'raw-2026-11']]);
-  assert.equal(gunzipSync(first.ups[0].buffer).toString(), transcript);
-  assert.equal(gunzipSync(first.ups[0].buffer).toString().split('\n').filter(Boolean).length, runRows.length);
-  assert.deepEqual(decode(first.puts[0]).transcript, { release: 'raw-2026-11', asset: name });
-  assert.deepEqual(first.events.filter((e) => e[0] === 'DELETE').map((e) => e[1]).sort(), [`${rel}/11`, `${rel}/assets/1`, `${rel}/assets/3`].sort());
-  const again = lifecycleIo({ releases: [{ id: 20, tag_name: 'raw-2026-11', assets: [{ id: 5, name, created_at: '2026-11-20T00:00:00Z' }] }] });
-  assert.equal((await archive({ ...runBase, transcript }, again.io)).ok, true);
-  assert.deepEqual(again.events.filter((e) => ['POST', 'DELETE', 'UP'].includes(e[0])), [['DELETE', `${rel}/assets/5`], ['UP', name]]);
-  assert.equal(again.ups[0].release.id, 20);
-  const raced = lifecycleIo({ createFails: true });
-  const reused = await archive({ ...runBase, transcript }, raced.io);
-  assert.equal(reused.ok, true, reused.note);
-  assert.equal(raced.ups[0].release.tag_name, 'raw-2026-11');
+  assert.deepEqual(calls.map((c) => (c[0] === 'send' ? c[1] : c[0])), ['scan', 'one', 'PUT', 'all', 'DELETE']);
+  assert.deepEqual([calls[1][1], calls[4][2]], [api, `${rel}/assets/1`]);
 });
 it('a conflicting archive write retries with the current sha and a failed write is an error annotation', async () => {
   const { archive, transcriptFile } = await import(PUBLISH);
@@ -768,8 +776,7 @@ it('a conflicting archive write retries with the current sha and a failed write 
   assert.equal(done.ok, true, done.note);
   assert.deepEqual(ok.puts.map((c) => c[1].sha), ['s1', 's2', 's3']);
   assert.equal(ok.events.filter((e) => e[0] === 'SLEEP').length, 2);
-  const order = ok.events.map((e) => e[0]).filter((k) => ['PUT', 'UP', 'DROP'].includes(k));
-  assert.deepEqual([order.includes('UP'), order.at(-1)], [true, 'DROP']);
+  assert.equal(ok.events.map((e) => e[0]).filter((k) => ['PUT', 'DROP'].includes(k)).at(-1), 'DROP');
   const bad = lifecycleIo({ put: conflict(Infinity) });
   const failed = await archive(args, bad.io);
   assert.equal(failed.ok, false);
@@ -787,9 +794,9 @@ it('a conflicting archive write retries with the current sha and a failed write 
   writeFileSync(tfile, transcript);
   writeFileSync(evalFile, JSON.stringify({ note: 'Done.' }));
   const cli = (list, env) => { const r = spawnSync(process.execPath, [script('lifecycle/publish.mjs'), ...list], { encoding: 'utf8', env: { ...process.env, PATH: '', Path: '', CLAUDE_CONFIG_DIR: config, ...env } }), out = r.stdout + r.stderr; return { status: r.status, note: /^::error::(.+)$/m.exec(out)?.[1], out }; };
-  const gated = cli(['--gate', gate]), sess = cli(['--session', 's1', '--repo', 'o/r']);
+  const gated = cli(['--gate', gate]);
   const arch = cli(['7', '--archive', '--repo', 'o/r', '--eval', evalFile], { TRANSCRIPT: tfile, GITHUB_RUN_ID: '7', GITHUB_RUN_ATTEMPT: '2', STAGE: 'deliver', PRIVATE: 'true' });
-  for (const r of [gated, sess, arch]) assert.deepEqual([r.status, typeof r.note], [1, 'string'], r.out);
+  for (const r of [gated, arch]) assert.deepEqual([r.status, typeof r.note], [1, 'string'], r.out);
   assert.ok(JSON.parse(readFileSync(evalFile, 'utf8')).note.includes(arch.note));
 });
 it('a record field gitleaks flags is dropped and an unverified gitleaks uploads nothing', async () => {
@@ -837,67 +844,16 @@ it("the publish job posts results it reads from the run's files with secrets red
   const upload = agent.split(/\n      - /).find((step) => /upload-artifact/.test(step) && /name: transcript/.test(step));
   assert.match(upload || '', /retention-days: 1\b/);
 });
-it('the session archive writes one record and one release asset per transcript and nothing else to git', async () => {
-  const { session } = await import(PUBLISH);
-  const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
-  const { redact } = await import(new URL('../../plugins/serio-focus/scripts/lib/lifecycle.mjs', import.meta.url));
-  assert.equal(typeof session, 'function');
-  const projects = sandbox('session-'), dir = path.join(projects, 'p'), subs = path.join(dir, 's1', 'subagents');
+it('publish.mjs stops on a first argument that is not an issue number and no local session is archived', () => {
+  const config = sandbox('config-'), dir = path.join(config, 'projects', 'p'), subs = path.join(dir, 's1', 'subagents'), env = { ...process.env, CLAUDE_CONFIG_DIR: config, PATH: '', Path: '' };
   mkdirSync(subs, { recursive: true });
-  const lines = (list) => list.map((r) => JSON.stringify(r)).join('\n') + '\n';
-  const used = { type: 'assistant', message: { id: 'm1', model: 'm', usage: { input_tokens: 5, output_tokens: 7 }, content: [] } };
-  const meta = { agentType: 'tester', model: 'm', parentAgentId: 'a' };
-  writeFileSync(path.join(dir, 's1.jsonl'), lines([{ ...rows[0], timestamp: '2026-11-19T10:00:00Z' }, ...rows.slice(1)]));
-  writeFileSync(path.join(subs, 'agent-a.jsonl'), lines([used, ...rows]));
-  writeFileSync(path.join(subs, 'agent-b.jsonl'), lines([used, ...rows]));
-  writeFileSync(path.join(subs, 'agent-b.meta.json'), JSON.stringify(meta));
-  const coder = { agentType: 'coder', model: 'm' };
-  writeFileSync(path.join(subs, 'agent-a.meta.json'), JSON.stringify(coder));
-  writeFileSync(path.join(dir, 's2.jsonl'), lines([{ ...rows[0], timestamp: '2026-11-19T10:00:00Z' }]));
-  const base = `repos/${LR}/contents/runs/o/r/2026-11-19/local-s1-1-`;
-  const { io, events, puts, ups } = lifecycleIo({ fresh: true });
-  const result = await session({ projects, id: 's1', repo: 'o/r' }, io);
-  assert.equal(result.ok, true, result.note);
-  const seen = lifecycleIo(), unknown = await session({ projects, id: 'zz', repo: 'o/r' }, seen.io);
-  assert.deepEqual(unknown, { ok: false, note: 'no session zz' });
-  assert.deepEqual(seen.events, []);
-  assert.deepEqual(puts.map((c) => c[0]).sort(), ['session', 'agent-a', 'agent-b'].map((s) => `${base}${s}.json`).sort());
-  assert.deepEqual(ups.map((u) => u.name).sort(), ['session', 'agent-a', 'agent-b'].map((s) => `o-r-local-s1-1-${s}.jsonl.gz`).sort());
-  assert.equal(events.filter((e) => e[0] === 'POST').length, 1);
-  assert.ok(ups.every((u) => u.release.tag_name === 'raw-2026-11'));
-  const source = { session: path.join(dir, 's1.jsonl'), 'agent-a': path.join(subs, 'agent-a.jsonl'), 'agent-b': path.join(subs, 'agent-b.jsonl') };
-  for (const [stage, file] of Object.entries(source)) {
-    const got = decode(puts.find((c) => c[0] === `${base}${stage}.json`)), asset = ups.find((u) => u.name === `o-r-local-s1-1-${stage}.jsonl.gz`);
-    const text = gunzipSync(asset.buffer).toString();
-    assert.equal(text.split('\n').filter(Boolean).length, readFileSync(file, 'utf8').split('\n').filter(Boolean).length);
-    assert.ok(!text.includes('ghp_') && !text.includes('jan.kowalski'), text);
-    assert.deepEqual(Object.keys(got).sort(), KEYS);
-    assert.deepEqual(got.trace, JSON.parse(JSON.stringify(trace(file)), (k, x) => (typeof x === 'string' ? redact(x) : x)));
-    assert.deepEqual(got.transcript, { release: 'raw-2026-11', asset: asset.name });
-    assert.deepEqual(got.eval, { session: null, 'agent-a': coder, 'agent-b': meta }[stage]);
-  }
-  const second = lifecycleIo({ fresh: true });
-  await session({ projects, id: 's2', repo: 'o/r' }, second.io);
-  assert.deepEqual(second.puts.map((c) => c[0]), [`repos/${LR}/contents/runs/o/r/2026-11-19/local-s2-1-session.json`]);
-});
-it('the archive command stops on an unknown session and writes nothing', () => {
-  const config = sandbox('config-'), dir = path.join(config, 'projects', 'p');
-  mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 's1.jsonl'), JSON.stringify({ ...rows[0], timestamp: '2026-11-19T10:00:00Z' }) + '\n');
-  const env = { ...process.env, CLAUDE_CONFIG_DIR: config, PATH: '', Path: '' };
-  const tree = () => readdirSync(config, { recursive: true }).sort();
-  const before = tree();
-  const cli = (...args) => { const r = spawnSync(process.execPath, [path.join(REPO, 'tooling', 'cli', 'serio.mjs'), 'archive', ...args], { encoding: 'utf8', env }); return { status: r.status, out: r.stdout + r.stderr }; };
-  const unknown = cli('zz');
-  assert.ok(unknown.out.includes('no session zz'), unknown.out);
-  assert.notEqual(unknown.status, 0);
-  assert.deepEqual(tree(), before);
-  const known = cli('s1', '--repo', 'o/r');
-  assert.ok(!known.out.includes('no session'), known.out);
-  assert.match(known.out, /^::error::/m, known.out);
-  const skill = readFileSync(path.join(PLUGIN, 'skills', 'improve', 'SKILL.md'), 'utf8'), end = skill.split('\n').find((l) => l.startsWith('| End |'));
-  for (const part of ['${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/publish.mjs', '--session', '${CLAUDE_SESSION_ID}']) assert.ok(end.includes(part), end);
-  assert.ok(!skill.includes('tooling/cli'));
+  writeFileSync(path.join(subs, 'agent-a.jsonl'), JSON.stringify(rows[0]) + '\n');
+  const run = (file, ...args) => { const r = spawnSync(process.execPath, [file, ...args], { encoding: 'utf8', env }); return { status: r.status, out: (r.stdout + r.stderr).trim() }; };
+  assert.deepEqual(run(script('lifecycle/publish.mjs'), '--session', 's1', '--repo', 'o/r'), { status: 1, out: 'not an issue number: --session' });
+  const cli = run(path.join(REPO, 'tooling', 'cli', 'serio.mjs'), 'archive', 's1');
+  assert.ok(cli.out.includes('unknown command: archive') && cli.status === 1, cli.out);
+  assert.doesNotMatch(readFileSync(path.join(PLUGIN, 'skills', 'improve', 'SKILL.md'), 'utf8'), /publish\.mjs"? --session/);
 });
 it('the gate record holds the lock line, every JUnit case and the tests result', async () => {
   const { accept, record } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/acceptance.mjs', import.meta.url));
@@ -935,7 +891,7 @@ it("the gate archive writes only the gate record under the run's path in the arc
   assert.deepEqual(puts.map((c) => c[0]), [`repos/${LR}/contents/runs/o/r/2026-11-20/7-2-gate.json`]);
   const got = decode(puts[0]);
   assert.deepEqual(Object.keys(got).sort(), KEYS);
-  assert.deepEqual([got.gate, got.transcript, got.eval, ups.length], [rec, null, null, 0]);
+  assert.deepEqual([got.gate, got.eval, ups.length], [rec, null, 0]);
   const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-gate.yml'), 'utf8'), steps = flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith('control:')).split('\n').map((line) => line.trim()).join('\n').split(/\n(?=- )/).slice(1), after = steps.findIndex((s) => s.includes('acceptance.mjs') && s.includes('--post'));
   const make = steps.findIndex((s, i) => i > after && s.includes('actions/create-github-app-token@'));
   assert.ok(make > after, steps.join('\n'));
