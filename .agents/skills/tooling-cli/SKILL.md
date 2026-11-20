@@ -8,7 +8,6 @@ description: Use when editing tooling/cli/serio.mjs or tooling/cli/generate.mjs,
 | `serio.mjs prove/setup/sync/doctor/release` | `prove`, `setup`, `sync`, `doctor`, `release` |
 | `serio.mjs install` | `install:plugin` |
 | `serio.mjs upkeep [--check]` | `upkeep`, `upkeep:check` |
-| `serio.mjs archive <session id> [--repo <owner/name>]`: archives through the plugin's `publish.mjs --session`; prints `no session <id>` and exits 1 for an unknown session | none |
 
 ## generate.mjs exports
 

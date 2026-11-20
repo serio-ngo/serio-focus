@@ -270,7 +270,7 @@ function setup(args) {
 
 const args = parse(process.argv.slice(2));
 const command = args._.shift() || 'setup';
-if (!['sync', 'install', 'uninstall', 'upkeep', 'doctor', 'release', 'setup', 'prove', 'archive'].includes(command)) fail(`unknown command: ${command}`);
+if (!['sync', 'install', 'uninstall', 'upkeep', 'doctor', 'release', 'setup', 'prove'].includes(command)) fail(`unknown command: ${command}`);
 
 if (command === 'setup') await setup(args);
 else if (command === 'sync') { sync(args); report(); }
@@ -283,7 +283,3 @@ else if (command === 'upkeep') {
 else if (command === 'doctor') process.exit(doctor(args).failed ? 1 : 0);
 else if (command === 'release') release(args);
 else if (command === 'prove') prove();
-else if (command === 'archive') {
-  const run = spawnSync(process.execPath, [path.join(PLUGIN, 'scripts', 'lifecycle', 'publish.mjs'), '--session', String(args._[0]), ...(args.repo ? ['--repo', args.repo] : [])], { stdio: 'inherit' });
-  process.exit(run.status ?? 1);
-}
