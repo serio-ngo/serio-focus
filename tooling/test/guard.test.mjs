@@ -522,6 +522,44 @@ it("the test lock fails when a locked file's change has no line diff to compare"
   const got = check(load('o/r', 7, io));
   assert.equal(got.ok, false); assert.equal(got.note, 'locked paths changed after the lock: tests/logo.bin');
 });
+
+it('a deliver run without commits applies the card and marks the draft pull request ready', async () => {
+  const { publishCard } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/push.mjs', import.meta.url));
+  const out = sandbox('push-ac1-'), calls = [];
+  writeFileSync(path.join(out, 'pr.md'), 'Card text');
+  const io = { one: (url) => url === 'repos/o/r/issues/98' ? { title: 'T' } : {}, all: (url) => url.includes('repos/o/r/pulls?state=open&head=o:agent/98-x') ? [{ number: 5, node_id: 'N', draft: true, head: { ref: 'agent/98-x', sha: 'h1' } }] : [], send: (...a) => calls.push(a), raw: () => '' };
+  publishCard({ repo: 'o/r', out, issue: 98, ref: 'agent/98-x', stage: 'deliver' }, io);
+  const patch = calls.find((c) => c[0] === 'PATCH' && c[1] === 'repos/o/r/pulls/5'), ready = calls.find((c) => c[1] === 'graphql');
+  assert.deepEqual(patch && patch[2], { title: 'T', body: 'Card text' });
+  assert.deepEqual(ready && ready[2].variables, { id: 'N' });
+  assert.match(ready[2].query, /markPullRequestReadyForReview/);
+});
+it('a run without commits changes no pull request unless it is a deliver run with a card', async () => {
+  const { publishCard } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/push.mjs', import.meta.url));
+  for (const [stage, card] of [['deliver', false], ['write-tests', true], ['pr-loop', true]]) {
+    const out = sandbox('push-ac2-'), calls = [];
+    if (card) writeFileSync(path.join(out, 'pr.md'), 'Card text');
+    const io = { one: () => ({ title: 'T' }), all: () => [{ number: 5, node_id: 'N', draft: true, head: { ref: 'agent/98-x', sha: 'h1' } }], send: (...a) => calls.push(a), raw: () => '' };
+    publishCard({ repo: 'o/r', out, issue: 98, ref: 'agent/98-x', stage }, io);
+    assert.equal(calls.length, 0, stage);
+  }
+});
+it('a deliver run without a new push is not parked when its pull request is ready', async () => {
+  const { pushed } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url)), calls = [];
+  pushed({ repo: 'o/r', number: 98, stage: 'deliver', before: 'h1', note: '', reason: '' }, { one: () => ({}), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, node_id: 'N', draft: false, head: { ref: 'agent/98-x', sha: 'h1' } }] : [], send: (...a) => calls.push(a), raw: () => '' });
+  assert.equal(calls.some((c) => c[0] === 'POST' && c[1] === 'repos/o/r/issues/98/labels'), false);
+  assert.equal(calls.some((c) => JSON.stringify(c[2]).includes('the run ended without a new push')), false);
+});
+it('a run without a new push is parked unless it is a deliver run with a ready pull request', async () => {
+  const { pushed } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
+  for (const [stage, draft] of [['deliver', true], ['write-tests', false], ['pr-loop', false]]) {
+    const calls = [];
+    pushed({ repo: 'o/r', number: 98, stage, before: 'h1', note: '', reason: '' }, { one: () => ({}), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, node_id: 'N', draft, head: { ref: 'agent/98-x', sha: 'h1' } }] : [], send: (...a) => calls.push(a), raw: () => '' });
+    const label = calls.find((c) => c[0] === 'POST' && c[1] === 'repos/o/r/issues/98/labels');
+    assert.deepEqual(label && label[2], { labels: ['needs-human'] }, stage);
+    assert.ok(calls.some((c) => JSON.stringify(c[2]).includes('the run ended without a new push')), stage);
+  }
+});
 it('trace counts each assistant message once with its tool calls, tokens, duration and models', async () => {
   const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
   const row = (id, at, name, input, usage) => ({ type: 'assistant', timestamp: at, message: { id, model: 'm1', content: [{ type: 'tool_use', id: `${id}${name}`, name, input }], usage } });
