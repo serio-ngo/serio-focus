@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- The tester tests only behaviour a caller sees and extends the test that covers the boundary; versions, sizes, layout, documents and config get no test.
 - One status comment per issue is edited in place: step, result, next action, log.
 - A code owner's `spec-ok` without a ready review accepts the latest reviewed criteria and is logged; a missing review stops it.
 - `tests-ok` as an issue label answers with the exact action.
