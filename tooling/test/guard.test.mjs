@@ -840,6 +840,7 @@ it("the publish job posts results it reads from the run's files with secrets red
 it('the session archive writes one record and one release asset per transcript and nothing else to git', async () => {
   const { session } = await import(PUBLISH);
   const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
+  const { redact } = await import(new URL('../../plugins/serio-focus/scripts/lib/lifecycle.mjs', import.meta.url));
   assert.equal(typeof session, 'function');
   const projects = sandbox('session-'), dir = path.join(projects, 'p'), subs = path.join(dir, 's1', 'subagents');
   mkdirSync(subs, { recursive: true });
@@ -871,7 +872,7 @@ it('the session archive writes one record and one release asset per transcript a
     assert.equal(text.split('\n').filter(Boolean).length, readFileSync(file, 'utf8').split('\n').filter(Boolean).length);
     assert.ok(!text.includes('ghp_') && !text.includes('jan.kowalski'), text);
     assert.deepEqual(Object.keys(got).sort(), KEYS);
-    assert.deepEqual(got.trace, trace(file));
+    assert.deepEqual(got.trace, JSON.parse(JSON.stringify(trace(file)), (k, x) => (typeof x === 'string' ? redact(x) : x)));
     assert.deepEqual(got.transcript, { release: 'raw-2026-11', asset: asset.name });
     assert.deepEqual(got.eval, { session: null, 'agent-a': coder, 'agent-b': meta }[stage]);
   }
