@@ -15,7 +15,7 @@ const tidy = (s) => line(s).replace(/[<>*`]/g, '');
 const name = (s) => safe(s.replace(/[`|]/g, '').replace(/\s+/g, ' ').trim());
 export const why = (reason) => (clean(reason, 300) ? ` The agent said: ${tidy(reason)}` : '');
 export const note = (text, stage, run, stats = '', at = new Date().toISOString().slice(0, 19) + 'Z') => { const t = String(text || `The ${stage} run ended without a note.`).slice(0, 280); return clean(t, 280) ? `Note (${stage}): ${tidy(t)}\n\n<!-- step-note stage=${stage} run=${run}${/^turns=\d+ usd=\d+(\.\d+)? denied=\d+$/.test(stats) ? ` ${stats}` : ''} at=${at} -->` : null; };
-const say = (text, target, stage = process.env.STAGE) => { const body = note(text, stage, process.env.GITHUB_RUN_ID || 'local', process.env.STATS); if (body) try { status(flag('--repo') || repoOf(), target, { now: body.split('\n')[0], line: body }); } catch { } };
+const say = (text, target, stage = process.env.STAGE, io, repo) => { const body = note(text, stage, process.env.GITHUB_RUN_ID || 'local', process.env.STATS); if (body) try { status(repo || flag('--repo') || repoOf(), target, { now: body.split('\n')[0], line: body }, io); } catch { } };
 
 export function comment(out, sha, extra = '') {
   if (!out || !['ready', 'questions'].includes(out.verdict)) return null;
@@ -107,6 +107,17 @@ function selfTest() {
   console.log(`publish self-test: ${bad.length + 33} checks passed`);
 }
 
+export function pushed({ repo, number, stage, before, note: text, reason }, io = { one, all, send, raw }) {
+  const pr = io.all(`repos/${repo}/pulls?state=open&per_page=100`).find((p) => issueOf(p.head.ref) === Number(number)), head = pr?.head.sha;
+  say(text, pr?.number || number, stage, io, repo);
+  if (head && head !== before) {
+    for (const n of [number, pr.number]) try { io.send('DELETE', `repos/${repo}/issues/${n}/labels/needs-human`, {}); } catch { }
+    return console.log(`pushed ${head}`);
+  }
+  if (stage === 'deliver' && pr && !pr.draft) return;
+  park(repo, number, `the run ended without a new push: ${runLink()}.${why(reason)}`, io);
+}
+
 function main() {
   const outFile = flag('--outcome');
   if (outFile) {
@@ -127,14 +138,7 @@ function main() {
   }
   const failed = flag('--failed');
   if (failed) { say(process.env.NOTE, number); return park(repo, number, `the ${failed} run did not finish: ${runLink()}.${why(process.env.REASON)}`); }
-  if (process.argv.includes('--pushed')) {
-    const pr = all(`repos/${repo}/pulls?state=open&per_page=100`).find((p) => issueOf(p.head.ref) === Number(number)), head = pr?.head.sha;
-    say(process.env.NOTE, pr?.number || number);
-    if (head && head !== process.env.BEFORE_SHA) for (const n of [number, pr.number]) try { send('DELETE', `repos/${repo}/issues/${n}/labels/needs-human`, {}); } catch { }
-    if (head && head !== process.env.BEFORE_SHA) console.log(`pushed ${head}`);
-    else park(repo, number, `the run ended without a new push: ${runLink()}.${why(process.env.REASON)}`);
-    return;
-  }
+  if (process.argv.includes('--pushed')) return pushed({ repo, number, stage: process.env.STAGE, before: process.env.BEFORE_SHA, note: process.env.NOTE, reason: process.env.REASON });
   let out = null;
   try { out = JSON.parse(file ? readFileSync(file, 'utf8') : process.env.STRUCTURED_OUTPUT); } catch { }
   const body = comment(out, process.env.SPEC_SHA || specSha(one(`repos/${repo}/issues/${number}`)));
