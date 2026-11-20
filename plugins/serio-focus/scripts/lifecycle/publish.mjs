@@ -179,8 +179,8 @@ function main() {
     if (process.env.RUNNER_TEMP) writeFileSync(`${process.env.RUNNER_TEMP}/transcript.jsonl`, transcriptFile(rows));
     return console.log(logText(rows, process.env.PRIVATE === 'true'));
   }
-  const sid = flag('--session'), gate = flag('--gate');
-  if (sid || gate) {
+  const sid = flag('--session') || process.env.CLAUDE_CODE_SESSION_ID || '', gate = flag('--gate');
+  if (process.argv.includes('--session') || gate) {
     const g = gate && JSON.parse(readFileSync(gate, 'utf8'));
     const r = g
       ? archive({ repo: g.repository, run: g.run, attempt: g.attempt, stage: 'gate', at: g.at, evaluation: scrub(g), isPrivate: true, to: 'serio-ngo/lifecycle-runs' }, { one, send })
