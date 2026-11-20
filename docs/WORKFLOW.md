@@ -11,7 +11,7 @@
 | Tester | `tester`, once per test level | Failing tests | Test paths and their failing lines |
 | Coder | `coder`, one task per dispatch, fresh context | Code; never commits | Changed lines, check output, what was not done |
 | Reviewer | `reviewer`, fresh context, once per round on the whole diff | Nothing | Every supported finding with severity and confidence; verdict `ready` or `changes needed` |
-| Person | A code owner | The spec, `spec-ok`, `tests-ok`, the merge; `improve`, run by a code owner in their own session, archives its own session to `serio-ngo/lifecycle-runs` and gives `spec-ok` and `tests-ok` for that owner; the merge stays a person's | — |
+| Person | A code owner | The spec, `spec-ok`, `tests-ok`, the merge; `improve`, run by a code owner in their own session, gives `spec-ok` and `tests-ok` for that owner; the merge stays a person's | — |
 
 ## Stages
 
@@ -44,8 +44,7 @@ Runs share no memory. They hand off through comments on the task, written and re
 | A review starting with `tests-ok` | A code owner | Pull request | `lock.mjs`, `route.mjs`, `brief.mjs` |
 | The commits of a run as a bundle, the branch name and `.lifecycle/pr.md` | The agent job, after the model session ends | Run artifact `commits`, kept 1 day | `push.mjs` |
 | The whole transcript and a trace of calls, errors and denials | The Trace step | Job log and summary | Whoever debugs a run |
-| One allowlisted record per run (`trace`, `eval`, `result`, `gate`, `transcript`, `revision`, `plugin`, `model`, `effort`, `dropped`); a field gitleaks flags is dropped | `publish.mjs archive`, gitleaks 8.30.1 | `serio-ngo/lifecycle-runs` `runs/<repo>/<date>/<run>-<attempt>-<stage>.json` | Whoever debugs a run |
-| The gzipped redacted transcript | `publish.mjs archive` | Asset of release `raw-<YYYY-MM>` in `serio-ngo/lifecycle-runs`, deleted after 90 days | Members of the organisation |
+| One allowlisted record per run (`trace`, `eval`, `result`, `gate`, `revision`, `plugin`, `model`, `effort`, `dropped`); a field gitleaks flags is dropped; assets of `raw-*` releases older than 90 days are deleted | `publish.mjs archive`, gitleaks 8.30.1 | `serio-ngo/lifecycle-runs` `runs/<repo>/<date>/<run>-<attempt>-<stage>.json` | Whoever debugs a run |
 
 | Brief rule | Value |
 |---|---|
@@ -84,6 +83,6 @@ Runs share no memory. They hand off through comments on the task, written and re
 | Only a person merges | The model session of an unattended run holds a read-only token and no App key. `push.mjs`, in the publish job, pushes its commits to `agent/<N>-…` only, never forced, and opens the pull request. A public repository also needs a ruleset that restricts updates of the default branch: `route.mjs` starts nothing without one |
 | No test before `spec-ok`, no code before `tests-ok` | `route.mjs` |
 | Tests, skills and the spec do not change after their gate | `lock.mjs`, in a job that never runs pull request code |
-| Only people start a stage; only code owners lock or request changes; except `improve` run by a code owner in their own session, which archives its own session to `serio-ngo/lifecycle-runs`, gives `spec-ok` and `tests-ok` for that owner, and the merge stays a person's | `route.mjs`: actor type `User`, `CODEOWNERS` |
+| Only people start a stage; only code owners lock or request changes; except `improve` run by a code owner in their own session, which gives `spec-ok` and `tests-ok` for that owner, and the merge stays a person's | `route.mjs`: actor type `User`, `CODEOWNERS` |
 | Text from GitHub is data | `brief.mjs` drops untrusted authors and hidden comments; skills say so |
 | The seat that pays is the assignee's | `route.mjs`: secret `CLAUDE_TOKEN_<LOGIN>` |
