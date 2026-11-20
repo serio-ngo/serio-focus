@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { gunzipSync } from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { walk } from '../cli/generate.mjs';
@@ -639,4 +640,105 @@ it("upkeep leaves the lifecycle's local records alone", () => {
   const result = upkeep('--check');
   assert.equal(result.status, ALLOWED, result.stderr);
   assert.equal(readFileSync(record, 'utf8'), '{"a":1}  ');
+});
+const rows = [
+  { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'echo ghp_' + 'a1B2'.repeat(9) } }] } },
+  { type: 'user', message: { content: [{ type: 'tool_result', is_error: true, content: 'denied for jan.kowalski@example.org' }] } },
+  { type: 'result', num_turns: 3, result: 'Done.' }];
+const traceLines = ['trace: main call Bash {"command":"echo [redacted:github-token]"}', 'trace: error denied for [redacted:email]', 'trace: result turns=3 Done.'];
+it('redaction replaces every secret kind and e-mail address and keeps the bot addresses', async () => {
+  const { redact } = await import(new URL('../../plugins/serio-focus/scripts/lib/lifecycle.mjs', import.meta.url));
+  const bots = ['41898282+github-actions[bot]@users.noreply.github.com', 'noreply@anthropic.com'];
+  const row = {
+    gh: ['ghp_', 'ghs_', 'gho_', 'ghu_', 'ghr_'].map((p) => p + 'a1B2'.repeat(9)).concat('github_pat_' + 'aB_1'.repeat(20) + 'aB'),
+    ant: 'sk-ant-api03-' + 'aB1-'.repeat(10),
+    url: 'https://x-access-token:v1abcdefSECRET@github.com/o/r.git',
+    auth: 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.SECRET',
+    key: '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\n-----END OPENSSH PRIVATE KEY-----',
+    mail: 'mail jan.kowalski@example.org', bots };
+  const out = JSON.parse(redact(JSON.stringify(row)));
+  assert.deepEqual(out.gh, Array(6).fill('[redacted:github-token]'));
+  assert.equal(out.ant, '[redacted:anthropic-key]');
+  assert.ok(out.url.includes('[redacted:oauth-url]') && !out.url.includes('v1abcdefSECRET'), out.url);
+  assert.ok(out.auth.includes('[redacted:bearer]') && !out.auth.includes('SECRET'), out.auth);
+  assert.ok(out.key.includes('[redacted:private-key]') && !out.key.includes('b3BlbnNzaC1rZXk'), out.key);
+  assert.equal(out.mail, 'mail [redacted:email]');
+  assert.deepEqual(out.bots, bots);
+});
+it("a public repository's job log holds the redacted trace and no transcript row", async () => {
+  const { logText } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
+  const text = logText(rows, false), lines = text.split('\n');
+  for (const line of traceLines) assert.ok(lines.includes(line), text);
+  assert.deepEqual(lines.filter((line) => line.startsWith('{')), []);
+  assert.ok(!text.includes('ghp_') && !text.includes('jan.kowalski'), text);
+});
+it("a private repository's job log and transcript file hold every row redacted", async () => {
+  const { logText, transcriptFile } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
+  const text = logText(rows, true), lines = text.split('\n');
+  for (const line of traceLines) assert.ok(lines.includes(line), text);
+  assert.equal(lines.filter((line) => line.startsWith('{')).length, rows.length);
+  assert.ok(!text.includes('ghp_') && !text.includes('jan.kowalski'), text);
+  const file = transcriptFile(rows), got = file.split('\n').filter(Boolean);
+  assert.equal(got.length, rows.length);
+  got.forEach((line) => JSON.parse(line));
+  assert.ok(file.includes('[redacted:github-token]') && !file.includes('ghp_') && !file.includes('jan.kowalski'), file);
+});
+it("the archive writes the gzipped transcript and eval under the run's path in the archive repository only", async () => {
+  const { archive, transcriptFile } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
+  const transcript = transcriptFile(rows), evaluation = { stage: 'deliver', note: 'Done.' }, to = 'serio-ngo/lifecycle-runs';
+  const args = { repo: 'o/r', run: 7, attempt: 2, stage: 'deliver', at: '2026-11-20T23:59:00Z', transcript, evaluation, artifact: 99, isPrivate: false, to };
+  const run = async (over, send, one = () => ({ sha: 'old' })) => {
+    const calls = [];
+    const result = await archive({ ...args, ...over }, { one, send: send || ((...a) => calls.push(a)), drop: (id) => calls.push(['DROP', id]) });
+    return { calls, result };
+  };
+  const base = `repos/${to}/contents/runs/o/r/2026-11-20/7-2-deliver`, paths = [`${base}.eval.json`, `${base}.jsonl.gz`];
+  const { calls, result } = await run({});
+  const puts = calls.filter((c) => c[0] === 'PUT'), put = (list, suffix) => list.find((c) => c[0] === 'PUT' && c[1] === `${base}${suffix}`);
+  assert.equal(result.ok, true);
+  assert.deepEqual(puts.map((c) => c[1]).sort(), paths);
+  assert.ok(calls.filter((c) => c[0] !== 'DROP').every((c) => c[1].startsWith(`repos/${to}/`)), JSON.stringify(calls));
+  assert.ok(puts.every((c) => c[2].sha === 'old'));
+  assert.equal(gunzipSync(Buffer.from(put(calls, '.jsonl.gz')[2].content, 'base64')).toString(), transcript);
+  assert.deepEqual(JSON.parse(Buffer.from(put(calls, '.eval.json')[2].content, 'base64').toString()), evaluation);
+  assert.deepEqual(calls.at(-1), ['DROP', 99]);
+  const kept = await run({ isPrivate: true });
+  assert.ok(!kept.calls.some((c) => c[0] === 'DROP'));
+  assert.deepEqual(kept.calls.filter((c) => c[0] === 'PUT').map((c) => c[1]).sort(), paths);
+  const fresh = await run({}, undefined, () => { throw new Error('404'); });
+  assert.equal(fresh.result.ok, true);
+  assert.deepEqual(fresh.calls.filter((c) => c[0] === 'PUT').map((c) => c[1]).sort(), paths);
+  assert.ok(fresh.calls.filter((c) => c[0] === 'PUT').every((c) => c[2].sha === undefined));
+  const failed = await run({}, () => { throw new Error('boom'); });
+  assert.equal(failed.result.ok, false);
+  assert.ok(failed.result.note);
+  assert.ok(!failed.calls.some((c) => c[0] === 'DROP'));
+  const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8'), job = (name) => flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith(`${name}:`));
+  assert.match(job('publish'), /owner: serio-ngo\b/);
+  assert.match(job('publish'), /repositories: lifecycle-runs\b/);
+});
+it("the publish job posts results it reads from the run's files with secrets redacted", async () => {
+  const { evalOf, comment, note, why } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
+  const dir = sandbox('eval-'), token = 'ghp_' + 'a1B2'.repeat(9);
+  const structured = { verdict: 'ready', criteria: [{ id: 1, text: 'Given Authorization: Bearer eyJabc.SECRET, When X, Then Y', level: 'unit', test: 'x works' }], questions: [], note: 'Ready for jan.kowalski@example.org' };
+  const log = path.join(dir, 'log.json');
+  writeFileSync(log, JSON.stringify([{ type: 'system', subtype: 'init', model: 'm' }, { type: 'result', subtype: 'success', is_error: false, num_turns: 2,
+    result: `Ready for ${token}.\nNote: Ready, mail jan.kowalski@example.org`, structured_output: structured }]));
+  spawnSync(process.execPath, [script('lifecycle/publish.mjs'), '--outcome', log], { encoding: 'utf8', env: { ...process.env, RUNNER_TEMP: dir, STAGE: 'spec-review', GITHUB_STEP_SUMMARY: '' } });
+  const text = readFileSync(path.join(dir, 'eval.json'), 'utf8'), out = JSON.parse(text);
+  for (const secret of ['ghp_', 'jan.kowalski', 'eyJabc.SECRET']) assert.ok(!text.includes(secret), secret);
+  assert.equal(out.structured.verdict, 'ready');
+  assert.ok(out.structured.criteria[0].text.includes('[redacted:bearer]'));
+  assert.ok(out.note.includes('[redacted:email]'));
+  assert.ok(out.reason.includes('[redacted:github-token]'));
+  const raw = path.join(dir, 'raw.json');
+  writeFileSync(raw, JSON.stringify({ structured, note: 'Ready for jan.kowalski@example.org', reason: `held by ${token}` }));
+  const e = evalOf(raw), review = comment(e.structured, 'abcdef123456'), posted = note(e.note, 'spec-review', 1, '', '2026-01-02T03:04:05Z');
+  assert.ok(review && review.includes('[redacted:bearer]') && !review.includes('SECRET'), review);
+  assert.ok(posted && posted.includes('[redacted:email]'), posted);
+  assert.ok(why(e.reason).includes('[redacted:github-token]'));
+  const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8'), agent = flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith('agent:'));
+  assert.doesNotMatch(agent.slice(agent.indexOf('outputs:'), agent.indexOf('steps:')), /^\s+(structured_output|reason|note):/m);
+  const upload = agent.split(/\n      - /).find((step) => /upload-artifact/.test(step) && /name: transcript/.test(step));
+  assert.match(upload || '', /retention-days: 1\b/);
 });

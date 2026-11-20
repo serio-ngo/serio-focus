@@ -52,3 +52,14 @@ export const park = (repo, number, why, io = { one, all, send, raw }) => {
   status(repo, number, { now: why, next: 'a person reads the run log, then continues or closes the task', line: `**needs-human**: ${why} <!-- park at=${new Date().toISOString().replace(/\.\d+Z$/, 'Z')} -->` }, io);
 };
 export const runLink = () => process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : 'local run';
+
+const SECRETS = [
+  ['private-key', /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g],
+  ['github-token', /gh[psour]_[A-Za-z0-9]{20,}|github_pat_\w{20,}/g],
+  ['anthropic-key', /sk-ant-[\w-]{20,}/g],
+  ['oauth-url', /x-access-token:[^@\s"'\\]+(?=@)/g],
+  ['bearer', /Authorization:\s*Bearer\s+[\w.~+/=-]+/gi],
+  ['email', /(?<![\\\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g],
+];
+const KEEP = /^noreply@|@users\.noreply\.github\.com$/;
+export const redact = (text) => SECRETS.reduce((s, [kind, re]) => s.replace(re, (m) => (kind === 'email' && KEEP.test(m) ? m : `[redacted:${kind}]`)), String(text));

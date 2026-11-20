@@ -19,6 +19,7 @@ description: Use when editing plugins/serio-focus/scripts/lib/ (runtime.mjs, lif
 | Actors | `person`, `robot`, `owns(user, own)`, `owners(text)`, `ownersOf(repo)` |
 | Spec | `specSha(issue)`, `specComment`, `specMarker` |
 | Tests lock | `testsOk(body)`, `lockReview`, `lockOf` |
+| Redaction | `redact(text)` — text to text, each secret and e-mail address becomes `[redacted:<kind>]` |
 | Status | `statusLog(body)`, `isStatus(comment, own)`, `status(repo, target, update, io)` with `io` `{ all, send, raw }`, `park(repo, number, why)` |
 
 ## Rules
@@ -26,5 +27,4 @@ description: Use when editing plugins/serio-focus/scripts/lib/ (runtime.mjs, lif
 | Rule | Detail |
 |---|---|
 | Version reader | `version` in runtime.mjs is the only reader of plugin.json's version in plugins/ and tooling/ |
-| Exports used | each export is imported by another file |
-| Private | `statusBody` in lifecycle.mjs is module-private |
+| Exports | each export is imported by another file; `statusBody` in lifecycle.mjs is module-private |

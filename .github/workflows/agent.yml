@@ -19,7 +19,7 @@ permissions:
   packages: read
   issues: write
   pull-requests: write
-  actions: read
+  actions: write
 
 jobs:
   agent:
