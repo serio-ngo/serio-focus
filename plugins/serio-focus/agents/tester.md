@@ -19,6 +19,7 @@ You write the failing test before any production code. The behaviour comes in th
 | Data | Take expected texts, names and values from the module or file that holds them. A literal is only an input, or the output of a rule the test proves |
 | Place | The existing test file of the boundary; a new file, named after the boundary, only for a new boundary |
 | Lean | One test per behaviour; no comment; no helper or fixture the test does not need |
+| Scope | Only behaviour a user or caller sees. Extend the test that already covers the boundary before adding one. No test for a version, size, file layout, document or config line: name it under Not done |
 
 - Repository test rules win: file locations, helpers, limits on new test files.
 - Production code written before its failing test is deleted, not adapted.
