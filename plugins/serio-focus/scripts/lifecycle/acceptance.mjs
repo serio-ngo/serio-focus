@@ -23,7 +23,7 @@ export const cases = (xml) => [...xml.matchAll(/<testcase\b((?:[^>"]|"[^"]*")*?)
 
 const mapping = (body) => new Map([...String(body || '').matchAll(/^\| AC(\d+) \| .* \| (?:unit|e2e) \| `([^`]+)` \|$/gm)].map(([, n, test]) => [Number(n), test]));
 
-export function report({ review = '', tests, sha, lock = '', link = '', files = [], size = '', free = [] }) {
+export function report({ review = '', tests, sha, lock = '', link = '', files = [], size = '', free = [], skipped = [] }) {
   const ac = specOf(review)?.ac || [], map = mapping(review);
   const rows = ac.map((n) => {
     const name = map.get(n), mine = name ? tests.filter((t) => t.name === name) : [];
@@ -37,6 +37,7 @@ export function report({ review = '', tests, sha, lock = '', link = '', files = 
     ...rows.map((r) => `| AC${r.n} | ${r.name} | ${r.result} |`),
     ...(size || files.length ? ['', `Changed: ${size} · gate files: ${files.filter((f) => GATE.test(f)).map((f) => `\`${cell(f)}\``).join(', ') || 'none'}`] : []),
     ...(free.length ? ['', `Changes no test needs: ${free.map((f) => `\`${cell(f)}\``).join(', ')}`] : []),
+    ...(skipped.length ? ['', `Not reverted in time: ${skipped.map((f) => `\`${cell(f)}\``).join(', ')}`] : []),
     ...(link ? ['', `Run and e2e traces: ${link}`] : []), '', `<!-- acceptance v1 sha=${sha} -->`,
   ].join('\n');
   return { ok, body };
@@ -62,14 +63,21 @@ function selfTest() {
   for (const f of ['plugins/serio-focus/scripts/lifecycle/route.mjs', 'scripts/site-tools.mjs', 'src/a.mjs']) assert.equal(production(f), true, f);
   for (const f of ['package.json', '.github/workflows/ci.yml', '.husky/pre-commit', 'tsconfig.json', 'tests/a.test.mjs', '.agents/skills/x/SKILL.md', 'README.md']) assert.equal(production(f), false, f);
   const repo = mkdtempSync(path.join(tmpdir(), 'rev-')), git = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: repo, encoding: 'utf8' });
-  git('init'); mkdirSync(path.join(repo, 'src')); writeFileSync(path.join(repo, 'src/a.mjs'), '1');
+  git('init'); mkdirSync(path.join(repo, 'src')); writeFileSync(path.join(repo, 'src/a.mjs'), '1'); writeFileSync(path.join(repo, 'src/b.mjs'), '1');
   git('add', '.'); git('commit', '-m', 'b'); const BASE = git('rev-parse', 'HEAD').stdout.trim();
-  writeFileSync(path.join(repo, 'src/a.mjs'), '2'); git('commit', '-am', 'h');
+  writeFileSync(path.join(repo, 'src/a.mjs'), '2'); writeFileSync(path.join(repo, 'src/b.mjs'), '2'); git('commit', '-am', 'h');
   const UNIT = `node -e "require('fs').writeFileSync('junit/unit.xml','<testsuites/>')"`;
   spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--revert'], { cwd: repo, env: { ...process.env, BASE, UNIT, E2E: '' } });
   assert.equal(existsSync(path.join(repo, 'revert/0/unit.xml')), true, 'rerun recreates junit');
+  rmSync(path.join(repo, 'revert'), { recursive: true, force: true });
+  spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--revert'], { cwd: repo, env: { ...process.env, BASE, UNIT: 'sleep 5', E2E: '', REVERT_BUDGET_MS: '500' } });
+  assert.equal(readFileSync(path.join(repo, 'revert/skipped'), 'utf8'), 'src/a.mjs\nsrc/b.mjs\n', 'skipped lists files');
+  assert.equal(existsSync(path.join(repo, 'revert/0')) || existsSync(path.join(repo, 'revert/1')), false, 'no folder for skipped');
+  assert.deepEqual(['a', 'b'].map((n) => readFileSync(path.join(repo, `src/${n}.mjs`), 'utf8')), ['2', '2'], 'head restored');
+  const late = report({ review, tests: cases(junit), sha: 'abcdef1', skipped: ['src/a.mjs', 'src/b.mjs'] });
+  assert.match(late.body, /\nNot reverted in time: `src\/a\.mjs`, `src\/b\.mjs`\n/); assert.equal(late.ok, true);
   rmSync(repo, { recursive: true, force: true });
-  console.log(`acceptance self-test: ${list.length + 18} checks passed`);
+  console.log(`acceptance self-test: ${list.length + 23} checks passed`);
 }
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.xml') ? [path.join(dir, e.name)] : []);
@@ -84,8 +92,10 @@ export function accept({ repo, number, dir, tested, lock, link, post, revert }, 
   try { xml = walk(dir); } catch { }
   const files = io.all(`repos/${repo}/pulls/${number}/files?per_page=100`).map((f) => f.filename), size = `+${pr.additions} −${pr.deletions} in ${pr.changed_files} files`;
   const read = (d) => walk(d).flatMap((file) => cases(readFileSync(file, 'utf8')));
-  const free = !revert || !existsSync(revert) ? [] : readdirSync(revert).sort().filter((d) => report({ review, tests: read(path.join(revert, d)), sha: pr.head.sha }).ok).map((d) => readFileSync(path.join(revert, d, 'file'), 'utf8').trim());
-  const got = report({ review, tests: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: pr.head.sha, lock, link, files, size, free });
+  const dirs = !revert || !existsSync(revert) ? [] : readdirSync(revert).sort(), skip = path.join(revert || '', 'skipped');
+  const skipped = dirs.includes('skipped') ? readFileSync(skip, 'utf8').split('\n').filter(Boolean) : [];
+  const free = dirs.filter((d) => /^\d+$/.test(d)).filter((d) => report({ review, tests: read(path.join(revert, d)), sha: pr.head.sha }).ok).map((d) => readFileSync(path.join(revert, d, 'file'), 'utf8').trim());
+  const got = report({ review, tests: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: pr.head.sha, lock, link, files, size, free, skipped });
   if (post) {
     const old = io.all(`repos/${repo}/issues/${number}/comments?per_page=100`).find((c) => c.user?.login === 'github-actions[bot]' && /<!-- acceptance v1 /.test(c.body || ''));
     if (old) io.send('PATCH', `repos/${repo}/issues/comments/${old.id}`, { body: got.body });
@@ -109,17 +119,23 @@ function revertRuns() {
   const { BASE, UNIT, E2E } = process.env, git = (...a) => spawnSync('git', a, { encoding: 'utf8' });
   const base = git('merge-base', 'HEAD', BASE).stdout.trim();
   const changed = git('diff', '--name-only', '--no-renames', '--diff-filter=AM', base, 'HEAD').stdout.split('\n').filter((f) => f && production(f));
+  const end = Date.now() + Number(process.env.REVERT_BUDGET_MS || 12 * 60 * 1000), skipped = [];
   changed.forEach((file, i) => {
+    if (Date.now() >= end) return skipped.push(file);
     if (git('cat-file', '-e', `${base}:${file}`).status) rmSync(file, { force: true }); else git('checkout', base, '--', file);
     rmSync('junit', { recursive: true, force: true });
     mkdirSync('junit');
-    for (const cmd of [UNIT, E2E]) if (cmd) spawnSync('bash', ['-c', cmd], { stdio: 'inherit' });
+    const cut = [UNIT, E2E].filter(Boolean).map((cmd) => spawnSync('bash', ['-c', cmd], { stdio: 'inherit', timeout: Math.max(1, end - Date.now()) }).error).some(Boolean);
     const out = path.join('revert', String(i));
-    mkdirSync(out, { recursive: true });
-    for (const x of readdirSync('junit').filter((n) => n.endsWith('.xml'))) renameSync(path.join('junit', x), path.join(out, x));
-    writeFileSync(path.join(out, 'file'), file);
+    if (cut) skipped.push(file);
+    else {
+      mkdirSync(out, { recursive: true });
+      for (const x of readdirSync('junit').filter((n) => n.endsWith('.xml'))) renameSync(path.join('junit', x), path.join(out, x));
+      writeFileSync(path.join(out, 'file'), file);
+    }
     git('checkout', 'HEAD', '--', file);
   });
+  if (skipped.length) { mkdirSync('revert', { recursive: true }); writeFileSync(path.join('revert', 'skipped'), skipped.map((f) => `${f}\n`).join('')); }
 }
 
 function main() {
