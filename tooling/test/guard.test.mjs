@@ -909,3 +909,10 @@ it('every default io of a lifecycle script names helpers the script has', () => 
     for (const [, names] of text.matchAll(/\bio = \{ ([^}]+) \}/g)) for (const name of names.split(',').map((s) => s.trim())) assert.ok(imported.has(name) || new RegExp(`^(?:export )?(?:const|function) ${name}\\b`, 'm').test(text), `${file}: ${name}`);
   }
 });
+
+it('a repository with pull request previews gets an AI visual check before ready', () => {
+  const deliver = readFileSync(path.join(PLUGIN, 'skills', 'deliver', 'SKILL.md'), 'utf8'), loop = readFileSync(path.join(PLUGIN, 'skills', 'pr-loop', 'SKILL.md'), 'utf8');
+  assert.match(deliver, /\| 6b\. Look \|[^\n]*preview_urls: true[^\n]*screenshot[^\n]*Preview URL/);
+  assert.match(deliver, /\| Visual \|/);
+  assert.match(loop, /Look step of `deliver`/);
+});
