@@ -9,7 +9,9 @@ import { all, flag, one, ownersOf, raw, repoOf, runLink, send, specComment, spec
 
 const text = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 const cell = (s) => s.replace(/[|\r\n<>]/g, ' ').slice(0, 120);
-const GATE = /^\.github\/|(^|\/)(?:CODEOWNERS|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig[^/]*\.json|\.[^/]*rc(?:\.[a-z]+)?|[^/]*\.config\.[^/]+)$|(^|\/)(?:scripts?|\.husky)\//;
+const CONFIG = /^\.github\/|(^|\/)(?:CODEOWNERS|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig[^/]*\.json|\.[^/]*rc(?:\.[a-z]+)?|[^/]*\.config\.[^/]+)$|(^|\/)\.husky\//;
+const GATE = new RegExp(`${CONFIG.source}|(^|\\/)scripts?\\/`);
+const production = (f) => !LOCKED.test(f) && !CONFIG.test(f) && !/\.md$/i.test(f);
 
 const LOAD = /Failed to load url|Cannot find module|ERR_MODULE_NOT_FOUND|does not provide an export named/;
 
@@ -56,7 +58,9 @@ function selfTest() {
     ['no review', report({ tests: cases(junit), sha: 'a' }), /Acceptance: fail/],
   ];
   for (const [title, got, want] of list) { assert.equal(got.ok, false, title); assert.match(got.body, want, title); }
-  console.log(`acceptance self-test: ${list.length + 7} checks passed`);
+  for (const f of ['plugins/serio-focus/scripts/lifecycle/route.mjs', 'scripts/site-tools.mjs', 'src/a.mjs']) assert.equal(production(f), true, f);
+  for (const f of ['package.json', '.github/workflows/ci.yml', '.husky/pre-commit', 'tsconfig.json', 'tests/a.test.mjs', '.agents/skills/x/SKILL.md', 'README.md']) assert.equal(production(f), false, f);
+  console.log(`acceptance self-test: ${list.length + 17} checks passed`);
 }
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.xml') ? [path.join(dir, e.name)] : []);
@@ -95,7 +99,7 @@ export function record({ repo, number, dir, tested, lock, note, verifier, run, a
 function revertRuns() {
   const { BASE, UNIT, E2E } = process.env, git = (...a) => spawnSync('git', a, { encoding: 'utf8' });
   const base = git('merge-base', 'HEAD', BASE).stdout.trim();
-  const changed = git('diff', '--name-only', '--no-renames', '--diff-filter=AM', base, 'HEAD').stdout.split('\n').filter((f) => f && !LOCKED.test(f) && !GATE.test(f) && !/\.md$/i.test(f));
+  const changed = git('diff', '--name-only', '--no-renames', '--diff-filter=AM', base, 'HEAD').stdout.split('\n').filter((f) => f && production(f));
   changed.forEach((file, i) => {
     if (git('cat-file', '-e', `${base}:${file}`).status) rmSync(file, { force: true }); else git('checkout', base, '--', file);
     rmSync('junit', { recursive: true, force: true });
