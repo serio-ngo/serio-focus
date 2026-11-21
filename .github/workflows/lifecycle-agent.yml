@@ -47,6 +47,7 @@ jobs:
       issue: ${{ steps.route.outputs.issue }}
       pr: ${{ steps.route.outputs.pr }}
       ref: ${{ steps.route.outputs.ref }}
+      focus: ${{ steps.route.outputs.focus }}
       sha: ${{ steps.route.outputs.sha }}
       spec: ${{ steps.route.outputs.spec }}
       secret: ${{ steps.route.outputs.secret }}
@@ -105,7 +106,7 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Plugin at the pinned ref
         env:
-          REF: ${{ inputs.focus_ref }}
+          REF: ${{ needs.route.outputs.focus || inputs.focus_ref }}
         run: |
           d="$RUNNER_TEMP/serio-focus"; git init -q "$d"
           git -C "$d" fetch -q --depth 1 https://github.com/serio-ngo/serio-focus.git "$REF"
@@ -153,7 +154,7 @@ jobs:
           echo "token=$token" >> "$GITHUB_OUTPUT"
       - id: claude
         continue-on-error: true
-        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed
+        uses: anthropics/claude-code-action@e5812cd75691ca7bbfc57c0ecf4441db3a1ab7dd
         env:
           GH_TOKEN: ${{ github.token }}
           SERIO_UNATTENDED: "1"
