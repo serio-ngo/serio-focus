@@ -916,3 +916,99 @@ it('a repository with pull request previews gets an AI visual check before ready
   assert.match(deliver, /\| Visual \|/);
   assert.match(loop, /Look step of `deliver`/);
 });
+it("route names the improvement branch only from a code owner's newest note on an existing branch", async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { route } = await import(new URL('route.mjs', lifecycle));
+  const { owners } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const ada = { login: 'ada', type: 'User' }, eve = { login: 'eve', type: 'User' }, good = 'improve/audioblog-133';
+  const note = (user, focus) => ({ user, body: `<!-- improve v1 focus=${focus} -->` });
+  const pr = { number: 9, state: 'open', draft: true, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
+  const lock = { user: ada, body: 'tests-ok', commit_id: 'h1', state: 'COMMENTED', submitted_at: '2026-01-02' };
+  const events = [
+    ['issues', { action: 'labeled', label: { name: 'spec-review' }, sender: ada, issue: { number: 7 } }],
+    ['pull_request_review', { action: 'submitted', pull_request: pr, review: { user: ada, body: 'tests-ok', state: 'commented', commit_id: 'h1' } }],
+    ['pull_request_review', { action: 'submitted', pull_request: pr, review: { user: ada, body: 'fix AC1', state: 'changes_requested', commit_id: 'h1' } }],
+    ['workflow_run', { action: 'completed', workflow_run: { id: 5, run_attempt: 1, conclusion: 'failure', head_branch: 'agent/7-sum', head_sha: 'h1', head_repository: { full_name: 'o/r' }, html_url: 'u' } }]];
+  const focus = (comments, branch = (b) => b === good) => events.map(([name, ev]) => {
+    const r = route(name, ev, { repo: 'o/r', guarded: true, failures: () => [], own: owners('* @ada\n'), issue: () => ({ number: 7, title: 'Sum', body: 'AC1', assignees: [ada] }), comments: () => comments, reviews: () => [lock], pulls: () => [pr], openPulls: () => [pr], pull: () => pr, branch });
+    return [r.stage ? 'started' : 'stopped', r.focus || ''];
+  });
+  assert.deepEqual(focus([note(ada, good)]), events.map(() => ['started', good]));
+  const empty = events.map(() => ['started', '']);
+  assert.deepEqual(focus([]), empty, 'no marker');
+  assert.deepEqual(focus([note(eve, good)]), empty, 'non-owner');
+  assert.deepEqual(focus([note(ada, 'improve/Bad_Name')], () => true), empty, 'bad name');
+  assert.deepEqual(focus([note(ada, 'main')], () => true), empty, 'outside improve');
+  assert.deepEqual(focus([note(ada, good)], () => false), empty, 'missing branch');
+  assert.deepEqual(focus([note(ada, good), note(ada, 'improve/gone-1')]), empty, 'newest counts');
+});
+it('the archive records the instruction revision the agent ran', async () => {
+  const { archive, outcome, transcriptFile } = await import(PUBLISH);
+  const head = spawnSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+  assert.equal(outcome(runRows).revision, head);
+  const named = lifecycleIo(), plain = lifecycleIo();
+  await archive({ ...runBase, transcript: transcriptFile(runRows), evaluation: { ...runBase.evaluation, revision: 'abc1234' } }, named.io);
+  await archive({ ...runBase, transcript: transcriptFile(runRows) }, plain.io);
+  assert.deepEqual([decode(named.puts[0]).revision, decode(plain.puts[0]).revision], ['abc1234', head]);
+});
+it('acceptance tells a module that failed to load apart from a failed assertion and still fails', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { cases, report } = await import(new URL('acceptance.mjs', lifecycle));
+  const { comment } = await import(new URL('publish.mjs', lifecycle));
+  const criteria = [1, 2, 3, 4].map((id) => ({ id, text: `Given ${id}, When Add, Then 5`, level: 'unit', test: `case ${id}` }));
+  const review = comment({ verdict: 'ready', criteria, questions: [] }, 'abcdef123456');
+  const xml = `<testsuites><testsuite>
+<testcase name="case 1"><failure message="Failed to load url ../src/x.astro">stack</failure></testcase>
+<testcase name="case 2"><failure message="boom">Cannot find module '../src/y.mjs'</failure></testcase>
+<testcase name="case 3"><error message="ERR_MODULE_NOT_FOUND"/></testcase>
+<testcase name="case 4"><failure message="AssertionError: expected 5">AssertionError: expected 5</failure></testcase>
+</testsuite></testsuites>`;
+  const got = report({ review, tests: cases(xml), sha: 'abcdef123456' });
+  assert.equal(got.ok, false, got.body);
+  assert.match(got.body, /Acceptance: fail/);
+  for (const [n, name, result] of [[1, 'case 1', 'load error'], [2, 'case 2', 'load error'], [3, 'case 3', 'load error'], [4, 'case 4', 'failed']]) assert.ok(got.body.split('\n').includes(`| AC${n} | ${name} | ${result} |`), got.body);
+});
+it('acceptance lists changed production files whose revert leaves every criterion test passing', async () => {
+  const { accept } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/acceptance.mjs', import.meta.url));
+  const { comment } = await import(PUBLISH);
+  const repo = sandbox('revert-'), log = path.join(sandbox('revert-log-'), 'log');
+  const git = (...args) => spawnSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
+  const put = (file, text) => { mkdirSync(path.dirname(path.join(repo, file)), { recursive: true }); writeFileSync(path.join(repo, file), text); };
+  git('init', '-q');
+  for (const file of ['src/a.mjs', 'tests/a.test.mjs', 'README.md', 'package.json']) put(file, 'a1');
+  git('add', '-A'); git('commit', '-qm', 'base');
+  const base = git('rev-parse', 'HEAD').stdout.trim();
+  for (const file of ['src/a.mjs', 'tests/a.test.mjs', 'README.md', 'package.json', 'src/new.mjs']) put(file, 'a2');
+  git('add', '-A'); git('commit', '-qm', 'head');
+  const unit = `printf '%s|%s\\n' "$(cat src/a.mjs)" "$(test -f src/new.mjs && echo new || echo none)" >> "$LOG"; mkdir -p junit; if test -f src/new.mjs; then echo '<testsuites><testsuite><testcase name="sum adds two numbers"/></testsuite></testsuites>' > junit/u.xml; else echo '<testsuites><testsuite><testcase name="sum adds two numbers"><failure/></testcase></testsuite></testsuites>' > junit/u.xml; fi`;
+  spawnSync(process.execPath, [script('lifecycle/acceptance.mjs'), '--revert'], { cwd: repo, encoding: 'utf8', env: { ...process.env, BASE: base, UNIT: unit, E2E: '', LOG: log } });
+  assert.deepEqual(existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).sort() : [], ['a1|new', 'a2|none']);
+  const root = path.join(repo, 'revert'), folders = existsSync(root) ? readdirSync(root) : [];
+  const listed = folders.map((d) => [readFileSync(path.join(root, d, 'file'), 'utf8').trim(), readFileSync(path.join(root, d, 'u.xml'), 'utf8').includes('<failure')]).sort();
+  assert.deepEqual(listed, [['src/a.mjs', false], ['src/new.mjs', true]]);
+  assert.equal(git('diff', '--quiet', 'HEAD').status, 0);
+  assert.ok(existsSync(path.join(repo, 'src', 'new.mjs')));
+  const bot = { login: 'github-actions[bot]', type: 'Bot' }, own = { full_name: 'o/r' };
+  const criteria = [{ id: 1, text: 'Given 2 and 3, When Add, Then 5', level: 'unit', test: 'sum adds two numbers' }];
+  const review = { user: bot, created_at: 't', updated_at: 't', body: comment({ verdict: 'ready', criteria, questions: [] }, 'abcdef123456') };
+  const dir = sandbox('revert-head-');
+  writeFileSync(path.join(dir, 'u.xml'), '<testsuites><testsuite><testcase name="sum adds two numbers"/></testsuite></testsuites>');
+  const pr = { number: 9, additions: 1, deletions: 1, changed_files: 5, head: { sha: 'h'.padEnd(40, '0'), ref: 'agent/7-sum', repo: own }, base: { repo: own } };
+  const files = ['src/a.mjs', 'src/new.mjs', 'tests/a.test.mjs', 'README.md', 'package.json'].map((filename) => ({ filename }));
+  const io = { one: () => pr, all: (url) => url.includes('/files') ? files : [review], raw: () => '', send: () => { } };
+  const got = await accept({ repo: 'o/r', number: 9, dir, tested: '', lock: '', link: '', post: false, revert: root }, io);
+  assert.equal(got.ok, true, got.body);
+  assert.ok(got.body.split('\n').includes('Changes no test needs: `src/a.mjs`'), got.body);
+  assert.ok(!got.body.includes('src/new.mjs'), got.body);
+  assert.ok(got.body.split('\n').includes('| AC1 | sum adds two numbers | passed |'), got.body);
+});
+it('the spec review comment names fewer e2e criteria than the spec labels', async () => {
+  const { comment } = await import(PUBLISH);
+  const spec = (...criteria) => `### Summary\nx\n\n### Acceptance criteria\n${criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}\n\n### Notes\n1. **E2E.** not a criterion`;
+  const three = spec('**E2E.** Given a, When b, Then c', 'Given d, When e, Then f. Level: e2e', '**e2e:** Given g, When h, Then i', 'Given the e2e suite, When j, Then k. Level: unit');
+  const wording = spec('Given the e2e suite, When a, Then b. Level: unit', 'Given an e2e run, When c, Then d. Level: unit');
+  const crit = (level, i) => ({ id: i + 1, text: `Given ${i}, When Add, Then 5`, level, test: `case ${i}` });
+  const body = (levels, s) => comment({ verdict: 'ready', criteria: levels.map(crit), questions: [] }, 'abcdef123456', '', s).split('\n');
+  assert.ok(body(['e2e', 'e2e', 'unit'], three).includes('Levels: the spec names 3 e2e criteria; this review has 2.'));
+  for (const [levels, s] of [[['e2e', 'e2e', 'e2e'], three], [['e2e', 'unit'], spec('Given a, When b, Then c. Level: unit')], [['e2e', 'unit'], wording]]) assert.deepEqual(body(levels, s).filter((l) => l.startsWith('Levels:')), []);
+});

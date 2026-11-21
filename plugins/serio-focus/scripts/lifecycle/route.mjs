@@ -6,6 +6,7 @@ import { check } from './lock.mjs';
 import { comment, note } from './publish.mjs';
 import { all, fixMarkers, issueOf, lockOf, lockReview, one, owners, ownersOf, owns, park, person, send, specComment, specMarker, status, specSha, testsOk } from '../lib/lifecycle.mjs';
 
+const FOCUS = new URL(JSON.parse(readFileSync(new URL('../../.claude-plugin/plugin.json', import.meta.url))).repository).pathname.slice(1);
 const CAPS = { 'spec-review': [40, 10], 'write-tests': [80, 20], deliver: [160, 40], 'pr-loop': [60, 15] };
 
 export function route(name, ev, s) {
@@ -14,7 +15,9 @@ export function route(name, ev, s) {
     const tell = extra.bot ? undefined : extra.pr || issue, login = s.issue(issue).assignees?.[0]?.login;
     if (!s.guarded && !s.private) return stop('the default branch has no ruleset that restricts updates', tell);
     if (!s.own.size) return stop('CODEOWNERS names no person; team owners are not resolved', tell);
-    return login ? { stage, issue, assignee: login, ...extra } : stop('the issue has no assignee', tell);
+    if (!login) return stop('the issue has no assignee', tell);
+    const named = (s.comments?.(issue) || []).filter((c) => owns(c.user, s.own)).map((c) => /^<!-- improve v1 focus=(\S+) -->\s*$/m.exec(c.body)?.[1]).filter(Boolean).pop();
+    return { stage, issue, assignee: login, ...extra, focus: /^improve\/[a-z0-9-]+$/.test(named) && s.branch(named) ? named : '' };
   };
   if (name === 'issues' && ev.action === 'labeled') {
     const n = ev.issue.number;
@@ -30,7 +33,7 @@ export function route(name, ev, s) {
       const earlier = specComment(s.comments(n), s.own), has = /^\| AC\d+ \|/m.test(earlier?.body || '');
       if (!owns(ev.sender, s.own)) return stop(`no ready spec review of the current issue text; ${has ? 'a code owner can accept the reviewed criteria by adding spec-ok' : 'add spec-review first'}`, n);
       const criteria = [...(earlier?.body || '').matchAll(/^\| AC(\d+) \| (.*) \| (unit|e2e) \| `([^`]+)` \|$/gm)].map(([, id, text, level, test]) => ({ id: +id, text: text.replace(/\\\|/g, '|'), level, test }));
-      const accept = comment({ verdict: 'ready', criteria }, specSha(s.issue(n)), `Accepted by ${ev.sender.login} without a ready review; open questions stay on the earlier review.`);
+      const accept = comment({ verdict: 'ready', criteria }, specSha(s.issue(n)), `Accepted by ${ev.sender.login} without a ready review; open questions stay on the earlier review.`, s.issue(n).body);
       return accept ? run('write-tests', n, { bypass: ev.sender.login, accept }) : stop('no reviewed criteria to accept yet: add spec-review first', n);
     }
     return run('write-tests', n);
@@ -166,6 +169,7 @@ function main() {
     comments: (n) => all(`repos/${repo}/issues/${n}/comments?per_page=100`),
     reviews: (n) => all(`repos/${repo}/pulls/${n}/reviews?per_page=100`),
     pull: (n) => one(`repos/${repo}/pulls/${n}`),
+    branch: (name) => { try { one(`repos/${FOCUS}/branches/${name}`); return true; } catch (e) { if (/404/.test(e.stderr)) return false; throw e; } },
     openPulls: () => all(`repos/${repo}/pulls?state=open&per_page=100`),
     pulls: (branch) => all(`repos/${repo}/pulls?state=open&head=${repo.split('/')[0]}:${branch}`),
   };
@@ -178,7 +182,7 @@ function main() {
   }
   if (r.marker) send('POST', `repos/${repo}/issues/${r.pr}/comments`, { body: r.marker });
   const [turns, timeout] = CAPS[r.stage] || [0, 1];
-  const out = { stage: r.stage || '', issue: r.issue || '', pr: r.pr || '', ref: r.ref || '', sha: r.sha || '', spec: r.spec || '', assignee: r.assignee || '', secret: r.assignee ? `CLAUDE_TOKEN_${r.assignee.toUpperCase().replace(/[^A-Z0-9]/g, '_')}` : '', bot: r.bot || '', bypass: r.bypass || '', turns, timeout };
+  const out = { stage: r.stage || '', issue: r.issue || '', pr: r.pr || '', ref: r.ref || '', sha: r.sha || '', spec: r.spec || '', assignee: r.assignee || '', secret: r.assignee ? `CLAUDE_TOKEN_${r.assignee.toUpperCase().replace(/[^A-Z0-9]/g, '_')}` : '', bot: r.bot || '', bypass: r.bypass || '', focus: r.focus || '', turns, timeout };
   appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(out).map(([k, v]) => `${k}=${v}\n`).join(''));
   console.log(r.stage ? `stage ${r.stage} for issue ${r.issue}` : `stop: ${r.stop}`);
 }

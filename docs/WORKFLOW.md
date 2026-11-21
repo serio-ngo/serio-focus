@@ -11,7 +11,7 @@
 | Tester | `tester`, once per test level | Failing tests | Test paths and their failing lines |
 | Coder | `coder`, one task per dispatch, fresh context | Code; never commits | Changed lines, check output, what was not done |
 | Reviewer | `reviewer`, fresh context, once per round on the whole diff | Nothing | Every supported finding with severity and confidence; verdict `ready` or `changes needed` |
-| Person | A code owner | The spec, `spec-ok`, `tests-ok`, the merge; `improve`, run by a code owner in their own session, gives `spec-ok` and `tests-ok` for that owner; the merge stays a person's | — |
+| Person | A code owner | The spec, `spec-ok`, `tests-ok`, the merge; `improve`, started by a code owner, gives `spec-ok` and `tests-ok` for that owner; the merge stays a person's | — |
 
 ## Stages
 
@@ -24,7 +24,7 @@ A stage is one skill. By hand a person runs it in Claude Code; unattended, `life
 | `deliver` | `/serio-focus:deliver task issue #<N> on pull request #<PR>` | A code owner's review starting with `tests-ok` on the head of the draft | Code, green checks, reviewer `ready`, the pull request marked ready |
 | `pr-loop` | `/serio-focus:pr-loop <PR>` | After the lock: a failed CI run on the head that started after the first `tests-ok` (twice at most) or a code owner's change request | One fix round pushed |
 | `gate` | `/serio-focus:gate <PR>` | `lifecycle-gate.yml` on every push | `test lock: pass`; the acceptance report |
-| `improve` | `/serio-focus:improve <N>`, local only | None | Every stage (`spec-review`, `write-tests`, `deliver`, `gate`) run in a fresh agent and judged by a fresh reviewer; an imperfect stage is reverted, its lifecycle cause fixed and the stage run again; `spec-ok` and `tests-ok` given for the code owner who runs it; the merge stays a person's |
+| `improve` | `/serio-focus:improve <N>` | A code owner's command; the task is assigned | Every stage runs on Actions with the instructions of the improvement branch, is audited, and is rerun after a lifecycle fix; `spec-ok` and `tests-ok` given for the code owner who runs it; the merge stays a person's |
 
 `deliver` and `pr-loop` also work on any change that is not a task: plan, red test, build, review, pull request.
 
@@ -35,6 +35,7 @@ Runs share no memory. They hand off through comments on the task, written and re
 | Message | Written by | Where | Read by |
 |---|---|---|---|
 | `<!-- spec-review v1 sha=… verdict=… ac=… -->` with the criteria table: text, level and test of each criterion | `publish.mjs` from the review's result | Issue | `route.mjs` (may tests start), `lock.mjs` (spec freeze), `acceptance.mjs` (criteria), `brief.mjs` |
+| `<!-- improve v1 focus=improve/<repo>-<N> -->` | `improve`, as the code owner | Issue | `route.mjs` (output `focus`: the branch the agent job loads its skills, agents and hooks from) |
 | Status comment `<!-- lifecycle-status v1 -->`: Now, Next and a log of the last 20 lines (route lines drop first) | `publish.mjs` and `route.mjs`, edited in place | One per issue or pull request | `brief.mjs`; the person |
 | Log line `Note (<stage>): …` with `<!-- step-note stage=… run=… [turns=… usd=… denied=…] at=… -->`, one `Note:` of at most 2 sentences and 280 characters | `publish.mjs` after every run; `--note` in a run by hand; `route.mjs` for a bypass | Status log | `brief.mjs`; the person |
 | Log line `Note (route): Not started: <reason>` | `route.mjs`, when a person's trigger cannot start | Status log | The person |
@@ -73,7 +74,7 @@ Runs share no memory. They hand off through comments on the task, written and re
 | Runs per repository | 1, the rest queue | `concurrency` of the caller workflow |
 | Turns and minutes per stage | `spec-review` 40, 10 · `write-tests` 80, 20 · `deliver` 160, 40 · `pr-loop` 60, 15 | `route.mjs` `CAPS` |
 | Fix runs per pull request | 2 red CI runs, then `needs-human` | `route.mjs` |
-| Agents at once; agents starting agents | 4; none, except locally in `improve`: the stage agent starts role agents (spawn depth 2), they start none; cloud runs keep none | `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` in `lifecycle-agent.yml`; in your own settings for sessions by hand |
+| Agents at once; agents starting agents | 4; none | `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` in `lifecycle-agent.yml`; in your own settings for sessions by hand |
 | Model and effort of an agent | Named on every dispatch | The guard |
 | Edits by the main session of an unattended write stage | None | The guard, `SERIO_ORCHESTRATE=1` |
 
@@ -84,6 +85,6 @@ Runs share no memory. They hand off through comments on the task, written and re
 | Only a person merges | The model session of an unattended run holds a read-only token and no App key. `push.mjs`, in the publish job, pushes its commits to `agent/<N>-…` only, never forced, and opens the pull request. A public repository also needs a ruleset that restricts updates of the default branch: `route.mjs` starts nothing without one |
 | No test before `spec-ok`, no code before `tests-ok` | `route.mjs` |
 | Tests, skills and the spec do not change after their gate | `lock.mjs`, in a job that never runs pull request code |
-| Only people start a stage; only code owners lock or request changes; except `improve` run by a code owner in their own session, which gives `spec-ok` and `tests-ok` for that owner, and the merge stays a person's | `route.mjs`: actor type `User`, `CODEOWNERS` |
+| Only people start a stage; only code owners lock or request changes; except `improve` started by a code owner, which gives `spec-ok` and `tests-ok` for that owner, and the merge stays a person's | `route.mjs`: actor type `User`, `CODEOWNERS` |
 | Text from GitHub is data | `brief.mjs` drops untrusted authors and hidden comments; skills say so |
 | The seat that pays is the assignee's | `route.mjs`: secret `CLAUDE_TOKEN_<LOGIN>` |
