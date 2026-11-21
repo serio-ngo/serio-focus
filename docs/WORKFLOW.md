@@ -43,6 +43,7 @@ Runs share no memory. They hand off through comments on the task, written and re
 | `<!-- acceptance v1 sha=… -->`: one row per criterion, size, changed gate files | `acceptance.mjs`, replaced on every push | Pull request | `brief.mjs`; the person |
 | A review starting with `tests-ok` | A code owner | Pull request | `lock.mjs`, `route.mjs`, `brief.mjs` |
 | The commits of a run as a bundle, the branch name and `.lifecycle/pr.md` | The agent job, after the model session ends | Run artifact `commits`, kept 1 day | `push.mjs` |
+| One folder per changed production file: its path and the JUnit results of the tests run with that file reverted | The gate's test job, on a ready pull request (`acceptance.mjs --revert`) | Run artifact `revert` | `acceptance.mjs`: "Changes no test needs" |
 | The whole transcript and a trace of calls, errors and denials | The Trace step | Job log and summary | Whoever debugs a run |
 | One allowlisted record per run (`trace`, `eval`, `result`, `gate`, `revision`, `plugin`, `model`, `effort`, `dropped`); a field gitleaks flags is dropped; assets of `raw-*` releases older than 90 days are deleted | `publish.mjs archive`, gitleaks 8.30.1 | `serio-ngo/lifecycle-runs` `runs/<repo>/<date>/<run>-<attempt>-<stage>.json` | Whoever debugs a run |
 
