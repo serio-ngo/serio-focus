@@ -22,18 +22,21 @@ export const why = (reason) => (clean(reason, 300) ? ` The agent said: ${tidy(re
 export const note = (text, stage, run, stats = '', at = new Date().toISOString().slice(0, 19) + 'Z') => { const t = redact(String(text || `The ${stage} run ended without a note.`)).slice(0, 280); return clean(t, 280) ? `Note (${stage}): ${tidy(t)}\n\n<!-- step-note stage=${stage} run=${run}${/^turns=\d+ usd=\d+(\.\d+)? denied=\d+$/.test(stats) ? ` ${stats}` : ''} at=${at} -->` : null; };
 const say = (text, target, stage = process.env.STAGE, io, repo) => { const body = note(text, stage, process.env.GITHUB_RUN_ID || 'local', process.env.STATS); if (body) try { status(repo || flag('--repo') || repoOf(), target, { now: body.split('\n')[0], line: body }, io); } catch { } };
 
-export function comment(out, sha, extra = '') {
+export function comment(out, sha, extra = '', spec = '') {
   if (!out || !['ready', 'questions'].includes(out.verdict)) return null;
   const criteria = out.criteria || [], questions = out.questions || [];
   if (!Array.isArray(criteria) || !Array.isArray(questions) || criteria.length > 5 || questions.length > 5) return null;
   if (!criteria.every((c, i) => c?.id === i + 1 && text(c.text) && ['unit', 'e2e'].includes(c.level) && text(c.test) && name(c.test))) return null;
   if (!questions.every((q) => text(q?.question) && text(q.recommended)) || (extra && !text(extra))) return null;
   if (out.verdict === 'ready' ? !criteria.length || questions.length : !questions.length) return null;
+  const e2e = criteria.filter((c) => c.level === 'e2e').length;
+  const named = (/### Acceptance criteria\n([\s\S]*?)(?=\n###|$)/i.exec((spec || '').replace(/\r\n/g, '\n'))?.[1] || '').split('\n').filter((l) => /^\d+\.\s/.test(l) && (/^\d+\.\s+\*\*[^*]*e2e/i.test(l) || /Level: e2e/i.test(l))).length;
   return [
     `**Spec review: ${out.verdict}**`, '',
     ...(criteria.length ? ['| Criterion | Given, When, Then | Level | Test |', '|---|---|---|---|', ...criteria.map((c) => `| AC${c.id} | ${line(fit(c.text, MAX.text))} | ${c.level} | \`${name(c.test)}\` |`), ''] : []),
     ...questions.map((q, i) => `${i + 1}. ${line(fit(q.question, MAX.question))} Recommended: ${line(fit(q.recommended, MAX.recommended))}`), ...(questions.length ? [''] : []),
     ...(extra ? [line(extra), ''] : []),
+    ...(e2e < named ? [`Levels: the spec names ${named} e2e criteria; this review has ${e2e}.`, ''] : []),
     extra ? 'Next: the tests run starts on these criteria.' : out.verdict === 'ready' ? 'Next: add the label `spec-ok`.' : 'Next: edit the issue, then add the label `spec-review` again.', '',
     `<!-- spec-review v1 sha=${sha} verdict=${out.verdict} ac=${criteria.map((c) => c.id).join(',')} -->`,
   ].join('\n');
@@ -58,7 +61,7 @@ export function archive({ repo, run, attempt, stage, at, transcript, evaluation 
   const day = new Date(at).toISOString(), file = `runs/${repo}/${day.slice(0, 10)}/${run}-${attempt}-${stage}.json`, api = `repos/${to}/contents/${file}`, rel = `repos/${to}/releases`;
   const rows = transcript ? transcript.split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [], init = rows.find((x) => x.type === 'system' && x.subtype === 'init');
   const count = (l) => l.reduce((o, x) => ({ ...o, [x.tool]: (o[x.tool] || 0) + 1 }), {}), t = transcript ? withDir((dir) => (writeFileSync(join(dir, 't.jsonl'), transcript), traced(join(dir, 't.jsonl')))) : null;
-  const record = { trace: t && { ...t, errors: count(t.errors), denied: count(t.denied), repeats: count(t.repeats) }, eval: evaluation, result: rows.findLast((x) => x.type === 'result')?.structured_output ?? null, gate, revision: rev, plugin, model: null, effort: init?.effort ?? null, dropped: [] };
+  const record = { trace: t && { ...t, errors: count(t.errors), denied: count(t.denied), repeats: count(t.repeats) }, eval: evaluation, result: rows.findLast((x) => x.type === 'result')?.structured_output ?? null, gate, revision: evaluation?.revision || rev, plugin, model: null, effort: init?.effort ?? null, dropped: [] };
   record.model = init?.model ?? record.trace?.models?.[0] ?? null;
   try {
     let hits;
@@ -86,7 +89,7 @@ export function outcome(rows) {
   const found = typeof sn === 'string' && sn.trim() ? sn : String(r.result || '').split('\n').map((l) => /^[*_`>\s]*Note:[*_`]*\s+(.+)$/.exec(l)?.[1]).filter(Boolean).at(-1) || '';
   const model = rows.find((x) => x.type === 'system' && x.subtype === 'init')?.model || '';
   const termination = [r.subtype || 'none', r.is_error && 'error', r.terminal_reason].filter(Boolean).join('/');
-  return { model, reason: String(r.result || '').replace(/\s+/g, ' ').trim().slice(0, 300), turns: r.num_turns || 0, usd: +Number(r.total_cost_usd || 0).toFixed(2), duration_ms: r.duration_ms || 0, termination, note: found.replace(/\s+/g, ' ').trim().slice(0, 300), stats: `turns=${r.num_turns || 0} usd=${+Number(r.total_cost_usd || 0).toFixed(2)} denied=${r.permission_denials?.length || 0}` };
+  return { model, revision: revision(), reason: String(r.result || '').replace(/\s+/g, ' ').trim().slice(0, 300), turns: r.num_turns || 0, usd: +Number(r.total_cost_usd || 0).toFixed(2), duration_ms: r.duration_ms || 0, termination, note: found.replace(/\s+/g, ' ').trim().slice(0, 300), stats: `turns=${r.num_turns || 0} usd=${+Number(r.total_cost_usd || 0).toFixed(2)} denied=${r.permission_denials?.length || 0}` };
 }
 
 function selfTest() {
@@ -210,7 +213,7 @@ function main() {
   if (process.argv.includes('--pushed')) return pushed({ repo, number, stage: process.env.STAGE, before: process.env.BEFORE_SHA, note: ev.note, reason: ev.reason });
   let out = null;
   try { out = scrub(ev.structured ?? JSON.parse(file ? readFileSync(file, 'utf8') : process.env.STRUCTURED_OUTPUT)); } catch { }
-  const body = comment(out, process.env.SPEC_SHA || specSha(one(`repos/${repo}/issues/${number}`)));
+  const issue = one(`repos/${repo}/issues/${number}`), body = comment(out, process.env.SPEC_SHA || specSha(issue), '', issue.body || '');
   if (!body) { park(repo, number, `the spec review returned no valid result: ${runLink()}`); process.exit(1); }
   send('POST', `repos/${repo}/issues/${number}/comments`, { body });
   say(ev.note || out.note, number, 'spec-review');

@@ -4,7 +4,7 @@ import { appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { all, flag, lockOf, one, owners, ownersOf, raw, repoOf, specMarker, specSha, taskOf } from '../lib/lifecycle.mjs';
 
-const LOCKED = /^\.(claude|agents)\/skills\/|(^|\/)(tests?|__tests__|e2e)\/|[._-](test|spec)\.[^/]+$|(^|\/)test-[^/]+$|(^|\/)(playwright|vitest|jest)\.config\.[^/]+$/;
+export const LOCKED = /^\.(claude|agents)\/skills\/|(^|\/)(tests?|__tests__|e2e)\/|[._-](test|spec)\.[^/]+$|(^|\/)test-[^/]+$|(^|\/)(playwright|vitest|jest)\.config\.[^/]+$/;
 
 export function check({ pr, issue, comments, reviews, own, changed }) {
   const fail = (note) => ({ ok: false, locked: false, note });

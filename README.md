@@ -36,7 +36,7 @@ Scripts route, lock, report and publish; models only write. Every run leaves a n
 |---|---|
 | Any change, by hand | `/serio-focus:deliver <goal>`, then `/serio-focus:pr-loop <PR>` |
 | One stage of a task, by hand | `/serio-focus:spec-review <issue>` · `/serio-focus:write-tests <issue>` · `/serio-focus:deliver task issue #<N> on pull request #<PR>` · `/serio-focus:gate <PR>` |
-| One task through every stage, locally, as a code owner | `/serio-focus:improve <issue>` |
+| One task through every stage on Actions with an improvement branch, as a code owner | `/serio-focus:improve <issue>` |
 | Unattended, in GitHub Actions | Start from [lifecycle-sandbox](https://github.com/serio-ngo/lifecycle-sandbox): its two workflows call `lifecycle-agent.yml` and `lifecycle-gate.yml` of this repository |
 
 Agents: `architect` plans and edits nothing, `tester` writes one failing test per behaviour, `coder` builds one task per dispatch, `reviewer` reviews the diff in a fresh context. The main session orchestrates on the model you chose and names a cheaper model for every agent.
