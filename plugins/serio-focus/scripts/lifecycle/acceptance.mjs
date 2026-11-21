@@ -1,22 +1,26 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LOCKED } from './lock.mjs';
 import { all, flag, one, ownersOf, raw, repoOf, runLink, send, specComment, specOf, taskOf } from '../lib/lifecycle.mjs';
 
 const text = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 const cell = (s) => s.replace(/[|\r\n<>]/g, ' ').slice(0, 120);
 const GATE = /^\.github\/|(^|\/)(?:CODEOWNERS|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig[^/]*\.json|\.[^/]*rc(?:\.[a-z]+)?|[^/]*\.config\.[^/]+)$|(^|\/)(?:scripts?|\.husky)\//;
 
+const LOAD = /Failed to load url|Cannot find module|ERR_MODULE_NOT_FOUND|does not provide an export named/;
+
 export const cases = (xml) => [...xml.matchAll(/<testcase\b((?:[^>"]|"[^"]*")*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g)].map(([, attrs, inner = '']) => ({
   name: text(/\bname="([^"]*)"/.exec(attrs)?.[1] || ''),
-  result: /<(failure|error)\b/.test(inner) ? 'failed' : /<skipped\b/.test(inner) ? 'skipped' : 'passed',
+  result: /<(failure|error)\b/.test(inner) ? LOAD.test(inner) ? 'load error' : 'failed' : /<skipped\b/.test(inner) ? 'skipped' : 'passed',
 }));
 
 const mapping = (body) => new Map([...String(body || '').matchAll(/^\| AC(\d+) \| .* \| (?:unit|e2e) \| `([^`]+)` \|$/gm)].map(([, n, test]) => [Number(n), test]));
 
-export function report({ review = '', tests, sha, lock = '', link = '', files = [], size = '' }) {
+export function report({ review = '', tests, sha, lock = '', link = '', files = [], size = '', free = [] }) {
   const ac = specOf(review)?.ac || [], map = mapping(review);
   const rows = ac.map((n) => {
     const name = map.get(n), mine = name ? tests.filter((t) => t.name === name) : [];
@@ -29,6 +33,7 @@ export function report({ review = '', tests, sha, lock = '', link = '', files = 
     '| Criterion | Test | Result |', '|---|---|---|',
     ...rows.map((r) => `| AC${r.n} | ${r.name} | ${r.result} |`),
     ...(size || files.length ? ['', `Changed: ${size} · gate files: ${files.filter((f) => GATE.test(f)).map((f) => `\`${cell(f)}\``).join(', ') || 'none'}`] : []),
+    ...(free.length ? ['', `Changes no test needs: ${free.map((f) => `\`${cell(f)}\``).join(', ')}`] : []),
     ...(link ? ['', `Run and e2e traces: ${link}`] : []), '', `<!-- acceptance v1 sha=${sha} -->`,
   ].join('\n');
   return { ok, body };
@@ -56,7 +61,7 @@ function selfTest() {
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.xml') ? [path.join(dir, e.name)] : []);
 
-export function accept({ repo, number, dir, tested, lock, link, post }, io = { one, all, send, raw }) {
+export function accept({ repo, number, dir, tested, lock, link, post, revert }, io = { one, all, send, raw }) {
   const pr = io.one(`repos/${repo}/pulls/${number}`), n = taskOf(pr);
   if (!n) return { ok: true, body: 'acceptance: not a lifecycle pull request' };
   if (tested && tested !== pr.head.sha) return { ok: true, body: 'acceptance: a newer head exists; the run for it writes the report' };
@@ -65,7 +70,9 @@ export function accept({ repo, number, dir, tested, lock, link, post }, io = { o
   let xml = [];
   try { xml = walk(dir); } catch { }
   const files = io.all(`repos/${repo}/pulls/${number}/files?per_page=100`).map((f) => f.filename), size = `+${pr.additions} −${pr.deletions} in ${pr.changed_files} files`;
-  const got = report({ review, tests: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: pr.head.sha, lock, link, files, size });
+  const read = (d) => walk(d).flatMap((file) => cases(readFileSync(file, 'utf8')));
+  const free = !revert || !existsSync(revert) ? [] : readdirSync(revert).sort().filter((d) => report({ review, tests: read(path.join(revert, d)), sha: pr.head.sha }).ok).map((d) => readFileSync(path.join(revert, d, 'file'), 'utf8').trim());
+  const got = report({ review, tests: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: pr.head.sha, lock, link, files, size, free });
   if (post) {
     const old = io.all(`repos/${repo}/issues/${number}/comments?per_page=100`).find((c) => c.user?.login === 'github-actions[bot]' && /<!-- acceptance v1 /.test(c.body || ''));
     if (old) io.send('PATCH', `repos/${repo}/issues/comments/${old.id}`, { body: got.body });
@@ -85,13 +92,30 @@ export function record({ repo, number, dir, tested, lock, note, verifier, run, a
   };
 }
 
+function revertRuns() {
+  const { BASE, UNIT, E2E } = process.env, git = (...a) => spawnSync('git', a, { encoding: 'utf8' });
+  const base = git('merge-base', 'HEAD', BASE).stdout.trim();
+  const changed = git('diff', '--name-only', '--no-renames', '--diff-filter=AM', base, 'HEAD').stdout.split('\n').filter((f) => f && !LOCKED.test(f) && !GATE.test(f) && !/\.md$/i.test(f));
+  changed.forEach((file, i) => {
+    if (git('cat-file', '-e', `${base}:${file}`).status) rmSync(file, { force: true }); else git('checkout', base, '--', file);
+    rmSync('junit', { recursive: true, force: true });
+    for (const cmd of [UNIT, E2E]) if (cmd) spawnSync('bash', ['-c', cmd], { stdio: 'inherit' });
+    const out = path.join('revert', String(i));
+    mkdirSync(out, { recursive: true });
+    if (existsSync('junit')) for (const x of readdirSync('junit').filter((n) => n.endsWith('.xml'))) renameSync(path.join('junit', x), path.join(out, x));
+    writeFileSync(path.join(out, 'file'), file);
+    git('checkout', 'HEAD', '--', file);
+  });
+}
+
 function main() {
+  if (process.argv.includes('--revert')) return revertRuns();
   const [number, dir] = process.argv.slice(2), repo = flag('--repo') || repoOf(), file = flag('--record');
   if (file) {
     const { env } = process;
     return writeFileSync(file, JSON.stringify(record({ repo, number, dir, tested: env.TESTED_SHA || '', lock: env.LOCK, note: env.LOCK_NOTE, verifier: env.VERIFIER, run: env.GITHUB_RUN_ID, attempt: Number(env.GITHUB_RUN_ATTEMPT), jobs: { tests: env.TESTS } }, { one, all, raw })));
   }
-  const { ok, body } = accept({ repo, number, dir, tested: process.env.TESTED_SHA || '', lock: process.env.LOCK_NOTE, link: process.env.GITHUB_RUN_ID ? runLink() : '', post: process.argv.includes('--post') });
+  const { ok, body } = accept({ repo, number, dir, tested: process.env.TESTED_SHA || '', lock: process.env.LOCK_NOTE, link: process.env.GITHUB_RUN_ID ? runLink() : '', post: process.argv.includes('--post'), revert: process.env.REVERT });
   console.log(body);
   process.exit(ok ? 0 : 1);
 }
