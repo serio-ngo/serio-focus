@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LOCKED } from './lock.mjs';
@@ -60,7 +61,15 @@ function selfTest() {
   for (const [title, got, want] of list) { assert.equal(got.ok, false, title); assert.match(got.body, want, title); }
   for (const f of ['plugins/serio-focus/scripts/lifecycle/route.mjs', 'scripts/site-tools.mjs', 'src/a.mjs']) assert.equal(production(f), true, f);
   for (const f of ['package.json', '.github/workflows/ci.yml', '.husky/pre-commit', 'tsconfig.json', 'tests/a.test.mjs', '.agents/skills/x/SKILL.md', 'README.md']) assert.equal(production(f), false, f);
-  console.log(`acceptance self-test: ${list.length + 17} checks passed`);
+  const repo = mkdtempSync(path.join(tmpdir(), 'rev-')), git = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: repo, encoding: 'utf8' });
+  git('init'); mkdirSync(path.join(repo, 'src')); writeFileSync(path.join(repo, 'src/a.mjs'), '1');
+  git('add', '.'); git('commit', '-m', 'b'); const BASE = git('rev-parse', 'HEAD').stdout.trim();
+  writeFileSync(path.join(repo, 'src/a.mjs'), '2'); git('commit', '-am', 'h');
+  const UNIT = `node -e "require('fs').writeFileSync('junit/unit.xml','<testsuites/>')"`;
+  spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--revert'], { cwd: repo, env: { ...process.env, BASE, UNIT, E2E: '' } });
+  assert.equal(existsSync(path.join(repo, 'revert/0/unit.xml')), true, 'rerun recreates junit');
+  rmSync(repo, { recursive: true, force: true });
+  console.log(`acceptance self-test: ${list.length + 18} checks passed`);
 }
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.xml') ? [path.join(dir, e.name)] : []);
@@ -103,10 +112,11 @@ function revertRuns() {
   changed.forEach((file, i) => {
     if (git('cat-file', '-e', `${base}:${file}`).status) rmSync(file, { force: true }); else git('checkout', base, '--', file);
     rmSync('junit', { recursive: true, force: true });
+    mkdirSync('junit');
     for (const cmd of [UNIT, E2E]) if (cmd) spawnSync('bash', ['-c', cmd], { stdio: 'inherit' });
     const out = path.join('revert', String(i));
     mkdirSync(out, { recursive: true });
-    if (existsSync('junit')) for (const x of readdirSync('junit').filter((n) => n.endsWith('.xml'))) renameSync(path.join('junit', x), path.join(out, x));
+    for (const x of readdirSync('junit').filter((n) => n.endsWith('.xml'))) renameSync(path.join('junit', x), path.join(out, x));
     writeFileSync(path.join(out, 'file'), file);
     git('checkout', 'HEAD', '--', file);
   });
