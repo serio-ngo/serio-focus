@@ -1054,6 +1054,16 @@ it('the card gives each local leftover one action', () => {
   once('wt-dir', 'remove when no session uses it'); once('wip-stash', 'apply to its branch or drop');
   assert.equal(lines.filter((line) => line.includes('in-worktree')).length, 0, run.stdout);
 });
+it('the card never calls a branch merged when the default branch is unknown', () => {
+  const repo = backlogRepo(); git(repo, 'branch', '-m', 'master');
+  git(repo, 'checkout', '-b', 'topic'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
+  const run = runCard(repo, fakeGh('out', empty));
+  assert(!run.stdout.includes('delete: merged'), run.stdout);
+});
+it('the card lists a clean current branch with an unpushed commit', () => {
+  const repo = backlogRepo(); git(repo, 'checkout', '-b', 'mine'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
+  assert(runCard(repo, fakeGh('out', empty)).stdout.includes('- mine: push and open a pull request'));
+});
 it('the card gives each open pull request one action', () => {
   const pr = (title, over) => ({ title, isDraft: false, reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] }, reviewThreads: { nodes: [{ isResolved: true }] }, ...over });
   const nodes = [pr('Red check', { commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] } }), pr('Draft work', { isDraft: true }),

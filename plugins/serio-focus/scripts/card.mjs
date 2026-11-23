@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { version } from './lib/runtime.mjs';
 
@@ -19,19 +20,25 @@ const action = (p) => {
   return p.isDraft ? 'finish or close' : ['FAILURE', 'ERROR'].includes(rollup) || p.reviewDecision === 'CHANGES_REQUESTED' || p.reviewThreads.nodes.some((t) => !t.isResolved) ? 'pr-loop' : "waits for a person's merge";
 };
 
-const local = (cwd, env) => {
+const local = (cwd, env, heads) => {
   const g = (...args) => { const run = spawnSync('git', args, { cwd, env, encoding: 'utf8', timeout: 3000 }); return run.status === 0 ? run.stdout.trim() : null; };
   const lines = (...args) => (g(...args) ?? '').split('\n').filter(Boolean);
-  const main = (g('symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD') ?? '').replace(/^origin\//, '') || 'main';
-  const current = g('branch', '--show-current'), dirty = Boolean(g('status', '--porcelain'));
-  const trees = lines('worktree', 'list', '--porcelain'), used = new Set(trees.filter((l) => l.startsWith('branch ')).map((l) => l.slice(18)));
-  const branches = lines('for-each-ref', '--sort=committerdate', '--format=%(refname:short)|%(upstream:short)|%(upstream:track)', 'refs/heads').map((l) => l.split('|')).filter(([b]) => b !== main && !used.has(b)).map(([b, up, track]) => {
-    const files = lines('diff', '--name-only', `${main}...${b}`);
-    if (!files.length || g('diff', '--quiet', main, b, '--', ...files) !== null) return `- ${b}: delete: merged`;
-    return up && !/gone|ahead/.test(track) ? '' : `- ${b}: push and open a pull request`;
-  }).filter(Boolean);
-  return [...(dirty && current ? [`- ${current}: commit and push to ${current}`] : []), ...cap(branches.filter((l) => !l.startsWith(`- ${current}:`))),
-    ...cap(trees.filter((l) => l.startsWith('worktree ')).slice(1).map((l) => `- ${l.slice(9)}: remove when no session uses it`)),
+  const main = (g('symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD') ?? '').replace(/^origin\//, '') || ['main', 'master'].find((x) => g('rev-parse', '--verify', '--quiet', `refs/heads/${x}`) !== null);
+  const current = g('branch', '--show-current'), dirty = Boolean(g('status', '--porcelain')), top = path.resolve(g('rev-parse', '--show-toplevel') ?? cwd);
+  const others = (g('worktree', 'list', '--porcelain') ?? '').split('\n\n').filter(Boolean).map((b) => ({ dir: /^worktree (.*)/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.*)/m.exec(b)?.[1] }));
+  const used = new Set(others.filter((w) => path.resolve(w.dir) !== top).map((w) => w.branch));
+  const todo = !main ? [] : lines('for-each-ref', '--sort=committerdate', '--format=%(refname:short)|%(upstream:short)|%(upstream:track)', 'refs/heads').map((l) => l.split('|')).filter(([b]) => b !== main && !used.has(b) && !(dirty && b === current));
+  const branches = [];
+  let seen = 0;
+  for (; seen < todo.length && branches.length < 10; seen++) {
+    const [b, up, track] = todo[seen], files = g('diff', '--name-only', `${main}...${b}`);
+    if (files === null) continue;
+    if (!files || g('diff', '--quiet', main, b, '--', ...files.split('\n')) !== null) branches.push(`- ${b}: delete: merged`);
+    else if (!up || /gone|ahead/.test(track) || (heads && !heads.has(b))) branches.push(`- ${b}: push and open a pull request`);
+  }
+  if (seen < todo.length) branches.push(`- and ${todo.length - seen} more branches to check`);
+  return [...(dirty && current ? [`- ${current}: commit and push to ${current}`] : []), ...branches,
+    ...cap(others.slice(1).filter((w) => path.resolve(w.dir) !== top).map((w) => `- ${w.dir}: remove when no session uses it`)),
     ...cap(lines('stash', 'list', '--format=%gs').reverse().map((m) => `- ${m}: apply to its branch or drop`))];
 };
 
@@ -43,6 +50,7 @@ const remote = (cwd, env) => {
   const queue = /^([^/]+)\/([^/]+)$/.exec(env.SERIO_QUEUE ?? '');
   const at = (o, n) => `repository(owner: ${JSON.stringify(o)}, name: ${JSON.stringify(n)})`;
   const query = `{ ${at(owner, name)} {
+    heads: pullRequests(states: OPEN, first: 100) { nodes { headRefName } }
     pullRequests(${ORDER}) { totalCount nodes { title isDraft reviewDecision commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviewThreads(first: 100) { nodes { isResolved } } } }
     ${ISSUES.replace('$LABEL', '')} }${queue ? ` queue: ${at(queue[1], queue[2])} { ${ISSUES.replace('$LABEL', `, labels: [${JSON.stringify(`app:${name}`)}]`)} }` : ''} }`;
   const run = spawnSync('gh', ['api', 'graphql', '-f', `query=${query}`], { cwd, env, encoding: 'utf8', timeout: 3000 });
@@ -51,7 +59,7 @@ const remote = (cwd, env) => {
   try {
     const { repository: r, queue: q } = JSON.parse(run.stdout).data;
     const list = (title, nodes, total, line) => [...nodes.map((n) => `- ${title(n)}: ${line(n)}`), ...more(nodes, total)];
-    return { lines: [...list((p) => `pull request "${p.title}"`, r.pullRequests.nodes, r.pullRequests.totalCount, action), ...list((i) => `issue "${i.title}"`, r.issues.nodes, r.issues.totalCount, state),
+    return { heads: r.heads && new Set(r.heads.nodes.map((n) => n.headRefName)), lines: [...list((p) => `pull request "${p.title}"`, r.pullRequests.nodes, r.pullRequests.totalCount, action), ...list((i) => `issue "${i.title}"`, r.issues.nodes, r.issues.totalCount, state),
       ...(q ? list((i) => `${queue[0]} issue "${i.title}"`, q.issues.nodes, q.issues.totalCount, state) : [])] };
   } catch (error) {
     return { why: error.message };
@@ -60,7 +68,7 @@ const remote = (cwd, env) => {
 
 export const backlog = (cwd = process.cwd(), env = process.env) => {
   if (spawnSync('git', ['rev-parse', '--git-dir'], { cwd, env, timeout: 3000 }).status !== 0) return '';
-  const { lines = [], why } = remote(cwd, env), items = [...local(cwd, env), ...lines];
+  const { lines = [], why, heads } = remote(cwd, env), items = [...local(cwd, env, heads), ...lines];
   return items.length || why ? ['Backlog:', ...items, ...(why ? [`Remote backlog unknown: ${why}`] : []), RULE].join('\n') : 'Backlog: clear';
 };
 
