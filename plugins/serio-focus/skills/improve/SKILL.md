@@ -26,4 +26,4 @@ Improve issue $ARGUMENTS. Agents, models and efforts are as in `deliver`. The is
 | `deliver` and gate | Acceptance `pass` at the head; `test lock: pass` with no locked path changed since the first `tests-ok`; the `Changes no test needs` line | Each listed file: required by the spec → a `write-tests` or `spec-review` defect; not required → removed; a text or refactor change → named in the card |
 
 - The code owner who types the command consents to `spec-ok` and `tests-ok` for the criteria the owner's spec holds, and to nothing else.
-- The merge stays a person's. Never force-push.
+- After the start the agent runs every step itself and asks the code owner nothing: no command, gate, confirmation or go-ahead. The merge stays a person's and is the owner's only touch. Never force-push.
