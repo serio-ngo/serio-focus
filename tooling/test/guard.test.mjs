@@ -1060,6 +1060,10 @@ it('the card checks the current branch first and never tells it to delete itself
   writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
   assert(runCard(repo).stdout.includes('- fresh: push and open a pull request'));
 });
+it('the card lists a branch with unrelated history', () => {
+  const repo = backlogRepo(); git(repo, 'checkout', '--orphan', 'lone'); git(repo, 'commit', '-m', 'lone'); git(repo, 'checkout', 'main');
+  assert(runCard(repo).stdout.includes('- lone: push and open a pull request unless one is open'));
+});
 it('the card lists uncommitted work on a detached HEAD', () => {
   const repo = backlogRepo(); git(repo, 'checkout', '--detach'); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
   assert(runCard(repo).stdout.includes('- HEAD: commit to a new branch and open a pull request'));

@@ -22,8 +22,7 @@ export const backlog = (cwd = process.cwd()) => {
   let seen = main ? 0 : todo.length;
   for (; seen < todo.length && branches.length < 10 && Date.now() < end; seen++) {
     const [b, up, track] = todo[seen], files = g('diff', '--name-only', `${main}...${b}`);
-    if (files === null) continue;
-    if (!files || g('diff', '--quiet', main, b, '--', ...files.split('\n')) !== null) { if (b !== current) branches.push(`- ${b}: delete: merged`); }
+    if (files !== null && (!files || g('diff', '--quiet', main, b, '--', ...files.split('\n')) !== null)) { if (b !== current) branches.push(`- ${b}: delete: merged`); }
     else branches.push(`- ${b}: ${!up || /gone|ahead/.test(track) ? 'push and ' : ''}open a pull request unless one is open`);
   }
   if (seen < todo.length) branches.push(`- and ${todo.length - seen} more branches to check`);
