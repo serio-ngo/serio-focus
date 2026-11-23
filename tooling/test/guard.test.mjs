@@ -1017,33 +1017,14 @@ const git = (cwd, ...args) => { const run = spawnSync('git', args, { cwd, encodi
 const backlogRepo = () => {
   const dir = path.join(sandbox('backlog-'), 'repo'); mkdirSync(dir);
   git(dir, 'init', '-b', 'main'); git(dir, 'config', 'user.name', 't'); git(dir, 'config', 'user.email', 't@t');
-  git(dir, 'remote', 'add', 'origin', 'https://github.com/o/r.git');
+  git(dir, 'remote', 'add', 'origin', 'https://example.com/o/r.git');
   writeFileSync(path.join(dir, 'a.txt'), 'a\n'); git(dir, 'add', '.'); git(dir, 'commit', '-m', 'a');
   return dir;
 };
-const fakeGh = (mode, data = {}) => {
-  const root = sandbox('gh-'), bin = path.join(root, 'bin'), preload = path.join(root, 'gh.cjs'), file = path.join(root, 'out.json');
-  mkdirSync(bin); writeFileSync(file, JSON.stringify({ data }));
-  copyFileSync(process.execPath, path.join(bin, process.platform === 'win32' ? 'gh.exe' : 'gh'));
-  writeFileSync(preload, `if (/^gh(?:\\.exe)?$/i.test(require('node:path').basename(process.execPath))) { const fs = require('node:fs'); const mode = process.env.GH_MODE;
-    if (mode === 'out') fs.writeSync(1, fs.readFileSync(${JSON.stringify(file)}));
-    if (mode === 'auth') fs.writeSync(2, 'To get started with GitHub CLI, please run: gh auth login\\n');
-    if (mode === 'slow') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
-    process.exit(mode === 'auth' ? 1 : 0); }`);
-  return { ...process.env, GH_MODE: mode, PATH: `${bin}${path.delimiter}${process.env.PATH}`, NODE_OPTIONS: `--require="${preload.replaceAll('\\', '/')}"` };
-};
-const noGh = () => {
-  const root = sandbox('nogh-'), bin = path.join(root, 'bin'), preload = path.join(root, 'git.cjs'), exe = process.platform === 'win32' ? 'git.exe' : 'git';
-  const real = process.env.PATH.split(path.delimiter).map((dir) => path.join(dir, exe)).find((file) => existsSync(file));
-  mkdirSync(bin); copyFileSync(process.execPath, path.join(bin, exe));
-  writeFileSync(preload, `if (/^git(?:\\.exe)?$/i.test(require('node:path').basename(process.execPath))) { const run = require('node:child_process').spawnSync(${JSON.stringify(real)}, [require('node:path').basename(process.argv[1]), ...process.argv.slice(2)], { stdio: 'inherit' }); process.exit(run.status ?? 1); }`);
-  return { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^path$/i.test(key))), PATH: bin, NODE_OPTIONS: `--require="${preload.replaceAll('\\', '/')}"` };
-};
-const runCard = (cwd, env) => spawnSync(process.execPath, [script('card.mjs')], { cwd, env, encoding: 'utf8' });
-const empty = { repository: { pullRequests: { totalCount: 0, nodes: [] }, issues: { totalCount: 0, nodes: [] } } };
+const runCard = (cwd) => spawnSync(process.execPath, [script('card.mjs')], { cwd, encoding: 'utf8' });
 it('the card says the backlog is clear when nothing is open', async () => {
   const { card } = await import(new URL('../../plugins/serio-focus/scripts/card.mjs', import.meta.url));
-  const run = runCard(backlogRepo(), fakeGh('out', empty));
+  const run = runCard(backlogRepo());
   assert.equal(run.status, ALLOWED, run.stderr);
   assert.equal(run.stdout, `${card()}\nBacklog: clear\n`);
 });
@@ -1054,73 +1035,35 @@ it('the card gives each local leftover one action', () => {
   git(repo, 'checkout', 'main'); git(repo, 'worktree', 'add', wt, '-b', 'in-worktree');
   writeFileSync(path.join(repo, 'a.txt'), 'changed\n'); git(repo, 'stash', 'push', '-m', 'wip-stash');
   git(repo, 'checkout', '-b', 'b'); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
-  const run = runCard(repo, fakeGh('out', empty)), lines = run.stdout.split('\n');
+  const run = runCard(repo), lines = run.stdout.split('\n');
   const once = (name, action) => { const hits = lines.filter((line) => line.includes(name)); assert.equal(hits.length, 1, `${name}: ${run.stdout}`); assert(hits[0].includes(action), hits[0]); };
   once('- b: ', 'commit and push to b'); once('merged-x', 'delete: merged'); once('own-change', 'push and open a pull request');
   once('wt-dir', 'remove when no session uses it'); once('wip-stash', 'apply to its branch or drop');
   assert.equal(lines.filter((line) => line.includes('in-worktree')).length, 0, run.stdout);
+  assert(run.stdout.endsWith(`${RULE}\n`), run.stdout);
 });
 it('the card never calls a branch merged when the default branch is unknown', () => {
   const repo = backlogRepo(); git(repo, 'branch', '-m', 'master');
   git(repo, 'checkout', '-b', 'topic'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
-  const run = runCard(repo, fakeGh('out', empty));
+  const run = runCard(repo);
   assert(!run.stdout.includes('delete: merged'), run.stdout);
 });
 it('the card lists a clean current branch with an unpushed commit', () => {
   const repo = backlogRepo(); git(repo, 'checkout', '-b', 'mine'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
-  assert(runCard(repo, fakeGh('out', empty)).stdout.includes('- mine: push and open a pull request'));
+  assert(runCard(repo).stdout.includes('- mine: push and open a pull request'));
 });
 it('the card checks the current branch first and never tells it to delete itself', () => {
   const repo = backlogRepo(); for (let i = 0; i < 11; i++) git(repo, 'branch', `old-${i}`);
-  git(repo, 'checkout', '-b', 'fresh'); assert(!runCard(repo, fakeGh('out', empty)).stdout.includes('- fresh:'));
+  git(repo, 'checkout', '-b', 'fresh'); assert(!runCard(repo).stdout.includes('- fresh:'));
   writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
-  assert(runCard(repo, fakeGh('out', empty)).stdout.includes('- fresh: push and open a pull request'));
-});
-it('the card gives each open pull request one action', () => {
-  const pr = (title, over) => ({ title, isDraft: false, reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] }, reviewThreads: { nodes: [{ isResolved: true }] }, ...over });
-  const nodes = [pr('Red check', { commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] } }), pr('Draft work', { isDraft: true }),
-    pr('Asked change', { reviewDecision: 'CHANGES_REQUESTED' }), pr('Green done', { reviewDecision: 'APPROVED' })];
-  const lines = runCard(backlogRepo(), fakeGh('out', { repository: { ...empty.repository, pullRequests: { totalCount: 4, nodes } } })).stdout.split('\n');
-  for (const [title, action] of [['Red check', 'pr-loop'], ['Draft work', 'finish or close'], ['Asked change', 'pr-loop'], ['Green done', "waits for a person's merge"]]) {
-    const hits = lines.filter((line) => line.includes(title)); assert.equal(hits.length, 1, title); assert(hits[0].includes(action), hits[0]);
-  }
-});
-it('the card lists the open issues of the repository and its queue with their state', () => {
-  const issue = (title, labels = [], body = '', closing = 0) => ({ title, labels: { nodes: labels.map((name) => ({ name })) }, comments: { nodes: body ? [{ body }] : [] }, closedByPullRequestsReferences: { totalCount: closing } });
-  const marker = (verdict) => `<!-- spec-review v1 sha=0123456789ab verdict=${verdict} ac=1 -->`;
-  const data = { repository: { ...empty.repository, issues: { totalCount: 3, nodes: [issue('Plain one'), issue('Ready one', [], marker('ready')), issue('Approved one', ['spec-ok'])] } },
-    queue: { issues: { totalCount: 2, nodes: [issue('Queue open', [], '', 1), issue('Queue stuck', ['needs-human'])] } } };
-  const run = runCard(backlogRepo(), { ...fakeGh('out', data), SERIO_QUEUE: 'q/ops' }), lines = run.stdout.trimEnd().split('\n');
-  for (const [title, state] of [['Plain one', 'no review'], ['Ready one', 'review ready'], ['Approved one', 'spec-ok'], ['Queue open', 'pull request open'], ['Queue stuck', 'needs-human']]) {
-    const hits = lines.filter((line) => line.includes(title)); assert.equal(hits.length, 1, title); assert(hits[0].endsWith(state), hits[0]);
-  }
-  assert.equal(lines.at(-1), RULE);
-});
-it('the card never asks for a second pull request on a branch that has one', () => {
-  const repo = backlogRepo(); git(repo, 'checkout', '-b', 'has-pr'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
-  git(repo, 'checkout', '-b', 'synced'); git(repo, 'update-ref', 'refs/remotes/origin/synced', 'HEAD'); git(repo, 'branch', '--set-upstream-to=origin/synced'); git(repo, 'checkout', 'main');
-  git(repo, 'branch', 'forked', 'has-pr');
-  const run = runCard(repo, fakeGh('out', { repository: { ...empty.repository, heads: { totalCount: 3, nodes: [{ headRefName: 'has-pr' }, { headRefName: 'synced' }, { headRefName: 'forked', isCrossRepository: true }] } } }));
-  assert(run.stdout.includes('- has-pr: push to its pull request') && !run.stdout.includes('synced'), run.stdout);
-  assert(run.stdout.includes('- forked: push and open a pull request'), run.stdout);
-  const full = runCard(repo, fakeGh('out', { repository: { ...empty.repository, heads: { totalCount: 101, nodes: [] } } }));
-  assert(full.stdout.includes('- synced: open a pull request unless one is open'), full.stdout);
+  assert(runCard(repo).stdout.includes('- fresh: push and open a pull request'));
 });
 it('the card lists uncommitted work on a detached HEAD', () => {
   const repo = backlogRepo(); git(repo, 'checkout', '--detach'); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
-  assert(runCard(repo, fakeGh('out', empty)).stdout.includes('- HEAD: commit to a new branch and open a pull request'));
+  assert(runCard(repo).stdout.includes('- HEAD: commit to a new branch and open a pull request'));
 });
-it('the card keeps a pushed branch visible when GitHub cannot be read', () => {
+it('the card keeps a pushed branch that holds unmerged work', () => {
   const repo = backlogRepo(); git(repo, 'checkout', '-b', 'pushed'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
   git(repo, 'update-ref', 'refs/remotes/origin/pushed', 'HEAD'); git(repo, 'branch', '--set-upstream-to=origin/pushed'); git(repo, 'checkout', 'main');
-  assert(runCard(repo, fakeGh('auth')).stdout.includes('- pushed: open a pull request unless one is open'));
-});
-it('the card prints the local backlog when GitHub cannot be read', () => {
-  for (const [env, why] of [[noGh(), 'gh not found'], [fakeGh('auth'), 'gh auth login'], [fakeGh('slow'), 'longer than 3 seconds']]) {
-    const repo = backlogRepo(); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
-    const start = Date.now(), run = runCard(repo, env);
-    assert.equal(run.status, ALLOWED, run.stderr); assert(Date.now() - start < 10000);
-    assert(run.stdout.includes('- main: commit to a new branch and open a pull request'), run.stdout);
-    assert(run.stdout.split('\n').some((l) => l.startsWith('Remote backlog unknown: ') && l.includes(why)), run.stdout);
-  }
+  assert(runCard(repo).stdout.includes('- pushed: open a pull request unless one is open'));
 });

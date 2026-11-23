@@ -64,7 +64,6 @@ Runs share no memory. They hand off through comments on the task, written and re
 - One schema file holds the spec-review limits; long text is shortened, not dropped.
 - Spec review never asks consent for content the issue supplies.
 - A label that routes to no stage starts no runner.
-- The session card lists the backlog; `SERIO_QUEUE=owner/name` adds that queue's `app:<repo>` issues.
 - Cloud runs use Ponytail 5.3.3.
 - Each run uploads an eval record, `eval-<stage>-<run id>-<run attempt>`: model, turns, cost, duration, termination, note, bypass, validation.
 
