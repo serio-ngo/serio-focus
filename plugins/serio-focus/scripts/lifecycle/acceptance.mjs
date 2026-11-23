@@ -24,16 +24,16 @@ export const cases = (xml) => [...xml.matchAll(/<testcase\b((?:[^>"]|"[^"]*")*?)
 const mapping = (body) => new Map([...String(body || '').matchAll(/^\| AC(\d+) \| .* \| (?:unit|e2e) \| `([^`]+)` \|$/gm)].map(([, n, test]) => [Number(n), test]));
 
 export function report({ review = '', tests, sha, lock = '', link = '', files = [], size = '', free = [], skipped = [] }) {
-  const ac = specOf(review)?.ac || [], map = mapping(review);
+  const spec = specOf(review), ac = spec?.ac || [], map = mapping(review);
   const rows = ac.map((n) => {
     const name = map.get(n), mine = name ? tests.filter((t) => t.name === name) : [];
     const result = !mine.length ? 'missing' : mine.find((t) => t.result !== 'passed')?.result || 'passed';
     return { n, name: name ? cell(name) : '-', result };
   });
-  const ok = ac.length > 0 && rows.every((r) => r.result === 'passed');
+  const ok = (ac.length > 0 || spec?.verdict === 'ready') && rows.every((r) => r.result === 'passed');
   const body = [
     `**Acceptance: ${ok ? 'pass' : 'fail'}** for \`${sha.slice(0, 7)}\`${lock ? ` · test lock: ${cell(lock)}` : ''}`, '',
-    '| Criterion | Test | Result |', '|---|---|---|',
+    ...(rows.length ? ['| Criterion | Test | Result |', '|---|---|---|'] : ['No criteria: the review names review checks only.']),
     ...rows.map((r) => `| AC${r.n} | ${r.name} | ${r.result} |`),
     ...(size || files.length ? ['', `Changed: ${size} · gate files: ${files.filter((f) => GATE.test(f)).map((f) => `\`${cell(f)}\``).join(', ') || 'none'}`] : []),
     ...(free.length ? ['', `Changes no test needs: ${free.map((f) => `\`${cell(f)}\``).join(', ')}`] : []),
@@ -56,9 +56,10 @@ function selfTest() {
   assert.doesNotMatch(changed(['scripts/x\n| AC1 | forged | passed |']), /\n\| AC1 \| forged/);
   const list = [
     ['AC1 is not AC10', report({ review: spec('| AC10 | t | unit | `x` |', '1'), tests: cases('<testcase name="x"/>'), sha: 'a' }), /\| AC1 \| - \| missing \|/],
-    ['no criteria', report({ review: spec('', ''), tests: cases(junit), sha: 'a' }), /Acceptance: fail/],
+    ['no criteria without a ready review', report({ review: spec('', '').replace('verdict=ready', 'verdict=questions'), tests: cases(junit), sha: 'a' }), /Acceptance: fail/],
     ['no review', report({ tests: cases(junit), sha: 'a' }), /Acceptance: fail/],
   ];
+  assert.equal(report({ review: spec('', ''), tests: [], sha: 'a' }).ok, true, 'a ready review with no criteria passes: the task changes no behaviour a test can reach');
   for (const [title, got, want] of list) { assert.equal(got.ok, false, title); assert.match(got.body, want, title); }
   for (const f of ['plugins/serio-focus/scripts/lifecycle/route.mjs', 'scripts/site-tools.mjs', 'src/a.mjs']) assert.equal(production(f), true, f);
   for (const f of ['package.json', '.github/workflows/ci.yml', '.husky/pre-commit', 'tsconfig.json', 'tests/a.test.mjs', '.agents/skills/x/SKILL.md', 'README.md']) assert.equal(production(f), false, f);

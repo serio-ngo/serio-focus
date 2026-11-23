@@ -9,7 +9,7 @@ const cut = (s, max) => plain(s).replace(/\s+/g, ' ').slice(0, max);
 export function brief({ repo, issue, comments, pr, prComments = [], reviews = [], own }) {
   const trusted = (x) => robot(x.user) || owns(x.user, own);
   const mark = specMarker(comments, own), lock = lockOf(reviews, own);
-  const lines = String(specComment(comments, own)?.body || '').split('\n'), accepted = lines.find((l) => l.startsWith('Accepted by ')), rows = [...lines.filter((l) => l.startsWith('| AC')), ...lines.filter((l) => /^\d+\. /.test(l))];
+  const lines = String(specComment(comments, own)?.body || '').split('\n'), accepted = lines.find((l) => l.startsWith('Accepted by ')), rows = [...lines.filter((l) => l.startsWith('| AC') || l.startsWith('Review checks:')), ...lines.filter((l) => /^\d+\. /.test(l))];
   const keep = (t) => /<!-- step-note (?!stage=route )/.test(t) || t.startsWith('**needs-human**');
   const entries = (c) => isStatus(c, own) ? statusLog(c.body).map((l) => ({ at: /\bat=(\S+) -->/.exec(l)?.[1] || c.updated_at, body: l.slice(2) })) : trusted(c) && !String(c.body || '').includes('<!-- lifecycle-status') ? [{ at: c.created_at, body: c.body || '' }] : [];
   const steps = [...comments, ...prComments].flatMap(entries).filter((x) => keep(x.body)).sort((a, b) => String(a.at).localeCompare(String(b.at))).map((x) => cut(x.body, 400)).slice(-8);
@@ -38,6 +38,7 @@ function selfTest() {
   ok(text.includes('AC1 adds numbers') && !text.includes('hidden'), 'hidden comment gone');
   ok(make({ issue: { ...issue, body: 'keep <!-- drop this' } }).includes('keep') && !make({ issue: { ...issue, body: 'keep <!-- drop this' } }).includes('drop'), 'unterminated comment');
   ok(text.includes('Spec review: ready for this text.\n\n| AC1 | Given 2 and 3'), 'criteria rows');
+  ok(make({ comments: [{ ...spec(), body: spec().body.replace('| AC1', 'Review checks: the config names the plugin.\n| AC1') }] }).includes('Review checks: the config names the plugin.'), 'review checks reach the brief');
   ok(!text.includes('| Criterion') && text.includes('| unit |\n1. Which locale? Recommended: pl-PL'), 'header row not copied, questions kept');
   ok(text.startsWith('# Task o/r#7: Sum\n\nLabels: spec-ok, bug.\n\nEverything') && make({ issue: { ...issue, labels: [] } }).includes('Labels: none.\n\nEvery'), 'labels');
   ok(make({ issue: { ...issue, body: 'edited' } }).includes('for an older text: the spec changed after its review'), 'edited spec');

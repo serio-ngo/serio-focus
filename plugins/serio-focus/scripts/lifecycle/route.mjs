@@ -33,7 +33,8 @@ export function route(name, ev, s) {
       const earlier = specComment(s.comments(n), s.own), has = /^\| AC\d+ \|/m.test(earlier?.body || '');
       if (!owns(ev.sender, s.own)) return stop(`no ready spec review of the current issue text; ${has ? 'a code owner can accept the reviewed criteria by adding spec-ok' : 'add spec-review first'}`, n);
       const criteria = [...(earlier?.body || '').matchAll(/^\| AC(\d+) \| (.*) \| (unit|e2e) \| `([^`]+)` \|$/gm)].map(([, id, text, level, test]) => ({ id: +id, text: text.replace(/\\\|/g, '|'), level, test }));
-      const accept = comment({ verdict: 'ready', criteria }, specSha(s.issue(n)), `Accepted by ${ev.sender.login} without a ready review; open questions stay on the earlier review.`, s.issue(n).body);
+      const kept = /^Review checks: (.+)$/m.exec(earlier?.body || '')?.[1];
+      const accept = comment({ verdict: 'ready', criteria, checks: kept ? [kept] : [] }, specSha(s.issue(n)), `Accepted by ${ev.sender.login} without a ready review; open questions stay on the earlier review.`, s.issue(n).body);
       return accept ? run('write-tests', n, { bypass: ev.sender.login, accept }) : stop('no reviewed criteria to accept yet: add spec-review first', n);
     }
     return run('write-tests', n);
@@ -141,6 +142,7 @@ function selfTest() {
   for (const [title, name, ev, s, want] of tells) assert.equal(route(name, ev, s).tell, want, title);
   const bypass = route('issues', label('spec-ok'), state({ comments: () => [earlier] }));
   assert.equal(bypass.bypass, 'ada');
+  assert.match(route('issues', label('spec-ok'), state({ comments: () => [{ ...earlier, body: earlier.body.replace('\n\n1. ', '\n\nReview checks: the config names the plugin\n\n1. ') }] })).accept, /\nReview checks: the config names the plugin\n/, 'the bypass keeps the review checks');
   assert.match(bypass.accept, /\n\| AC1 \| Given a \\\| b, When x, Then y \| unit \| `x gives y` \|\n/);
   assert.deepEqual(specMarker([{ user: actions, body: bypass.accept }], owners('* @ada\n')), { sha, verdict: 'ready', ac: [1, 2] });
   assert.match(bypass.accept, /\nAccepted by ada without a ready review; open questions stay on the earlier review\.\n/);

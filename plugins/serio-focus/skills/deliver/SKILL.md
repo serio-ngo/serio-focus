@@ -12,7 +12,7 @@ Deliver $ARGUMENTS. Agents: this plugin's `architect`, `tester`, `coder` and `re
 | 2. Plan | architect | Skip for a one-file change with an obvious fix, and when locked tests and a repository skill already state the change | Plan with tasks and checks |
 | 3. Red | tester | Only when the task changes behaviour and the repository has tests; repository test rules win. Skip otherwise, and skip when the brief says the tests are locked | Test path and its failing line |
 | 4. Build | coder | One task per dispatch, with its row, paths, check and failing test. Each dispatch names the repository skills (`.agents/skills/<area>/SKILL.md`) that match its task; the agent reads them first as the area's specification. A change that makes a skill line false edits that line in the same task, unless the skill is locked. Never edit a path locked by `tests-ok` (tests, `.claude/skills/`, `.agents/skills/`) or test runner config; a wrong test is a finding for a person. Tasks with disjoint paths may run in parallel, otherwise one at a time | Changed lines and green checks |
-| 5. Review | reviewer | One review of the whole diff, once every task's check passes, against the criteria, the skills named in step 4, the test rules in `${CLAUDE_PLUGIN_ROOT}/agents/tester.md` and the skill rules in `${CLAUDE_PLUGIN_ROOT}/skills/write-tests/SKILL.md` | Verdict `ready` |
+| 5. Review | reviewer | One review of the whole diff, once every task's check passes, against the criteria and the review checks of the brief, the skills named in step 4, the test rules in `${CLAUDE_PLUGIN_ROOT}/agents/tester.md` and the skill rules in `${CLAUDE_PLUGIN_ROOT}/skills/write-tests/SKILL.md` | Verdict `ready` |
 | 6. Fix | coder | Send every P0 and P1 back with its `file:line`, then review again; the locked-path rule of step 4 holds. Stop after three rounds on one finding and report it | Verdict `ready` |
 | 6b. Look | none | Only when the repository enables pull request previews (`preview_urls: true` in its Wrangler config): build and serve the change, open every page or state the diff changes at 375 px and 1280 px width, screenshot and look at each. A visual defect goes to the coder as P1, then look again. In a run by hand, once the pull request has a Preview URL, repeat the look on it before marking it ready; an unattended run looks at the local build only, and the card's Not checked names the Preview URL | One line per page: URL, widths, what was seen |
 | 7. Ship | none | Run every command the repository's CI runs on a pull request, such as its gates, on the whole diff (a `verify` script alone can miss one), then commit, push the branch and open the pull request. On branch `agent/<N>-…`: the repository gates, unit and e2e tests pass locally before the push; push, set the title to the issue's title and the body to the card below, and mark the pull request ready; never approve or merge. When `SERIO_UNATTENDED=1`, commit and dispatch the coder once, with no check, to write the card to `.lifecycle/pr.md` instead, since the main session writes no file: the session holds no write token, the workflow pushes, sets the title and the body and marks the pull request ready | Check output, then the pull request; unattended, the commit and `.lifecycle/pr.md` |
@@ -39,7 +39,7 @@ Fixes #N
 
 | Card | Value |
 |---|---|
-| Spec | <issue title>; criteria AC1…ACn |
+| Spec | <issue title>; criteria AC1…ACn, or `none; review checks` |
 | Change | at most 3 lines |
 | Review | fresh-context reviewer `ready` for <head SHA> |
 | Visual | step 6b lines, or `no preview` |
