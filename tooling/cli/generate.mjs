@@ -131,9 +131,10 @@ export function manifest() {
       `| Hook events | **${inv.hookEvents}** |`,
       `| Skills | **${inv.skills}** |`,
       `| Subagents | **${inv.agents}** |`,
-      `| Startup context: card, agent and skill descriptions | **~${inv.contextTokens}** tokens |`,
+      `| Startup context: card, agent and skill descriptions | **~${inv.contextTokens}** tokens, plus the Backlog block: at most 10 lines per group |`,
       `| Third-party packages | **${inv.dependencies}** |`,
-      '| API keys, model calls; network calls | **0**; the card reads GitHub through `gh` |',
+      '| API keys, model calls | **0** |',
+      '| Network calls | **1** per session start: the card reads GitHub through `gh` |',
     ]), '',
   ].join('\n');
 }
