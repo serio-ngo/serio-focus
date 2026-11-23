@@ -41,11 +41,11 @@ const remote = (cwd, env) => {
   const [, owner, name] = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\s*$/.exec(url.stdout) ?? [];
   if (!owner) return { why: 'origin is not on GitHub' };
   const queue = /^([^/]+)\/([^/]+)$/.exec(env.SERIO_QUEUE ?? '');
-  const query = `query($o: String!, $n: String!, $qo: String = "", $qn: String = "", $label: String = "") { repository(owner: $o, name: $n) {
+  const at = (o, n) => `repository(owner: ${JSON.stringify(o)}, name: ${JSON.stringify(n)})`;
+  const query = `{ ${at(owner, name)} {
     pullRequests(${ORDER}) { totalCount nodes { title isDraft reviewDecision commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviewThreads(first: 100) { nodes { isResolved } } } }
-    ${ISSUES.replace('$LABEL', '')} }${queue ? ` queue: repository(owner: $qo, name: $qn) { ${ISSUES.replace('$LABEL', ', labels: [$label]')} }` : ''} }`;
-  const args = ['api', 'graphql', '-f', `query=${query}`, '-f', `o=${owner}`, '-f', `n=${name}`, ...(queue ? ['-f', `qo=${queue[1]}`, '-f', `qn=${queue[2]}`, '-f', `label=app:${name}`] : [])];
-  const run = spawnSync('gh', args, { cwd, env, encoding: 'utf8', timeout: 3000 });
+    ${ISSUES.replace('$LABEL', '')} }${queue ? ` queue: ${at(queue[1], queue[2])} { ${ISSUES.replace('$LABEL', `, labels: [${JSON.stringify(`app:${name}`)}]`)} }` : ''} }`;
+  const run = spawnSync('gh', ['api', 'graphql', '-f', `query=${query}`], { cwd, env, encoding: 'utf8', timeout: 3000 });
   if (run.error) return { why: run.error.code === 'ENOENT' ? 'gh not found' : 'gh took longer than 3 seconds' };
   if (run.status !== 0) return { why: run.stderr.split('\n').find((l) => l.trim())?.trim() || `gh exited ${run.status}` };
   try {
