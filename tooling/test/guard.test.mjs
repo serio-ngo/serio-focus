@@ -1032,7 +1032,13 @@ const fakeGh = (mode, data = {}) => {
     process.exit(mode === 'auth' ? 1 : 0); }`);
   return { ...process.env, GH_MODE: mode, PATH: `${bin}${path.delimiter}${process.env.PATH}`, NODE_OPTIONS: `--require="${preload.replaceAll('\\', '/')}"` };
 };
-const noGh = () => ({ ...process.env, PATH: process.env.PATH.split(path.delimiter).filter((dir) => !['gh', 'gh.exe'].some((name) => existsSync(path.join(dir, name)))).join(path.delimiter) });
+const noGh = () => {
+  const root = sandbox('nogh-'), bin = path.join(root, 'bin'), preload = path.join(root, 'git.cjs'), exe = process.platform === 'win32' ? 'git.exe' : 'git';
+  const real = process.env.PATH.split(path.delimiter).map((dir) => path.join(dir, exe)).find((file) => existsSync(file));
+  mkdirSync(bin); copyFileSync(process.execPath, path.join(bin, exe));
+  writeFileSync(preload, `if (/^git(?:\\.exe)?$/i.test(require('node:path').basename(process.execPath))) { const run = require('node:child_process').spawnSync(${JSON.stringify(real)}, [require('node:path').basename(process.argv[1]), ...process.argv.slice(2)], { stdio: 'inherit' }); process.exit(run.status ?? 1); }`);
+  return { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^path$/i.test(key))), PATH: bin, NODE_OPTIONS: `--require="${preload.replaceAll('\\', '/')}"` };
+};
 const runCard = (cwd, env) => spawnSync(process.execPath, [script('card.mjs')], { cwd, env, encoding: 'utf8' });
 const empty = { repository: { pullRequests: { totalCount: 0, nodes: [] }, issues: { totalCount: 0, nodes: [] } } };
 it('the card says the backlog is clear when nothing is open', async () => {
@@ -1091,11 +1097,11 @@ it('the card lists the open issues of the repository and its queue with their st
   assert.equal(lines.at(-1), RULE);
 });
 it('the card prints the local backlog when GitHub cannot be read', () => {
-  for (const env of [noGh(), fakeGh('auth'), fakeGh('slow')]) {
+  for (const [env, why] of [[noGh(), 'gh not found'], [fakeGh('auth'), 'gh auth login'], [fakeGh('slow'), 'longer than 3 seconds']]) {
     const repo = backlogRepo(); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
     const start = Date.now(), run = runCard(repo, env);
     assert.equal(run.status, ALLOWED, run.stderr); assert(Date.now() - start < 10000);
     assert(run.stdout.includes('- main: commit and push to main'), run.stdout);
-    assert.match(run.stdout, /Remote backlog unknown: .+/);
+    assert(run.stdout.split('\n').some((l) => l.startsWith('Remote backlog unknown: ') && l.includes(why)), run.stdout);
   }
 });
