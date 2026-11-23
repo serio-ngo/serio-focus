@@ -1012,3 +1012,74 @@ it('the spec review comment names fewer e2e criteria than the spec labels', asyn
   assert.ok(body(['e2e', 'e2e', 'unit'], three).includes('Levels: the spec names 3 e2e criteria; this review has 2.'));
   for (const [levels, s] of [[['e2e', 'e2e', 'e2e'], three], [['e2e', 'unit'], spec('Given a, When b, Then c. Level: unit')], [['e2e', 'unit'], wording]]) assert.deepEqual(body(levels, s).filter((l) => l.startsWith('Levels:')), []);
 });
+const RULE = "Backlog first: finish or reject each item above before new work. An item that waits only for a person does not block. Never change a branch, worktree or file that a running session uses.";
+const git = (cwd, ...args) => { const run = spawnSync('git', args, { cwd, encoding: 'utf8' }); if (run.status !== 0) throw new Error(run.stderr); return run.stdout; };
+const backlogRepo = () => {
+  const dir = path.join(sandbox('backlog-'), 'repo'); mkdirSync(dir);
+  git(dir, 'init', '-b', 'main'); git(dir, 'config', 'user.name', 't'); git(dir, 'config', 'user.email', 't@t');
+  git(dir, 'remote', 'add', 'origin', 'https://github.com/o/r.git');
+  writeFileSync(path.join(dir, 'a.txt'), 'a\n'); git(dir, 'add', '.'); git(dir, 'commit', '-m', 'a');
+  return dir;
+};
+const fakeGh = (mode, data = {}) => {
+  const root = sandbox('gh-'), bin = path.join(root, 'bin'), preload = path.join(root, 'gh.cjs'), file = path.join(root, 'out.json');
+  mkdirSync(bin); writeFileSync(file, JSON.stringify({ data }));
+  copyFileSync(process.execPath, path.join(bin, process.platform === 'win32' ? 'gh.exe' : 'gh'));
+  writeFileSync(preload, `if (/^gh(?:\\.exe)?$/i.test(require('node:path').basename(process.execPath))) { const fs = require('node:fs'); const mode = process.env.GH_MODE;
+    if (mode === 'out') fs.writeSync(1, fs.readFileSync(${JSON.stringify(file)}));
+    if (mode === 'auth') fs.writeSync(2, 'To get started with GitHub CLI, please run: gh auth login\\n');
+    if (mode === 'slow') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
+    process.exit(mode === 'auth' ? 1 : 0); }`);
+  return { ...process.env, GH_MODE: mode, PATH: `${bin}${path.delimiter}${process.env.PATH}`, NODE_OPTIONS: `--require="${preload.replaceAll('\\', '/')}"` };
+};
+const noGh = () => ({ ...process.env, PATH: process.env.PATH.split(path.delimiter).filter((dir) => !['gh', 'gh.exe'].some((name) => existsSync(path.join(dir, name)))).join(path.delimiter) });
+const runCard = (cwd, env) => spawnSync(process.execPath, [script('card.mjs')], { cwd, env, encoding: 'utf8' });
+const empty = { repository: { pullRequests: { totalCount: 0, nodes: [] }, issues: { totalCount: 0, nodes: [] } } };
+it('the card says the backlog is clear when nothing is open', async () => {
+  const { card } = await import(new URL('../../plugins/serio-focus/scripts/card.mjs', import.meta.url));
+  const run = runCard(backlogRepo(), fakeGh('out', empty));
+  assert.equal(run.status, ALLOWED, run.stderr);
+  assert.equal(run.stdout, `${card()}\nBacklog: clear\n`);
+});
+it('the card gives each local leftover one action', () => {
+  const repo = backlogRepo(), wt = path.join(path.dirname(repo), 'wt-dir');
+  git(repo, 'branch', 'merged-x');
+  git(repo, 'checkout', '-b', 'own-change'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
+  git(repo, 'checkout', 'main'); git(repo, 'worktree', 'add', wt, '-b', 'in-worktree');
+  writeFileSync(path.join(repo, 'a.txt'), 'changed\n'); git(repo, 'stash', 'push', '-m', 'wip-stash');
+  git(repo, 'checkout', '-b', 'b'); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
+  const run = runCard(repo, fakeGh('out', empty)), lines = run.stdout.split('\n');
+  const once = (name, action) => { const hits = lines.filter((line) => line.includes(name)); assert.equal(hits.length, 1, `${name}: ${run.stdout}`); assert(hits[0].includes(action), hits[0]); };
+  once('- b: ', 'commit and push to b'); once('merged-x', 'delete: merged'); once('own-change', 'push and open a pull request');
+  once('wt-dir', 'remove when no session uses it'); once('wip-stash', 'apply to its branch or drop');
+  assert.equal(lines.filter((line) => line.includes('in-worktree')).length, 0, run.stdout);
+});
+it('the card gives each open pull request one action', () => {
+  const pr = (title, over) => ({ title, isDraft: false, reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] }, reviewThreads: { nodes: [{ isResolved: true }] }, ...over });
+  const nodes = [pr('Red check', { commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] } }), pr('Draft work', { isDraft: true }),
+    pr('Asked change', { reviewDecision: 'CHANGES_REQUESTED' }), pr('Green done', { reviewDecision: 'APPROVED' })];
+  const lines = runCard(backlogRepo(), fakeGh('out', { repository: { ...empty.repository, pullRequests: { totalCount: 4, nodes } } })).stdout.split('\n');
+  for (const [title, action] of [['Red check', 'pr-loop'], ['Draft work', 'finish or close'], ['Asked change', 'pr-loop'], ['Green done', "waits for a person's merge"]]) {
+    const hits = lines.filter((line) => line.includes(title)); assert.equal(hits.length, 1, title); assert(hits[0].includes(action), hits[0]);
+  }
+});
+it('the card lists the open issues of the repository and its queue with their state', () => {
+  const issue = (title, labels = [], body = '', closing = 0) => ({ title, labels: { nodes: labels.map((name) => ({ name })) }, comments: { nodes: body ? [{ body }] : [] }, closedByPullRequestsReferences: { totalCount: closing } });
+  const marker = (verdict) => `<!-- spec-review v1 sha=0123456789ab verdict=${verdict} ac=1 -->`;
+  const data = { repository: { ...empty.repository, issues: { totalCount: 3, nodes: [issue('Plain one'), issue('Ready one', [], marker('ready')), issue('Approved one', ['spec-ok'])] } },
+    queue: { issues: { totalCount: 2, nodes: [issue('Queue open', [], '', 1), issue('Queue stuck', ['needs-human'])] } } };
+  const run = runCard(backlogRepo(), { ...fakeGh('out', data), SERIO_QUEUE: 'q/ops' }), lines = run.stdout.trimEnd().split('\n');
+  for (const [title, state] of [['Plain one', 'no review'], ['Ready one', 'review ready'], ['Approved one', 'spec-ok'], ['Queue open', 'pull request open'], ['Queue stuck', 'needs-human']]) {
+    const hits = lines.filter((line) => line.includes(title)); assert.equal(hits.length, 1, title); assert(hits[0].endsWith(state), hits[0]);
+  }
+  assert.equal(lines.at(-1), RULE);
+});
+it('the card prints the local backlog when GitHub cannot be read', () => {
+  for (const env of [noGh(), fakeGh('auth'), fakeGh('slow')]) {
+    const repo = backlogRepo(); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
+    const start = Date.now(), run = runCard(repo, env);
+    assert.equal(run.status, ALLOWED, run.stderr); assert(Date.now() - start < 10000);
+    assert(run.stdout.includes('- main: commit and push to main'), run.stdout);
+    assert.match(run.stdout, /Remote backlog unknown: .+/);
+  }
+});

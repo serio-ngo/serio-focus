@@ -133,7 +133,7 @@ export function manifest() {
       `| Subagents | **${inv.agents}** |`,
       `| Startup context: card, agent and skill descriptions | **~${inv.contextTokens}** tokens |`,
       `| Third-party packages | **${inv.dependencies}** |`,
-      '| Network calls, API keys, model calls | **0** |',
+      '| API keys, model calls; network calls | **0**; the card reads GitHub through `gh` |',
     ]), '',
   ].join('\n');
 }

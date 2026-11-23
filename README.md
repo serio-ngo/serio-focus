@@ -41,7 +41,7 @@ Scripts route, lock, report and publish; models only write. Every run leaves a n
 
 Agents: `architect` plans and edits nothing, `tester` writes one failing test per behaviour, `coder` builds one task per dispatch, `reviewer` reviews the diff in a fresh context. The main session orchestrates on the model you chose and names a cheaper model for every agent.
 
-Every session also starts with reply rules for a neurodivergent reader: the result first, short bullets, one recommended action.
+Every session also starts with reply rules for a neurodivergent reader: the result first, short bullets, one recommended action. It also lists the open backlog with one action each.
 
 ## Install
 
