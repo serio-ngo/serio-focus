@@ -1047,10 +1047,12 @@ it('the card never calls a branch merged when the default branch is unknown', ()
   git(repo, 'checkout', '-b', 'topic'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
   const run = runCard(repo);
   assert(!run.stdout.includes('delete: merged'), run.stdout);
+  git(repo, 'branch', '-m', 'master', 'trunk');
+  assert(runCard(repo).stdout.includes('- default branch unknown: run git remote set-head origin --auto'));
 });
 it('the card lists a clean current branch with an unpushed commit', () => {
   const repo = backlogRepo(); git(repo, 'checkout', '-b', 'mine'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
-  assert(runCard(repo).stdout.includes('- mine: push and open a pull request'));
+  assert(runCard(repo).stdout.includes('- mine: push and open a pull request unless one is open'));
 });
 it('the card checks the current branch first and never tells it to delete itself', () => {
   const repo = backlogRepo(); for (let i = 0; i < 11; i++) git(repo, 'branch', `old-${i}`);
