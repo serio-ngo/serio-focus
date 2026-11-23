@@ -28,11 +28,12 @@ export function comment(out, sha, extra = '', spec = '') {
   if (!Array.isArray(criteria) || !Array.isArray(questions) || criteria.length > 5 || questions.length > 5) return null;
   if (!criteria.every((c, i) => c?.id === i + 1 && text(c.text) && ['unit', 'e2e'].includes(c.level) && text(c.test) && name(c.test))) return null;
   if (!questions.every((q) => text(q?.question) && text(q.recommended)) || (extra && !text(extra))) return null;
-  if (out.verdict === 'ready' ? !criteria.length || questions.length : !questions.length) return null;
+  if (out.verdict === 'ready' ? (!criteria.length && !/Review checks:/.test(out.note || '')) || questions.length : !questions.length) return null;
   const e2e = criteria.filter((c) => c.level === 'e2e').length;
   const named = (/### Acceptance criteria\n([\s\S]*?)(?=\n###|$)/i.exec((spec || '').replace(/\r\n/g, '\n'))?.[1] || '').split('\n').filter((l) => /^\d+\.\s/.test(l) && (/^\d+\.\s+\*\*[^*]*e2e/i.test(l) || /Level: e2e/i.test(l))).length;
   return [
     `**Spec review: ${out.verdict}**`, '',
+    ...(criteria.length ? [] : [line(fit(out.note, MAX.text)), '']),
     ...(criteria.length ? ['| Criterion | Given, When, Then | Level | Test |', '|---|---|---|---|', ...criteria.map((c) => `| AC${c.id} | ${line(fit(c.text, MAX.text))} | ${c.level} | \`${name(c.test)}\` |`), ''] : []),
     ...questions.map((q, i) => `${i + 1}. ${line(fit(q.question, MAX.question))} Recommended: ${line(fit(q.recommended, MAX.recommended))}`), ...(questions.length ? [''] : []),
     ...(extra ? [line(extra), ''] : []),
@@ -97,6 +98,7 @@ function selfTest() {
   const q = { question: 'Which locale?', recommended: 'pl-PL' };
   assert.match(comment({ verdict: 'ready', criteria: [ac(1), ac(2)], questions: [] }, 'abcdef123456'), /<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1,2 -->$/);
   assert.match(comment({ verdict: 'questions', criteria: [ac(1)], questions: [q] }, 'abcdef123456'), /verdict=questions ac=1 -->$/);
+  assert.match(comment({ verdict: 'ready', criteria: [], questions: [], note: 'Ready. Review checks: both skills sit under .agents/skills.' }, 'abcdef123456'), /Review checks: both skills sit under \.agents\/skills\.\n[\s\S]*verdict=ready ac= -->$/, 'a ready review with no criteria names its review checks');
   const bad = [
     ['no output', null], ['unknown verdict', { verdict: 'ok', criteria: [ac(1)] }],
     ['ready without criteria', { verdict: 'ready', criteria: [] }], ['ready with questions', { verdict: 'ready', criteria: [ac(1)], questions: [q] }],
