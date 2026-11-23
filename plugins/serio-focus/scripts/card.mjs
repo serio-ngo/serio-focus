@@ -39,7 +39,7 @@ const local = (cwd, env, heads) => {
     else branches.push(`- ${b}: open a pull request unless one is open`);
   }
   if (seen < todo.length) branches.push(`- and ${todo.length - seen} more branches to check`);
-  return [...(dirty && current ? [`- ${current}: ${current === main ? 'commit to a new branch and open a pull request' : `commit and push to ${current}`}`] : []), ...branches,
+  return [...(dirty ? [`- ${current || 'HEAD'}: ${!current || current === main ? 'commit to a new branch and open a pull request' : `commit and push to ${current}`}`] : []), ...branches,
     ...cap(others.slice(1).filter((w) => path.resolve(w.dir) !== top).map((w) => `- ${w.dir}: remove when no session uses it`)),
     ...cap(lines('stash', 'list', '--format=%gs').reverse().map((m) => `- ${m}: apply to its branch or drop`))];
 };
@@ -52,7 +52,7 @@ const remote = (cwd, env) => {
   const queue = /^([^/]+)\/([^/]+)$/.exec(env.SERIO_QUEUE ?? '');
   const at = (o, n) => `repository(owner: ${JSON.stringify(o)}, name: ${JSON.stringify(n)})`;
   const query = `{ ${at(owner, name)} {
-    heads: pullRequests(states: OPEN, first: 100) { nodes { headRefName } }
+    heads: pullRequests(states: OPEN, first: 100) { totalCount nodes { headRefName isCrossRepository } }
     pullRequests(${ORDER}) { totalCount nodes { title isDraft reviewDecision commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviewThreads(first: 100) { nodes { isResolved } } } }
     ${ISSUES.replace('$LABEL', '')} }${queue ? ` queue: ${at(queue[1], queue[2])} { ${ISSUES.replace('$LABEL', `, labels: [${JSON.stringify(`app:${name}`)}]`)} }` : ''} }`;
   const run = spawnSync('gh', ['api', 'graphql', '-f', `query=${query}`], { cwd, env, encoding: 'utf8', timeout: 3000 });
@@ -61,7 +61,7 @@ const remote = (cwd, env) => {
   try {
     const { repository: r, queue: q } = JSON.parse(run.stdout).data;
     const list = (title, nodes, total, line) => [...nodes.map((n) => `- ${title(n)}: ${line(n)}`), ...more(nodes, total)];
-    return { heads: r.heads && new Set(r.heads.nodes.map((n) => n.headRefName)), lines: [...list((p) => `pull request "${p.title}"`, r.pullRequests.nodes, r.pullRequests.totalCount, action), ...list((i) => `issue "${i.title}"`, r.issues.nodes, r.issues.totalCount, state),
+    return { heads: r.heads?.totalCount <= r.heads?.nodes.length ? new Set(r.heads.nodes.filter((n) => !n.isCrossRepository).map((n) => n.headRefName)) : undefined, lines: [...list((p) => `pull request "${p.title}"`, r.pullRequests.nodes, r.pullRequests.totalCount, action), ...list((i) => `issue "${i.title}"`, r.issues.nodes, r.issues.totalCount, state),
       ...(q ? list((i) => `${queue[0]} issue "${i.title}"`, q.issues.nodes, q.issues.totalCount, state) : [])] };
   } catch (error) {
     return { why: error.message };

@@ -1099,8 +1099,16 @@ it('the card lists the open issues of the repository and its queue with their st
 it('the card never asks for a second pull request on a branch that has one', () => {
   const repo = backlogRepo(); git(repo, 'checkout', '-b', 'has-pr'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
   git(repo, 'checkout', '-b', 'synced'); git(repo, 'update-ref', 'refs/remotes/origin/synced', 'HEAD'); git(repo, 'branch', '--set-upstream-to=origin/synced'); git(repo, 'checkout', 'main');
-  const run = runCard(repo, fakeGh('out', { repository: { ...empty.repository, heads: { nodes: [{ headRefName: 'has-pr' }, { headRefName: 'synced' }] } } }));
+  git(repo, 'branch', 'forked', 'has-pr');
+  const run = runCard(repo, fakeGh('out', { repository: { ...empty.repository, heads: { totalCount: 3, nodes: [{ headRefName: 'has-pr' }, { headRefName: 'synced' }, { headRefName: 'forked', isCrossRepository: true }] } } }));
   assert(run.stdout.includes('- has-pr: push to its pull request') && !run.stdout.includes('synced'), run.stdout);
+  assert(run.stdout.includes('- forked: push and open a pull request'), run.stdout);
+  const full = runCard(repo, fakeGh('out', { repository: { ...empty.repository, heads: { totalCount: 101, nodes: [] } } }));
+  assert(full.stdout.includes('- synced: open a pull request unless one is open'), full.stdout);
+});
+it('the card lists uncommitted work on a detached HEAD', () => {
+  const repo = backlogRepo(); git(repo, 'checkout', '--detach'); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
+  assert(runCard(repo, fakeGh('out', empty)).stdout.includes('- HEAD: commit to a new branch and open a pull request'));
 });
 it('the card keeps a pushed branch visible when GitHub cannot be read', () => {
   const repo = backlogRepo(); git(repo, 'checkout', '-b', 'pushed'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
