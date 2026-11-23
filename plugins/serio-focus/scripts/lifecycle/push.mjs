@@ -46,7 +46,10 @@ function selfTest() {
   assert.deepEqual(calls, ['graphql', 'push', 'repos/o/r/pulls/9'], 'deliver readies the draft before the push, so the gate of the push runs on a ready pull request');
   calls.length = 0; publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'write-tests', body: 'b' }, io(true));
   assert.deepEqual(calls, ['push', 'repos/o/r/pulls/9'], 'other stages leave the draft');
-  console.log('push self-test: 11 checks passed');
+  calls.length = 0;
+  assert.throws(() => publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'deliver', body: 'b' }, { ...io(true), send: (m, p, b) => { calls.push(b?.query?.match(/\{(\w+)\(/)?.[1] || p); return {}; }, push: () => { throw new Error('refused'); } }), /refused/);
+  assert.deepEqual(calls, ['markPullRequestReadyForReview', 'convertPullRequestToDraft'], 'a failed push puts the pull request back to draft');
+  console.log('push self-test: 13 checks passed');
 }
 
 export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, send, raw }) {
@@ -60,8 +63,14 @@ export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, s
 
 export function publish({ repo, ref, issue, stage, body }, io) {
   let pr = io.all(`repos/${repo}/pulls?state=open&head=${repo.split('/')[0]}:${ref}`)[0];
-  if (stage === 'deliver' && pr?.draft) io.send('POST', 'graphql', { query: 'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } });
-  const head = io.push(ref), title = io.one(`repos/${repo}/issues/${issue}`).title;
+  const ready = stage === 'deliver' && pr?.draft;
+  if (ready) io.send('POST', 'graphql', { query: 'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } });
+  let head;
+  try { head = io.push(ref); } catch (e) {
+    if (ready) io.send('POST', 'graphql', { query: 'mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } });
+    throw e;
+  }
+  const title = io.one(`repos/${repo}/issues/${issue}`).title;
   if (!pr) pr = io.send('POST', `repos/${repo}/pulls`, { title, head: ref, base: io.one(`repos/${repo}`).default_branch, body: body || `Fixes #${issue}`, draft: true });
   else if (body) io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title, body });
   return { head, pr };
