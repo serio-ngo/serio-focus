@@ -1096,6 +1096,11 @@ it('the card lists the open issues of the repository and its queue with their st
   }
   assert.equal(lines.at(-1), RULE);
 });
+it('the card keeps a pushed branch visible when GitHub cannot be read', () => {
+  const repo = backlogRepo(); git(repo, 'checkout', '-b', 'pushed'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
+  git(repo, 'update-ref', 'refs/remotes/origin/pushed', 'HEAD'); git(repo, 'branch', '--set-upstream-to=origin/pushed'); git(repo, 'checkout', 'main');
+  assert(runCard(repo, fakeGh('auth')).stdout.includes('- pushed: open a pull request unless one is open'));
+});
 it('the card prints the local backlog when GitHub cannot be read', () => {
   for (const [env, why] of [[noGh(), 'gh not found'], [fakeGh('auth'), 'gh auth login'], [fakeGh('slow'), 'longer than 3 seconds']]) {
     const repo = backlogRepo(); writeFileSync(path.join(repo, 'u.txt'), 'u\n');

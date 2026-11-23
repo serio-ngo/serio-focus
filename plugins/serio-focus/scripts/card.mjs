@@ -35,6 +35,7 @@ const local = (cwd, env, heads) => {
     if (files === null) continue;
     if (!files || g('diff', '--quiet', main, b, '--', ...files.split('\n')) !== null) { if (b !== current) branches.push(`- ${b}: delete: merged`); }
     else if (!up || /gone|ahead/.test(track) || (heads && !heads.has(b))) branches.push(`- ${b}: push and open a pull request`);
+    else if (!heads) branches.push(`- ${b}: open a pull request unless one is open`);
   }
   if (seen < todo.length) branches.push(`- and ${todo.length - seen} more branches to check`);
   return [...(dirty && current ? [`- ${current}: commit and push to ${current}`] : []), ...branches,
