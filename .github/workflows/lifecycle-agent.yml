@@ -177,6 +177,7 @@ jobs:
             ponytail@ponytail
           prompt: ${{ steps.args.outputs.prompt }}
           claude_args: ${{ steps.args.outputs.args }}
+          restrict_untrusted_prs: ${{ startsWith(needs.route.outputs.ref, 'agent/') && 'false' || 'true' }}
       - name: Trace
         id: trace
         if: always() && steps.claude.outputs.execution_file != ''
