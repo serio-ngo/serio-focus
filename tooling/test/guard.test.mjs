@@ -1064,6 +1064,12 @@ it('the card lists a clean current branch with an unpushed commit', () => {
   const repo = backlogRepo(); git(repo, 'checkout', '-b', 'mine'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
   assert(runCard(repo, fakeGh('out', empty)).stdout.includes('- mine: push and open a pull request'));
 });
+it('the card checks the current branch first and never tells it to delete itself', () => {
+  const repo = backlogRepo(); for (let i = 0; i < 11; i++) git(repo, 'branch', `old-${i}`);
+  git(repo, 'checkout', '-b', 'fresh'); assert(!runCard(repo, fakeGh('out', empty)).stdout.includes('- fresh:'));
+  writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
+  assert(runCard(repo, fakeGh('out', empty)).stdout.includes('- fresh: push and open a pull request'));
+});
 it('the card gives each open pull request one action', () => {
   const pr = (title, over) => ({ title, isDraft: false, reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] }, reviewThreads: { nodes: [{ isResolved: true }] }, ...over });
   const nodes = [pr('Red check', { commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] } }), pr('Draft work', { isDraft: true }),

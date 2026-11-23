@@ -27,13 +27,13 @@ const local = (cwd, env, heads) => {
   const current = g('branch', '--show-current'), dirty = Boolean(g('status', '--porcelain')), top = path.resolve(g('rev-parse', '--show-toplevel') ?? cwd);
   const others = (g('worktree', 'list', '--porcelain') ?? '').split('\n\n').filter(Boolean).map((b) => ({ dir: /^worktree (.*)/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.*)/m.exec(b)?.[1] }));
   const used = new Set(others.filter((w) => path.resolve(w.dir) !== top).map((w) => w.branch));
-  const todo = !main ? [] : lines('for-each-ref', '--sort=committerdate', '--format=%(refname:short)|%(upstream:short)|%(upstream:track)', 'refs/heads').map((l) => l.split('|')).filter(([b]) => b !== main && !used.has(b) && !(dirty && b === current));
-  const branches = [];
+  const todo = !main ? [] : lines('for-each-ref', '--sort=committerdate', '--format=%(refname:short)|%(upstream:short)|%(upstream:track)', 'refs/heads').map((l) => l.split('|')).filter(([b]) => b !== main && !used.has(b) && !(dirty && b === current)).sort(([a], [b]) => (b === current) - (a === current));
+  const branches = [], end = Date.now() + 4000;
   let seen = 0;
-  for (; seen < todo.length && branches.length < 10; seen++) {
+  for (; seen < todo.length && branches.length < 10 && Date.now() < end; seen++) {
     const [b, up, track] = todo[seen], files = g('diff', '--name-only', `${main}...${b}`);
     if (files === null) continue;
-    if (!files || g('diff', '--quiet', main, b, '--', ...files.split('\n')) !== null) branches.push(`- ${b}: delete: merged`);
+    if (!files || g('diff', '--quiet', main, b, '--', ...files.split('\n')) !== null) { if (b !== current) branches.push(`- ${b}: delete: merged`); }
     else if (!up || /gone|ahead/.test(track) || (heads && !heads.has(b))) branches.push(`- ${b}: push and open a pull request`);
   }
   if (seen < todo.length) branches.push(`- and ${todo.length - seen} more branches to check`);
