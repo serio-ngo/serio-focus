@@ -34,10 +34,10 @@
 
 | What ships | Count |
 |---|---|
-| Script lines | **1132** across 14 files |
+| Script lines | **1161** across 14 files |
 | Hook events | **3** |
 | Skills | **6** |
 | Subagents | **4** |
-| Startup context: card, agent and skill descriptions | **~476** tokens |
+| Startup context: card, agent and skill descriptions | **~476** tokens, plus the Backlog block: at most 10 lines per group |
 | Third-party packages | **0** |
 | Network calls, API keys, model calls | **0** |

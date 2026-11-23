@@ -131,7 +131,7 @@ export function manifest() {
       `| Hook events | **${inv.hookEvents}** |`,
       `| Skills | **${inv.skills}** |`,
       `| Subagents | **${inv.agents}** |`,
-      `| Startup context: card, agent and skill descriptions | **~${inv.contextTokens}** tokens |`,
+      `| Startup context: card, agent and skill descriptions | **~${inv.contextTokens}** tokens, plus the Backlog block: at most 10 lines per group |`,
       `| Third-party packages | **${inv.dependencies}** |`,
       '| Network calls, API keys, model calls | **0** |',
     ]), '',

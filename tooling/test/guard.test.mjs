@@ -1012,3 +1012,64 @@ it('the spec review comment names fewer e2e criteria than the spec labels', asyn
   assert.ok(body(['e2e', 'e2e', 'unit'], three).includes('Levels: the spec names 3 e2e criteria; this review has 2.'));
   for (const [levels, s] of [[['e2e', 'e2e', 'e2e'], three], [['e2e', 'unit'], spec('Given a, When b, Then c. Level: unit')], [['e2e', 'unit'], wording]]) assert.deepEqual(body(levels, s).filter((l) => l.startsWith('Levels:')), []);
 });
+const RULE = "Backlog first: finish or reject each item above before new work. An item that waits only for a person does not block. Never change a branch, worktree or file that a running session uses.";
+const git = (cwd, ...args) => { const run = spawnSync('git', args, { cwd, encoding: 'utf8' }); if (run.status !== 0) throw new Error(run.stderr); return run.stdout; };
+const backlogRepo = () => {
+  const dir = path.join(sandbox('backlog-'), 'repo'); mkdirSync(dir);
+  git(dir, 'init', '-b', 'main'); git(dir, 'config', 'user.name', 't'); git(dir, 'config', 'user.email', 't@t');
+  git(dir, 'remote', 'add', 'origin', 'https://example.com/o/r.git');
+  writeFileSync(path.join(dir, 'a.txt'), 'a\n'); git(dir, 'add', '.'); git(dir, 'commit', '-m', 'a');
+  return dir;
+};
+const runCard = (cwd) => spawnSync(process.execPath, [script('card.mjs')], { cwd, encoding: 'utf8' });
+it('the card says the backlog is clear when nothing is open', async () => {
+  const { card } = await import(new URL('../../plugins/serio-focus/scripts/card.mjs', import.meta.url));
+  const run = runCard(backlogRepo());
+  assert.equal(run.status, ALLOWED, run.stderr);
+  assert.equal(run.stdout, `${card()}\nBacklog: clear\n`);
+});
+it('the card gives each local leftover one action', () => {
+  const repo = backlogRepo(), wt = path.join(path.dirname(repo), 'wt-dir');
+  git(repo, 'branch', 'merged-x');
+  git(repo, 'checkout', '-b', 'own-change'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
+  git(repo, 'checkout', 'main'); git(repo, 'worktree', 'add', wt, '-b', 'in-worktree');
+  writeFileSync(path.join(repo, 'a.txt'), 'changed\n'); git(repo, 'stash', 'push', '-m', 'wip-stash');
+  git(repo, 'checkout', '-b', 'b'); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
+  const run = runCard(repo), lines = run.stdout.split('\n');
+  const once = (name, action) => { const hits = lines.filter((line) => line.includes(name)); assert.equal(hits.length, 1, `${name}: ${run.stdout}`); assert(hits[0].includes(action), hits[0]); };
+  once('- b: ', 'commit and push to b'); once('merged-x', 'delete: merged'); once('own-change', 'push and open a pull request');
+  once('wt-dir', 'remove when no session uses it'); once('wip-stash', 'apply to its branch or drop');
+  assert.equal(lines.filter((line) => line.includes('in-worktree')).length, 0, run.stdout);
+  assert(run.stdout.endsWith(`${RULE}\n`), run.stdout);
+});
+it('the card never calls a branch merged when the default branch is unknown', () => {
+  const repo = backlogRepo(); git(repo, 'branch', '-m', 'master');
+  git(repo, 'checkout', '-b', 'topic'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
+  const run = runCard(repo);
+  assert(!run.stdout.includes('delete: merged'), run.stdout);
+  git(repo, 'branch', '-m', 'master', 'trunk');
+  assert(runCard(repo).stdout.includes('- default branch unknown: run git remote set-head origin --auto'));
+});
+it('the card lists a clean current branch with an unpushed commit', () => {
+  const repo = backlogRepo(); git(repo, 'checkout', '-b', 'mine'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
+  assert(runCard(repo).stdout.includes('- mine: push and open a pull request unless one is open'));
+});
+it('the card checks the current branch first and never tells it to delete itself', () => {
+  const repo = backlogRepo(); for (let i = 0; i < 11; i++) git(repo, 'branch', `old-${i}`);
+  git(repo, 'checkout', '-b', 'fresh'); assert(!runCard(repo).stdout.includes('- fresh:'));
+  writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
+  assert(runCard(repo).stdout.includes('- fresh: push and open a pull request'));
+});
+it('the card lists a branch with unrelated history', () => {
+  const repo = backlogRepo(); git(repo, 'checkout', '--orphan', 'lone'); git(repo, 'commit', '-m', 'lone'); git(repo, 'checkout', 'main');
+  assert(runCard(repo).stdout.includes('- lone: push and open a pull request unless one is open'));
+});
+it('the card lists uncommitted work on a detached HEAD', () => {
+  const repo = backlogRepo(); git(repo, 'checkout', '--detach'); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
+  assert(runCard(repo).stdout.includes('- HEAD: commit to a new branch and open a pull request'));
+});
+it('the card keeps a pushed branch that holds unmerged work', () => {
+  const repo = backlogRepo(); git(repo, 'checkout', '-b', 'pushed'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
+  git(repo, 'update-ref', 'refs/remotes/origin/pushed', 'HEAD'); git(repo, 'branch', '--set-upstream-to=origin/pushed'); git(repo, 'checkout', 'main');
+  assert(runCard(repo).stdout.includes('- pushed: open a pull request unless one is open'));
+});
