@@ -38,7 +38,7 @@ const local = (cwd, env, heads) => {
     else if (!heads) branches.push(`- ${b}: open a pull request unless one is open`);
   }
   if (seen < todo.length) branches.push(`- and ${todo.length - seen} more branches to check`);
-  return [...(dirty && current ? [`- ${current}: commit and push to ${current}`] : []), ...branches,
+  return [...(dirty && current ? [`- ${current}: ${current === main ? 'commit to a new branch and open a pull request' : `commit and push to ${current}`}`] : []), ...branches,
     ...cap(others.slice(1).filter((w) => path.resolve(w.dir) !== top).map((w) => `- ${w.dir}: remove when no session uses it`)),
     ...cap(lines('stash', 'list', '--format=%gs').reverse().map((m) => `- ${m}: apply to its branch or drop`))];
 };

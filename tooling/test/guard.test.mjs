@@ -1106,7 +1106,7 @@ it('the card prints the local backlog when GitHub cannot be read', () => {
     const repo = backlogRepo(); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
     const start = Date.now(), run = runCard(repo, env);
     assert.equal(run.status, ALLOWED, run.stderr); assert(Date.now() - start < 10000);
-    assert(run.stdout.includes('- main: commit and push to main'), run.stdout);
+    assert(run.stdout.includes('- main: commit to a new branch and open a pull request'), run.stdout);
     assert(run.stdout.split('\n').some((l) => l.startsWith('Remote backlog unknown: ') && l.includes(why)), run.stdout);
   }
 });
