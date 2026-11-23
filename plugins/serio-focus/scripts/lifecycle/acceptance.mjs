@@ -33,7 +33,7 @@ export function report({ review = '', tests, sha, lock = '', link = '', files = 
   const ok = (ac.length > 0 || spec?.verdict === 'ready') && rows.every((r) => r.result === 'passed');
   const body = [
     `**Acceptance: ${ok ? 'pass' : 'fail'}** for \`${sha.slice(0, 7)}\`${lock ? ` · test lock: ${cell(lock)}` : ''}`, '',
-    '| Criterion | Test | Result |', '|---|---|---|',
+    ...(rows.length ? ['| Criterion | Test | Result |', '|---|---|---|'] : ['No criteria: the review names review checks only.']),
     ...rows.map((r) => `| AC${r.n} | ${r.name} | ${r.result} |`),
     ...(size || files.length ? ['', `Changed: ${size} · gate files: ${files.filter((f) => GATE.test(f)).map((f) => `\`${cell(f)}\``).join(', ') || 'none'}`] : []),
     ...(free.length ? ['', `Changes no test needs: ${free.map((f) => `\`${cell(f)}\``).join(', ')}`] : []),

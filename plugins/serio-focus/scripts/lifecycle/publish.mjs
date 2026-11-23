@@ -28,13 +28,14 @@ export function comment(out, sha, extra = '', spec = '') {
   if (!Array.isArray(criteria) || !Array.isArray(questions) || criteria.length > 5 || questions.length > 5) return null;
   if (!criteria.every((c, i) => c?.id === i + 1 && text(c.text) && ['unit', 'e2e'].includes(c.level) && text(c.test) && name(c.test))) return null;
   if (!questions.every((q) => text(q?.question) && text(q.recommended)) || (extra && !text(extra))) return null;
-  const checks = /Review checks:[\s\S]*/.exec(out.note || '')?.[0];
-  if (out.verdict === 'ready' ? (!criteria.length && !checks) || questions.length : !questions.length) return null;
+  if (out.checks !== undefined && (!Array.isArray(out.checks) || out.checks.length > 5 || !out.checks.every((c) => text(c, MAX.text)))) return null;
+  const checks = out.checks || [];
+  if (out.verdict === 'ready' ? (!criteria.length && !checks.length) || questions.length : !questions.length) return null;
   const e2e = criteria.filter((c) => c.level === 'e2e').length;
   const named = (/### Acceptance criteria\n([\s\S]*?)(?=\n###|$)/i.exec((spec || '').replace(/\r\n/g, '\n'))?.[1] || '').split('\n').filter((l) => /^\d+\.\s/.test(l) && (/^\d+\.\s+\*\*[^*]*e2e/i.test(l) || /Level: e2e/i.test(l))).length;
   return [
     `**Spec review: ${out.verdict}**`, '',
-    ...(checks ? [line(fit(checks, MAX.text)), ''] : []),
+    ...(checks.length ? [line(`Review checks: ${checks.join('; ')}`), ''] : []),
     ...(criteria.length ? ['| Criterion | Given, When, Then | Level | Test |', '|---|---|---|---|', ...criteria.map((c) => `| AC${c.id} | ${line(fit(c.text, MAX.text))} | ${c.level} | \`${name(c.test)}\` |`), ''] : []),
     ...questions.map((q, i) => `${i + 1}. ${line(fit(q.question, MAX.question))} Recommended: ${line(fit(q.recommended, MAX.recommended))}`), ...(questions.length ? [''] : []),
     ...(extra ? [line(extra), ''] : []),
@@ -99,11 +100,11 @@ function selfTest() {
   const q = { question: 'Which locale?', recommended: 'pl-PL' };
   assert.match(comment({ verdict: 'ready', criteria: [ac(1), ac(2)], questions: [] }, 'abcdef123456'), /<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1,2 -->$/);
   assert.match(comment({ verdict: 'questions', criteria: [ac(1)], questions: [q] }, 'abcdef123456'), /verdict=questions ac=1 -->$/);
-  assert.match(comment({ verdict: 'ready', criteria: [], questions: [], note: 'Ready. Review checks: both skills sit under .agents/skills.' }, 'abcdef123456'), /Review checks: both skills sit under \.agents\/skills\.\n[\s\S]*verdict=ready ac= -->$/, 'a ready review with no criteria names its review checks');
-  assert.match(comment({ verdict: 'ready', criteria: [ac(1)], questions: [], note: 'Ready. Review checks: the config names the plugin.' }, 'abcdef123456'), /\nReview checks: the config names the plugin\.\n[\s\S]*\| AC1 \|/, 'review checks stay beside criteria');
+  assert.match(comment({ verdict: 'ready', criteria: [], questions: [], checks: ['both skills sit under .agents/skills'] }, 'abcdef123456'), /Review checks: both skills sit under \.agents\/skills\n[\s\S]*verdict=ready ac= -->$/, 'a ready review with no criteria names its review checks');
+  assert.match(comment({ verdict: 'ready', criteria: [ac(1)], questions: [], checks: ['the config names the plugin', 'a second check'] }, 'abcdef123456'), /\nReview checks: the config names the plugin; a second check\n[\s\S]*\| AC1 \|/, 'review checks stay beside criteria');
   const bad = [
     ['no output', null], ['unknown verdict', { verdict: 'ok', criteria: [ac(1)] }],
-    ['ready without criteria', { verdict: 'ready', criteria: [] }], ['ready with questions', { verdict: 'ready', criteria: [ac(1)], questions: [q] }],
+    ['ready without criteria', { verdict: 'ready', criteria: [] }], ['ready with an empty check', { verdict: 'ready', criteria: [], checks: [' '] }], ['ready with questions', { verdict: 'ready', criteria: [ac(1)], questions: [q] }],
     ['questions without a question', { verdict: 'questions', criteria: [ac(1)], questions: [] }],
     ['six criteria', { verdict: 'ready', criteria: [1, 2, 3, 4, 5, 6].map((i) => ac(i)) }], ['ids out of order', { verdict: 'ready', criteria: [ac(2)] }],
     ['unknown level', { verdict: 'ready', criteria: [{ ...ac(1), level: 'manual' }] }], ['criteria not a list', { verdict: 'ready', criteria: 'AC1' }],
