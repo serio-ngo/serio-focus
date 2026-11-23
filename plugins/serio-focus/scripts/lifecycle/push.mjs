@@ -67,7 +67,7 @@ export function publish({ repo, ref, issue, stage, body }, io) {
   if (ready) io.send('POST', 'graphql', { query: 'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } });
   let head;
   try { head = io.push(ref); } catch (e) {
-    if (ready) io.send('POST', 'graphql', { query: 'mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } });
+    if (ready) try { io.send('POST', 'graphql', { query: 'mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } }); } catch (c) { e.message += `; back to draft failed: ${c.message}`; }
     throw e;
   }
   const title = io.one(`repos/${repo}/issues/${issue}`).title;
