@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- A review bot out of usage (Codex at its limit) never blocks pr-loop: the fresh-context reviewer's `ready` on the head stands in, and the card names the missing bot review.
 - The session card lists local leftovers (uncommitted work, branches, worktrees, stashes) with one action each; git only, no network call.
 - The tester tests only behaviour a caller sees and extends the test that covers the boundary; versions, sizes, layout, documents and config get no test.
 - One status comment per issue is edited in place: step, result, next action, log.
