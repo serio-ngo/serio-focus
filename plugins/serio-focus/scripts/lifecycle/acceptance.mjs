@@ -23,21 +23,30 @@ export const cases = (xml) => [...xml.matchAll(/<testcase\b((?:[^>"]|"[^"]*")*?)
 
 const mapping = (body) => new Map([...String(body || '').matchAll(/^\| AC(\d+) \| .* \| (?:unit|e2e) \| `([^`]+)` \|$/gm)].map(([, n, test]) => [Number(n), test]));
 
-export function report({ review = '', tests, sha, lock = '', link = '', files = [], size = '', free = [], skipped = [] }) {
+const APP = (f) => production(f) && /(^|\/)(src|app)\//.test(f) && !/\.mdx$/i.test(f);
+const NAMESPACE = /(^|\.)(w3\.org|schema\.org|sitemaps\.org|schemas\.android\.com)$/;
+const strings = (text) => [...text.matchAll(/["'`}](\/\w[^"'`$?#)]*)|(https?:\/\/([^\s"'`\/$?#)]+))/g)].flatMap(([, p, o, host]) => p ? /\.\w+$/.test(p.split('/').at(-1)) ? [] : [`/${p.split('/').slice(1, 3).join('/')}`] : NAMESPACE.test(host) ? [] : [o]);
+
+const outcome = (tests, name) => {
+  const mine = name ? tests.filter((t) => t.name === name) : [];
+  return !mine.length ? 'missing' : mine.find((t) => t.result !== 'passed')?.result || 'passed';
+};
+
+export function report({ review = '', tests, sha, lock = '', link = '', files = [], size = '', free = [], skipped = [], fails = [], without, repeats = [] }) {
   const spec = specOf(review), ac = spec?.ac || [], map = mapping(review);
-  const rows = ac.map((n) => {
-    const name = map.get(n), mine = name ? tests.filter((t) => t.name === name) : [];
-    const result = !mine.length ? 'missing' : mine.find((t) => t.result !== 'passed')?.result || 'passed';
-    return { n, name: name ? cell(name) : '-', result };
-  });
-  const ok = (ac.length > 0 || spec?.verdict === 'ready') && rows.every((r) => r.result === 'passed');
+  const rows = ac.map((n) => ({ n, name: map.get(n) ? cell(map.get(n)) : '-', result: outcome(tests, map.get(n)) }));
+  const kept = without ? ac.filter((n) => outcome(without, map.get(n)) === 'passed') : [];
+  const notes = [...fails, ...kept.length ? [`Passes without the change: ${kept.map((n) => `AC${n}`).join(', ')}`] : []];
+  const ok = (ac.length > 0 || spec?.verdict === 'ready') && rows.every((r) => r.result === 'passed') && !notes.length;
   const body = [
     `**Acceptance: ${ok ? 'pass' : 'fail'}** for \`${sha.slice(0, 7)}\`${lock ? ` · test lock: ${cell(lock)}` : ''}`, '',
     ...(rows.length ? ['| Criterion | Test | Result |', '|---|---|---|'] : ['No criteria: the review names review checks only.']),
     ...rows.map((r) => `| AC${r.n} | ${r.name} | ${r.result} |`),
+    ...notes.flatMap((l) => ['', l]),
     ...(size || files.length ? ['', `Changed: ${size} · gate files: ${files.filter((f) => GATE.test(f)).map((f) => `\`${cell(f)}\``).join(', ') || 'none'}`] : []),
     ...(free.length ? ['', `Changes no test needs: ${free.map((f) => `\`${cell(f)}\``).join(', ')}`] : []),
     ...(skipped.length ? ['', `Not reverted in time: ${skipped.map((f) => `\`${cell(f)}\``).join(', ')}`] : []),
+    ...(repeats.length ? ['', `Routes in two or more files: ${repeats.map(([s, fs]) => `\`${cell(s)}\` in ${fs.map((f) => `\`${cell(f)}\``).join(', ')}`).join('; ')}`] : []),
     ...(link ? ['', `Run and e2e traces: ${link}`] : []), '', `<!-- acceptance v1 sha=${sha} -->`,
   ].join('\n');
   return { ok, body };
@@ -83,20 +92,38 @@ function selfTest() {
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.xml') ? [path.join(dir, e.name)] : []);
 
+const limits = (files, review) => {
+  const k = specOf(review)?.ac.length || 0, named = [...mapping(review).values()];
+  const tests = files.filter((f) => LOCKED.test(f.filename) && !CONFIG.test(f.filename) && !/^\.(claude|agents)\//.test(f.filename));
+  const found = tests.flatMap((f) => String(f.patch || '').split('\n').flatMap((l) => { const m = /^\+\s*(?:(?:it|test)\(\s*(['"`])(.*?)\1|(?:async\s+)?def\s+(test_\w+))/.exec(l); return m ? [m[2] ?? m[3]] : []; }));
+  const lost = [...new Set(found.filter((c) => !named.some((t) => t === c || t.split(' › ').at(-1) === c)))];
+  const added = tests.reduce((sum, f) => sum + (f.additions || 0), 0);
+  return [
+    ...found.length && !files.some((f) => production(f.filename)) ? ['Tests only: the pull request adds test cases and changes no production file'] : [],
+    ...lost.length ? [`Test cases no criterion names: ${lost.map((c) => `\`${cell(c)}\``).join(', ')}`] : [],
+    ...found.length > k ? [`More test cases than criteria: ${found.length} for ${k}`] : [],
+    ...added > 40 * k ? [`More than 40 added test lines per criterion: ${added} for ${k}`] : [],
+  ];
+};
+
 export function accept({ repo, number, dir, tested, lock, link, post, revert }, io = { one, all, send, raw }) {
   const pr = io.one(`repos/${repo}/pulls/${number}`), n = taskOf(pr);
-  if (!n) return { ok: true, body: 'acceptance: not a lifecycle pull request' };
+  const list = io.all(`repos/${repo}/pulls/${number}/files?per_page=100`);
+  if (!n) { const fails = limits(list, ''); return { ok: !fails.length, body: ['acceptance: not a lifecycle pull request', ...fails].join('\n') }; }
   if (tested && tested !== pr.head.sha) return { ok: true, body: 'acceptance: a newer head exists; the run for it writes the report' };
   const own = ownersOf(repo, io.raw);
   const review = specComment(io.all(`repos/${repo}/issues/${n}/comments?per_page=100`), own)?.body;
   let xml = [];
   try { xml = walk(dir); } catch { }
-  const files = io.all(`repos/${repo}/pulls/${number}/files?per_page=100`).map((f) => f.filename), size = `+${pr.additions} −${pr.deletions} in ${pr.changed_files} files`;
+  const files = list.map((f) => f.filename), size = `+${pr.additions} −${pr.deletions} in ${pr.changed_files} files`;
   const read = (d) => walk(d).flatMap((file) => cases(readFileSync(file, 'utf8')));
   const dirs = !revert || !existsSync(revert) ? [] : readdirSync(revert).sort(), skip = path.join(revert || '', 'skipped');
   const skipped = dirs.includes('skipped') ? readFileSync(skip, 'utf8').split('\n').filter(Boolean) : [];
   const free = dirs.filter((d) => /^\d+$/.test(d)).filter((d) => report({ review, tests: read(path.join(revert, d)), sha: pr.head.sha }).ok).map((d) => readFileSync(path.join(revert, d, 'file'), 'utf8').trim());
-  const got = report({ review, tests: xml.flatMap((file) => cases(readFileSync(file, 'utf8'))), sha: pr.head.sha, lock, link, files, size, free, skipped });
+  const head = xml.flatMap((file) => cases(readFileSync(file, 'utf8')));
+  const without = dirs.includes('all') ? read(path.join(revert, 'all')) : files.some(production) ? undefined : head;
+  const repeats = dirs.includes('routes.json') ? JSON.parse(readFileSync(path.join(revert, 'routes.json'), 'utf8')) : [];
+  const got = report({ review, tests: head, sha: pr.head.sha, lock, link, files, size, free, skipped, fails: limits(list, review), without, repeats });
   if (post) {
     const old = io.all(`repos/${repo}/issues/${number}/comments?per_page=100`).find((c) => c.user?.login === 'github-actions[bot]' && /<!-- acceptance v1 /.test(c.body || ''));
     if (old) io.send('PATCH', `repos/${repo}/issues/comments/${old.id}`, { body: got.body });
@@ -120,23 +147,29 @@ function revertRuns() {
   const { BASE, UNIT, E2E } = process.env, git = (...a) => spawnSync('git', a, { encoding: 'utf8' });
   const base = git('merge-base', 'HEAD', BASE).stdout.trim();
   const changed = git('diff', '--name-only', '--no-renames', '--diff-filter=AM', base, 'HEAD').stdout.split('\n').filter((f) => f && production(f));
-  const end = Date.now() + Number(process.env.REVERT_BUDGET_MS || 12 * 60 * 1000), skipped = [];
-  changed.forEach((file, i) => {
-    if (Date.now() >= end) return skipped.push(file);
-    if (git('cat-file', '-e', `${base}:${file}`).status) rmSync(file, { force: true }); else git('checkout', base, '--', file);
+  const end = Date.now() + Number(process.env.REVERT_BUDGET_MS || 12 * 60 * 1000), skipped = new Set();
+  const app = git('ls-files').stdout.split('\n').filter((f) => f && APP(f)), held = new Map(app.map((f) => { try { return [f, new Set(strings(readFileSync(f, 'utf8')))]; } catch { return [f, new Set()]; } }));
+  const added = new Set(changed.filter(APP).flatMap((f) => strings(git('diff', '-U0', base, 'HEAD', '--', f).stdout.split('\n').filter((l) => /^\+(?!\+\+)/.test(l)).join('\n'))));
+  const repeats = [...added].map((s) => [s, app.filter((f) => held.get(f).has(s))]).filter(([, fs]) => fs.length > 1);
+  if (repeats.length) { mkdirSync('revert', { recursive: true }); writeFileSync(path.join('revert', 'routes.json'), JSON.stringify(repeats)); }
+  const attempt = (name, paths) => {
+    if (Date.now() >= end) return paths.forEach((f) => skipped.add(f));
+    for (const file of paths) if (git('cat-file', '-e', `${base}:${file}`).status) rmSync(file, { force: true }); else git('checkout', base, '--', file);
     rmSync('junit', { recursive: true, force: true });
     mkdirSync('junit');
     const cut = [UNIT, E2E].filter(Boolean).map((cmd) => spawnSync('bash', ['-c', cmd], { stdio: 'inherit', timeout: Math.max(1, end - Date.now()) }).error).some(Boolean);
-    const out = path.join('revert', String(i));
-    if (cut) skipped.push(file);
+    const out = path.join('revert', name);
+    if (cut) paths.forEach((f) => skipped.add(f));
     else {
       mkdirSync(out, { recursive: true });
       for (const x of readdirSync('junit').filter((n) => n.endsWith('.xml'))) renameSync(path.join('junit', x), path.join(out, x));
-      writeFileSync(path.join(out, 'file'), file);
+      writeFileSync(path.join(out, 'file'), paths.join('\n'));
     }
-    git('checkout', 'HEAD', '--', file);
-  });
-  if (skipped.length) { mkdirSync('revert', { recursive: true }); writeFileSync(path.join('revert', 'skipped'), skipped.map((f) => `${f}\n`).join('')); }
+    git('checkout', 'HEAD', '--', ...paths);
+  };
+  if (changed.length) attempt('all', changed);
+  changed.forEach((file, i) => attempt(String(i), [file]));
+  if (skipped.size) { mkdirSync('revert', { recursive: true }); writeFileSync(path.join('revert', 'skipped'), [...skipped].map((f) => `${f}\n`).join('')); }
 }
 
 function main() {

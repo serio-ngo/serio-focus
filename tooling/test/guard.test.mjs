@@ -968,7 +968,7 @@ it('acceptance tells a module that failed to load apart from a failed assertion 
   assert.match(got.body, /Acceptance: fail/);
   for (const [n, name, result] of [[1, 'case 1', 'load error'], [2, 'case 2', 'load error'], [3, 'case 3', 'load error'], [4, 'case 4', 'failed']]) assert.ok(got.body.split('\n').includes(`| AC${n} | ${name} | ${result} |`), got.body);
 });
-it('acceptance lists changed production files whose revert leaves every criterion test passing', async () => {
+it('acceptance fails a criterion whose test passes with every production change of the pull request reverted', async () => {
   const { accept } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/acceptance.mjs', import.meta.url));
   const { comment } = await import(PUBLISH);
   const repo = sandbox('revert-'), log = path.join(sandbox('revert-log-'), 'log');
@@ -982,8 +982,11 @@ it('acceptance lists changed production files whose revert leaves every criterio
   git('add', '-A'); git('commit', '-qm', 'head');
   const unit = `printf '%s|%s\\n' "$(cat src/a.mjs)" "$(test -f src/new.mjs && echo new || echo none)" >> "$LOG"; mkdir -p junit; if test -f src/new.mjs; then echo '<testsuites><testsuite><testcase name="sum adds two numbers"/></testsuite></testsuites>' > junit/u.xml; else echo '<testsuites><testsuite><testcase name="sum adds two numbers"><failure/></testcase></testsuite></testsuites>' > junit/u.xml; fi`;
   spawnSync(process.execPath, [script('lifecycle/acceptance.mjs'), '--revert'], { cwd: repo, encoding: 'utf8', env: { ...process.env, BASE: base, UNIT: unit, E2E: '', LOG: log } });
-  assert.deepEqual(existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).sort() : [], ['a1|new', 'a2|none']);
-  const root = path.join(repo, 'revert'), folders = existsSync(root) ? readdirSync(root) : [];
+  const lines = () => existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).sort() : [];
+  assert.deepEqual(lines(), ['a1|new', 'a1|none', 'a2|none']);
+  const root = path.join(repo, 'revert'), folders = existsSync(root) ? readdirSync(root).filter((d) => /^\d+$/.test(d)) : [];
+  assert.equal(readFileSync(path.join(root, 'all', 'file'), 'utf8').trim(), 'src/a.mjs\nsrc/new.mjs');
+  assert.ok(readFileSync(path.join(root, 'all', 'u.xml'), 'utf8').includes('<failure'));
   const listed = folders.map((d) => [readFileSync(path.join(root, d, 'file'), 'utf8').trim(), readFileSync(path.join(root, d, 'u.xml'), 'utf8').includes('<failure')]).sort();
   assert.deepEqual(listed, [['src/a.mjs', false], ['src/new.mjs', true]]);
   assert.equal(git('diff', '--quiet', 'HEAD').status, 0);
@@ -1001,6 +1004,78 @@ it('acceptance lists changed production files whose revert leaves every criterio
   assert.ok(got.body.split('\n').includes('Changes no test needs: `src/a.mjs`'), got.body);
   assert.ok(!got.body.includes('src/new.mjs'), got.body);
   assert.ok(got.body.split('\n').includes('| AC1 | sum adds two numbers | passed |'), got.body);
+  const pass = '<testsuites><testsuite><testcase name="sum adds two numbers"/></testsuite></testsuites>', line = 'Passes without the change: AC1';
+  writeFileSync(path.join(root, 'all', 'u.xml'), pass);
+  const again = await accept({ repo: 'o/r', number: 9, dir, tested: '', lock: '', link: '', post: false, revert: root }, io);
+  assert.equal(again.ok, false, again.body);
+  assert.ok(again.body.split('\n').includes(line), again.body);
+  const before = git('rev-parse', 'HEAD').stdout.trim();
+  put('tests/a.test.mjs', 'a3'); git('commit', '-qam', 'tests only');
+  rmSync(root, { recursive: true, force: true });
+  spawnSync(process.execPath, [script('lifecycle/acceptance.mjs'), '--revert'], { cwd: repo, encoding: 'utf8', env: { ...process.env, BASE: before, UNIT: unit, E2E: '', LOG: log } });
+  assert.deepEqual([lines().length, existsSync(path.join(root, 'all'))], [3, false]);
+  const only = (draft) => ({ ...io, one: () => ({ ...pr, draft }), all: (url) => url.includes('/files') ? [{ filename: 'tests/a.test.mjs' }] : [review] });
+  for (const draft of [false, true]) {
+    const run = await accept({ repo: 'o/r', number: 9, dir, tested: '', lock: '', link: '', post: false, revert: root }, only(draft));
+    assert.equal(run.ok, false, run.body);
+    assert.ok(run.body.split('\n').includes(line), run.body);
+  }
+  writeFileSync(path.join(dir, 'u.xml'), pass.replace('"/>', '"><failure/></testcase>'));
+  const red = await accept({ repo: 'o/r', number: 9, dir, tested: '', lock: '', link: '', post: false, revert: root }, only(false));
+  assert.ok(!red.body.includes('Passes without the change'), red.body);
+});
+it('acceptance fails added test cases without product code, without a criterion or beyond the criteria count and size', async () => {
+  const { accept } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/acceptance.mjs', import.meta.url));
+  const { comment } = await import(PUBLISH);
+  const bot = { login: 'github-actions[bot]', type: 'Bot' }, own = { full_name: 'o/r' };
+  const criteria = [{ id: 1, text: 'Given 2 and 3, When Add, Then 5', level: 'unit', test: 'adds' }, { id: 2, text: 'Given 5 and 3, When Sub, Then 2', level: 'unit', test: 'subtracts' }];
+  const review = { user: bot, created_at: 't', updated_at: 't', body: comment({ verdict: 'ready', criteria, questions: [] }, 'abcdef123456') };
+  const run = async (ref, ...files) => {
+    const sent = [], pr = { number: 9, additions: 1, deletions: 0, changed_files: files.length, head: { sha: 'h'.padEnd(40, '0'), ref, repo: own }, base: { repo: own } };
+    const io = { one: () => pr, all: (url) => url.includes('/files') ? files : [review], raw: () => '', send: (...a) => sent.push(a) };
+    const got = await accept({ repo: 'o/r', number: 9, dir: sandbox('added-'), tested: '', lock: '', link: '', post: true }, io);
+    return { ...got, lines: got.body.split('\n'), sent };
+  };
+  const test = (total, ...decl) => ({ filename: 'tests/a.test.mjs', additions: total, patch: [...decl, ...Array(total - decl.length).fill('+x();')].join('\n') });
+  const src = { filename: 'src/a.mjs', additions: 1, patch: '+x();' };
+  const adds = "+it('adds', () => {});", divides = "+it('divides', () => {});", subtracts = "+test('subtracts', () => {});";
+  const got = await run('agent/7-sum', test(81, adds, divides));
+  for (const line of ['Tests only: the pull request adds test cases and changes no production file', 'Test cases no criterion names: `divides`', 'More than 40 added test lines per criterion: 81 for 2']) assert.ok(got.lines.includes(line), got.body);
+  assert.ok(!got.body.includes('More test cases than criteria'), got.body);
+  assert.ok((await run('agent/7-sum', test(81, adds, divides, subtracts))).lines.includes('More test cases than criteria: 3 for 2'));
+  const fine = await run('agent/7-sum', src, test(40, adds));
+  assert.ok(!/Tests only|no criterion names|More test cases|More than 40/.test(fine.body), fine.body);
+  const free = await run('fix/x', src, test(1, adds));
+  assert.equal(free.ok, false);
+  for (const line of ['acceptance: not a lifecycle pull request', 'Test cases no criterion names: `adds`', 'More test cases than criteria: 1 for 0', 'More than 40 added test lines per criterion: 1 for 0']) assert.ok(free.lines.includes(line), free.body);
+  assert.deepEqual(free.sent, []);
+  const plain = await run('fix/x', src);
+  assert.equal(plain.ok, true);
+  assert.ok(!/no criterion names|More test cases|More than 40/.test(plain.body), plain.body);
+});
+it('acceptance names a route the pull request repeats across app source files without changing the result', async () => {
+  const { accept } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/acceptance.mjs', import.meta.url));
+  const { comment } = await import(PUBLISH);
+  const repo = sandbox('routes-');
+  const git = (...args) => spawnSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
+  const put = (file, text) => { mkdirSync(path.dirname(path.join(repo, file)), { recursive: true }); writeFileSync(path.join(repo, file), text); };
+  git('init', '-q');
+  put('src/b.astro', '<a href="/api/game/start"></a><a href="https://github.com/serio-ngo"></a><img src="/img/x.png"><svg xmlns="http://www.w3.org/2000/svg"></svg>');
+  git('add', '-A'); git('commit', '-qm', 'base');
+  const base = git('rev-parse', 'HEAD').stdout.trim();
+  put('src/a.ts', "export const u = ['/api/game/result', '/solo', '/img/x.png', 'http://www.w3.org/2000/svg', 'https://github.com/x'];");
+  git('add', '-A'); git('commit', '-qm', 'head');
+  spawnSync(process.execPath, [script('lifecycle/acceptance.mjs'), '--revert'], { cwd: repo, encoding: 'utf8', env: { ...process.env, BASE: base, UNIT: '', E2E: '' } });
+  const bot = { login: 'github-actions[bot]', type: 'Bot' }, own = { full_name: 'o/r' };
+  const criteria = [{ id: 1, text: 'Given 2 and 3, When Add, Then 5', level: 'unit', test: 'sum adds two numbers' }];
+  const review = { user: bot, created_at: 't', updated_at: 't', body: comment({ verdict: 'ready', criteria, questions: [] }, 'abcdef123456') };
+  const dir = sandbox('routes-head-');
+  writeFileSync(path.join(dir, 'u.xml'), '<testsuites><testsuite><testcase name="sum adds two numbers"/></testsuite></testsuites>');
+  const pr = { number: 9, additions: 1, deletions: 0, changed_files: 1, head: { sha: 'h'.padEnd(40, '0'), ref: 'agent/7-sum', repo: own }, base: { repo: own } };
+  const io = { one: () => pr, all: (url) => url.includes('/files') ? [{ filename: 'src/a.ts' }] : [review], raw: () => '', send: () => { } };
+  const got = await accept({ repo: 'o/r', number: 9, dir, tested: '', lock: '', link: '', post: false, revert: path.join(repo, 'revert') }, io);
+  assert.equal(got.ok, true, got.body);
+  assert.deepEqual(got.body.split('\n').filter((l) => l.startsWith('Routes')), ['Routes in two or more files: `/api/game` in `src/a.ts`, `src/b.astro`; `https://github.com` in `src/a.ts`, `src/b.astro`']);
 });
 it('the spec review comment names fewer e2e criteria than the spec labels', async () => {
   const { comment } = await import(PUBLISH);

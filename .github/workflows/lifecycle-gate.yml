@@ -134,7 +134,7 @@ jobs:
         name: Test lock
         run: node plugins/serio-focus/scripts/lifecycle/lock.mjs "$PR"
       - name: Acceptance report
-        continue-on-error: ${{ steps.lock.outputs.locked != 'true' }}
+        continue-on-error: ${{ github.event.pull_request.draft }}
         env:
           LOCK_NOTE: ${{ steps.lock.outputs.note }}
           RESULTS: ${{ runner.temp }}/junit
