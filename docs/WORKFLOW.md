@@ -41,10 +41,10 @@ Runs share no memory. They hand off through comments on the task, written and re
 | Log line `Note (route): Not started: <reason>` | `route.mjs`, when a person's trigger cannot start | Status log | The person |
 | Log line `**needs-human**: <reason>` and the label | `publish.mjs` (a run that failed or pushed nothing), `route.mjs` (a third red CI) | Status log | `brief.mjs`; the person |
 | `<!-- fix-ci v1 run=… attempt=… sha=… -->` | `route.mjs` | Pull request | `route.mjs` (duplicate events) |
-| `<!-- acceptance v1 sha=… -->`: one row per criterion, size, changed gate files | `acceptance.mjs`, replaced on every push | Pull request | `brief.mjs`; the person |
+| `<!-- acceptance v1 sha=… -->`: one row per criterion, size, changed gate files, and the lines for passing without the change, tests only, unnamed or surplus test cases, oversized tests and repeated routes | `acceptance.mjs`, replaced on every push | Pull request | `brief.mjs`; the person |
 | A review starting with `tests-ok` | A code owner | Pull request | `lock.mjs`, `route.mjs`, `brief.mjs` |
 | The commits of a run as a bundle, the branch name and `.lifecycle/pr.md` | The agent job, after the model session ends | Run artifact `commits`, kept 1 day | `push.mjs` |
-| One folder per changed production file: its path and the JUnit results of the tests run with that file reverted | The gate's test job, on a ready pull request (`acceptance.mjs --revert`) | Run artifact `revert` | `acceptance.mjs`: "Changes no test needs" |
+| `all/` (every changed production file reverted), one folder per changed production file: its path and the JUnit results of the tests run with that file reverted; `routes.json` | The gate's test job, on a ready pull request (`acceptance.mjs --revert`) | Run artifact `revert` | `acceptance.mjs`: "Changes no test needs" |
 | The whole transcript and a trace of calls, errors and denials | The Trace step | Job log and summary | Whoever debugs a run |
 | One allowlisted record per run (`trace`, `eval`, `result`, `gate`, `revision`, `plugin`, `model`, `effort`, `dropped`); a field gitleaks flags is dropped; assets of `raw-*` releases older than 90 days are deleted | `publish.mjs archive`, gitleaks 8.30.1 | `serio-ngo/lifecycle-runs` `runs/<repo>/<date>/<run>-<attempt>-<stage>.json` | Whoever debugs a run |
 
