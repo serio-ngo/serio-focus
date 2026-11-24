@@ -148,7 +148,7 @@ function revertRuns() {
   const base = git('merge-base', 'HEAD', BASE).stdout.trim();
   const changed = git('diff', '--name-only', '--no-renames', '--diff-filter=AM', base, 'HEAD').stdout.split('\n').filter((f) => f && production(f));
   const end = Date.now() + Number(process.env.REVERT_BUDGET_MS || 12 * 60 * 1000), skipped = new Set();
-  const app = git('ls-files').stdout.split('\n').filter((f) => f && APP(f)), held = new Map(app.map((f) => [f, new Set(strings(readFileSync(f, 'utf8')))]));
+  const app = git('ls-files').stdout.split('\n').filter((f) => f && APP(f)), held = new Map(app.map((f) => { try { return [f, new Set(strings(readFileSync(f, 'utf8')))]; } catch { return [f, new Set()]; } }));
   const added = new Set(changed.filter(APP).flatMap((f) => strings(git('diff', '-U0', base, 'HEAD', '--', f).stdout.split('\n').filter((l) => /^\+(?!\+\+)/.test(l)).join('\n'))));
   const repeats = [...added].map((s) => [s, app.filter((f) => held.get(f).has(s))]).filter(([, fs]) => fs.length > 1);
   if (repeats.length) { mkdirSync('revert', { recursive: true }); writeFileSync(path.join('revert', 'routes.json'), JSON.stringify(repeats)); }
