@@ -5,7 +5,7 @@ disable-model-invocation: true
 argument-hint: "<issue number>"
 ---
 
-Write the tests for issue $ARGUMENTS. Agents, models and efforts are as in `deliver`.
+Write the tests for issue $ARGUMENTS. Before the first dispatch read the agent table in `${CLAUDE_PLUGIN_ROOT}/skills/deliver/SKILL.md`: every dispatch names its model and effort from that table, never the main session's model.
 
 | Step | Do | Evidence |
 |---|---|---|
