@@ -143,7 +143,11 @@ function selfTest() {
   const quoted = [];
   status('o/r', 7, { now: 'Hi' }, { all: () => [{ id: 1, user: old.user, body: `See ${old.body}` }], send: (...a) => quoted.push(a), raw: () => '' });
   assert.deepEqual(quoted.map((a) => a[0] + a[1]), ['POSTrepos/o/r/issues/7/comments']);
-  console.log(`publish self-test: ${bad.length + 20} checks passed`);
+  const runs = (stage, before) => { const sent = []; pushed({ repo: 'o/r', number: 98, stage, before, note: '', reason: '' }, { one: () => ({ title: 'T', body: 'B' }), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, draft: true, head: { ref: 'agent/98-x', sha: 'h2' } }] : [], send: (...a) => sent.push(a), raw: () => '' }); return sent.map((a) => `${a[1]} ${JSON.stringify(a[2])}`).join('\n'); };
+  assert.match(runs('write-tests', 'h1'), /issues\/98\/comments \{"body":"<!-- write-tests v1 spec=[0-9a-f]{12} -->"\}/, 'a tests run that pushed records the spec it wrote tests for');
+  assert.doesNotMatch(runs('write-tests', 'h2'), /write-tests v1 spec=/, 'a tests run whose push was refused records no spec');
+  assert.match(runs('pr-loop', 'h2'), /issues\/5\/labels[\s\S]*no-push v1 sha=h2/, 'a pr-loop run without a push parks the pull request with its head');
+  console.log(`publish self-test: ${bad.length + 23} checks passed`);
 }
 
 export function pushed({ repo, number, stage, before, note: text, reason }, io = { one, all, send, raw }) {

@@ -20,9 +20,9 @@ A stage is one skill. By hand a person runs it in Claude Code; unattended, `life
 | Stage | By hand | Unattended start | Ends with |
 |---|---|---|---|
 | `spec-review` | `/serio-focus:spec-review <N>` | A person labels the issue `spec-review` | A review comment: verdict, questions, criteria `AC1…ACn`, each with the test that proves it |
-| `write-tests` | `/serio-focus:write-tests <N>` | A person labels it `spec-ok` and the newest review says `ready` for the current text, which changed since the last tests run; or a code owner requests changes before the lock | A draft pull request `agent/<N>-…`: a failing test for each behaviour no test covers yet; the repository skill when a boundary changes |
+| `write-tests` | `/serio-focus:write-tests <N>` | A person labels it `spec-ok` and the newest review says `ready` for the current text, which changed since the last tests run unless that run parked; or a code owner requests changes before the lock | A draft pull request `agent/<N>-…`: a failing test for each behaviour no test covers yet; the repository skill when a boundary changes |
 | `deliver` | `/serio-focus:deliver task issue #<N> on pull request #<PR>` | A code owner's review starting with `tests-ok` on the head of the draft | Code, green checks, reviewer `ready`, the pull request marked ready |
-| `pr-loop` | `/serio-focus:pr-loop <PR>` | After the lock: a failed CI run on the head that started after the first `tests-ok` (twice at most) or a code owner's change request; never again on a head where a `pr-loop` run pushed nothing | One fix round pushed |
+| `pr-loop` | `/serio-focus:pr-loop <PR>` | After the lock: a failed CI run on the head that started after the first `tests-ok` (twice at most) or a code owner's change request; a red CI never on a head where a `pr-loop` run pushed nothing | One fix round pushed |
 | `gate` | `/serio-focus:gate <PR>` | `lifecycle-gate.yml` on every push | `test lock: pass`; the acceptance report |
 | `improve` | `/serio-focus:improve <N>` | A code owner's command; the task is assigned | Every stage runs on Actions with the instructions of the improvement branch, is audited, and is rerun after a lifecycle fix; `spec-ok` and `tests-ok` given for the code owner who runs it; the merge stays a person's |
 
