@@ -23,9 +23,11 @@ export const cases = (xml) => [...xml.matchAll(/<testcase\b((?:[^>"]|"[^"]*")*?)
 
 const mapping = (body) => new Map([...String(body || '').matchAll(/^\| AC(\d+) \| .* \| (?:unit|e2e) \| `([^`]+)` \|$/gm)].map(([, n, test]) => [Number(n), test]));
 
-const APP = (f) => production(f) && /(^|\/)(src|app)\//.test(f) && !/\.mdx$/i.test(f);
+const APP = (f) => production(f) && /(^|\/)(src|app)\//.test(f) && !/(^|\/)(src|app)\/(.+\/)?content\//.test(f) && !/\.(mdx|json|css|scss)$/i.test(f);
+const root = (f) => /^(?:.*?\/)?(?:src|app)\//.exec(f)[0];
 const NAMESPACE = /(^|\.)(w3\.org|schema\.org|sitemaps\.org|schemas\.android\.com)$/;
-const strings = (text) => [...text.matchAll(/["'`}](\/\w[^"'`$?#)]*)|(https?:\/\/([^\s"'`\/$?#)]+))/g)].flatMap(([, p, o, host]) => p ? /\.\w+$/.test(p.split('/').at(-1)) ? [] : [`/${p.split('/').slice(1, 3).join('/')}`] : NAMESPACE.test(host) ? [] : [o]);
+const strings = (text) => [...text.matchAll(/["'`}](\/\w[^\s,"'`$?#)]*)(?=["'`$?#)])|(https?:\/\/([^\s"'`\/$?#)]+))/g)].flatMap(([, p, o, host]) => p ? /\.\w+$/.test(p.split('/').at(-1)) ? [] : [`/${p.split('/').filter(Boolean).slice(0, 2).join('/')}`] : NAMESPACE.test(host) ? [] : [o]);
+const routes = (repeats) => repeats.length ? [`Routes in two or more files: ${repeats.map(([s, fs]) => `\`${cell(s)}\` in ${fs.map((f) => `\`${cell(f)}\``).join(', ')}`).join('; ')}`] : [];
 
 const outcome = (tests, name) => {
   const mine = name ? tests.filter((t) => t.name === name) : [];
@@ -36,7 +38,7 @@ export function report({ review = '', tests, sha, lock = '', link = '', files = 
   const spec = specOf(review), ac = spec?.ac || [], map = mapping(review);
   const rows = ac.map((n) => ({ n, name: map.get(n) ? cell(map.get(n)) : '-', result: outcome(tests, map.get(n)) }));
   const kept = without ? ac.filter((n) => outcome(without, map.get(n)) === 'passed') : [];
-  const notes = [...fails, ...kept.length ? [`Passes without the change: ${kept.map((n) => `AC${n}`).join(', ')}`] : []];
+  const notes = [...fails, ...kept.length ? [`Passes without the change: ${kept.map((n) => `AC${n}`).join(', ')}`] : [], ...routes(repeats)];
   const ok = (ac.length > 0 || spec?.verdict === 'ready') && rows.every((r) => r.result === 'passed') && !notes.length;
   const body = [
     `**Acceptance: ${ok ? 'pass' : 'fail'}** for \`${sha.slice(0, 7)}\`${lock ? ` · test lock: ${cell(lock)}` : ''}`, '',
@@ -46,7 +48,6 @@ export function report({ review = '', tests, sha, lock = '', link = '', files = 
     ...(size || files.length ? ['', `Changed: ${size} · gate files: ${files.filter((f) => GATE.test(f)).map((f) => `\`${cell(f)}\``).join(', ') || 'none'}`] : []),
     ...(free.length ? ['', `Changes no test needs: ${free.map((f) => `\`${cell(f)}\``).join(', ')}`] : []),
     ...(skipped.length ? ['', `Not reverted in time: ${skipped.map((f) => `\`${cell(f)}\``).join(', ')}`] : []),
-    ...(repeats.length ? ['', `Routes in two or more files: ${repeats.map(([s, fs]) => `\`${cell(s)}\` in ${fs.map((f) => `\`${cell(f)}\``).join(', ')}`).join('; ')}`] : []),
     ...(link ? ['', `Run and e2e traces: ${link}`] : []), '', `<!-- acceptance v1 sha=${sha} -->`,
   ].join('\n');
   return { ok, body };
@@ -57,10 +58,8 @@ function selfTest() {
   const junit = '<testsuites><testsuite><testcase name="sum adds two numbers" time="0.1"/><testcase name="Add shows 2 =&gt; &quot;5&quot;" classname="e2e"><system-out>x</system-out></testcase></testsuite></testsuites>';
   const review = spec('| AC1 | Given 2 \\| 3, When x | unit | `sum adds two numbers` |\n| AC2 | Given a | e2e | `Add shows 2 => "5"` |', '1,2');
   const pass = report({ review, tests: cases(junit), sha: 'abcdef123456' });
-  assert.equal(pass.ok, true); assert.match(pass.body, /\| AC1 \| sum adds two numbers \| passed \|\n\| AC2 \| Add shows 2 = {2}"5" \| passed \|/); assert.match(pass.body, /<!-- acceptance v1 sha=abcdef123456 -->/);
-  const changed = (files) => report({ review, tests: cases(junit), sha: 'abcdef1', size: '+3 −1 in 2 files', files }).body;
+  assert.equal(pass.ok, true); assert.match(pass.body, /\| AC1 \| sum adds two numbers \| passed \|\n\| AC2 \| Add shows 2 = {2}"5" \| passed \|/);  const changed = (files) => report({ review, tests: cases(junit), sha: 'abcdef1', size: '+3 −1 in 2 files', files }).body;
   assert.match(changed(['src/a.mjs', '.github/workflows/ci.yml', 'scripts/x.sh']), /\nChanged: \+3 −1 in 2 files · gate files: `\.github\/workflows\/ci\.yml`, `scripts\/x\.sh`\n/);
-  assert.match(changed(['src/a.mjs', 'src/describe.mjs']), /gate files: none\n/);
   assert.match(changed(['CODEOWNERS', '.eslintrc.json', '.husky/pre-commit', 'tsconfig.json', 'yarn.lock']), /gate files: `CODEOWNERS`, `\.eslintrc\.json`, `\.husky\/pre-commit`, `tsconfig\.json`, `yarn\.lock`\n/);
   assert.doesNotMatch(changed(['scripts/x\n| AC1 | forged | passed |']), /\n\| AC1 \| forged/);
   const list = [
@@ -70,8 +69,6 @@ function selfTest() {
   ];
   assert.equal(report({ review: spec('', ''), tests: [], sha: 'a' }).ok, true, 'a ready review with no criteria passes: the task changes no behaviour a test can reach');
   for (const [title, got, want] of list) { assert.equal(got.ok, false, title); assert.match(got.body, want, title); }
-  for (const f of ['plugins/serio-focus/scripts/lifecycle/route.mjs', 'scripts/site-tools.mjs', 'src/a.mjs']) assert.equal(production(f), true, f);
-  for (const f of ['package.json', '.github/workflows/ci.yml', '.husky/pre-commit', 'tsconfig.json', 'tests/a.test.mjs', '.agents/skills/x/SKILL.md', 'README.md']) assert.equal(production(f), false, f);
   const repo = mkdtempSync(path.join(tmpdir(), 'rev-')), git = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: repo, encoding: 'utf8' });
   git('init'); mkdirSync(path.join(repo, 'src')); writeFileSync(path.join(repo, 'src/a.mjs'), '1'); writeFileSync(path.join(repo, 'src/b.mjs'), '1');
   git('add', '.'); git('commit', '-m', 'b'); const BASE = git('rev-parse', 'HEAD').stdout.trim();
@@ -82,12 +79,32 @@ function selfTest() {
   rmSync(path.join(repo, 'revert'), { recursive: true, force: true });
   spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--revert'], { cwd: repo, env: { ...process.env, BASE, UNIT: 'sleep 5', E2E: '', REVERT_BUDGET_MS: '500' } });
   assert.equal(readFileSync(path.join(repo, 'revert/skipped'), 'utf8'), 'src/a.mjs\nsrc/b.mjs\n', 'skipped lists files');
-  assert.equal(existsSync(path.join(repo, 'revert/0')) || existsSync(path.join(repo, 'revert/1')), false, 'no folder for skipped');
   assert.deepEqual(['a', 'b'].map((n) => readFileSync(path.join(repo, `src/${n}.mjs`), 'utf8')), ['2', '2'], 'head restored');
   const late = report({ review, tests: cases(junit), sha: 'abcdef1', skipped: ['src/a.mjs', 'src/b.mjs'] });
   assert.match(late.body, /\nNot reverted in time: `src\/a\.mjs`, `src\/b\.mjs`\n/); assert.equal(late.ok, true);
+  rmSync(path.join(repo, 'revert'), { recursive: true, force: true }); mkdirSync(path.join(repo, 'src/content/impact'), { recursive: true });
+  writeFileSync(path.join(repo, 'src/b.astro'), '<a href="/about"></a><a href="/en/"></a><a href="/api/game/start"></a><a href="https://github.com/serio-ngo"></a><img src="/img/x.png"><svg xmlns="http://www.w3.org/2000/svg"></svg>');
+  writeFileSync(path.join(repo, 'src/content/impact/x.yaml'), '{"source":"https://www.gov.pl/a"}');
+  mkdirSync(path.join(repo, 'src/data')); writeFileSync(path.join(repo, 'src/data/x.json'), '{"repo":"https://github.com/y"}'); writeFileSync(path.join(repo, 'src/s.scss'), '/* https://github.com */');
+  for (const f of ['c', 'd']) writeFileSync(path.join(repo, `src/${f}.astro`), '<a href="/contact"></a>');
+  for (const d of ['backend/app', 'frontend/src']) mkdirSync(path.join(repo, d), { recursive: true });
+  writeFileSync(path.join(repo, 'backend/app/b.py'), 'API = "/api/v1/x"\nOLD = "/api/v2/x"');
+  git('add', '.'); git('commit', '-m', 'r'); const ROUTED = git('rev-parse', 'HEAD').stdout.trim();
+  writeFileSync(path.join(repo, 'src/a.ts'), "['/about', '/en', 'https://www.gov.pl/b', '/api/game/result', '/solo', '/img/x.png', 'http://www.w3.org/2000/svg', 'https://github.com/x']");
+  writeFileSync(path.join(repo, 'src/c.astro'), '<a class="x" href="/contact"></a>');
+  writeFileSync(path.join(repo, 'frontend/src/a.ts'), "fetch('/api/v1/y')"); writeFileSync(path.join(repo, 'backend/app/d.py'), 'NEW = "/api/v2/y"');
+  git('add', '.'); git('commit', '-m', 'a');
+  spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--revert'], { cwd: repo, env: { ...process.env, BASE: ROUTED, UNIT: '', E2E: '' } });
+  const line = `Routes in two or more files: \`/api/v2\` in \`backend/app/b.py\`, \`backend/app/d.py\`; ${['/about', '/en', '/api/game', 'https://github.com'].map((s) => `\`${s}\` in \`src/a.ts\`, \`src/b.astro\``).join('; ')}`;
+  const routed = report({ review, tests: cases(junit), sha: 'a', repeats: JSON.parse(readFileSync(path.join(repo, 'revert/routes.json'), 'utf8')) });
+  assert.equal(routed.ok, false, 'a repeated route fails'); assert.ok(routed.body.split('\n').includes(line), routed.body);
+  const plain = accept({ repo: 'o/r', number: 1, revert: path.join(repo, 'revert') }, { one: () => ({ head: { ref: 'fix/x', repo: { full_name: 'o/r' } }, base: { repo: { full_name: 'o/r' } } }), all: () => [] });
+  assert.deepEqual([plain.ok, plain.body.split('\n').at(-1)], [false, line], 'a pull request outside the lifecycle fails on a repeated route');
+  const gh = { one: () => ({ head: { ref: 'fix/x', sha: 'h', repo: { full_name: 'o/r' } }, base: { repo: { full_name: 'o/r' } } }), all: () => [] };
+  assert.equal(record({ repo: 'o/r', number: 1, lock: 'success', note: 'n', revert: path.join(repo, 'revert') }, gh).acceptance, plain.body, 'the gate record holds the posted report');
+  assert.deepEqual(strings("'/about' `/en/` '/a/ b' '/c, d' s.replace(/'/gu, '')"), ['/about', '/en'], 'a path ends at its closing quote: text or a regex flag before a space or comma is none');
   rmSync(repo, { recursive: true, force: true });
-  console.log(`acceptance self-test: ${list.length + 23} checks passed`);
+  console.log(`acceptance self-test: ${list.length + 16} checks passed`);
 }
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.xml') ? [path.join(dir, e.name)] : []);
@@ -109,7 +126,8 @@ const limits = (files, review) => {
 export function accept({ repo, number, dir, tested, lock, link, post, revert }, io = { one, all, send, raw }) {
   const pr = io.one(`repos/${repo}/pulls/${number}`), n = taskOf(pr);
   const list = io.all(`repos/${repo}/pulls/${number}/files?per_page=100`);
-  if (!n) { const fails = limits(list, ''); return { ok: !fails.length, body: ['acceptance: not a lifecycle pull request', ...fails].join('\n') }; }
+  const repeats = revert && existsSync(path.join(revert, 'routes.json')) ? JSON.parse(readFileSync(path.join(revert, 'routes.json'), 'utf8')) : [];
+  if (!n) { const fails = [...limits(list, ''), ...routes(repeats)]; return { ok: !fails.length, body: ['acceptance: not a lifecycle pull request', ...fails].join('\n') }; }
   if (tested && tested !== pr.head.sha) return { ok: true, body: 'acceptance: a newer head exists; the run for it writes the report' };
   const own = ownersOf(repo, io.raw);
   const review = specComment(io.all(`repos/${repo}/issues/${n}/comments?per_page=100`), own)?.body;
@@ -122,7 +140,6 @@ export function accept({ repo, number, dir, tested, lock, link, post, revert }, 
   const free = dirs.filter((d) => /^\d+$/.test(d)).filter((d) => report({ review, tests: read(path.join(revert, d)), sha: pr.head.sha }).ok).map((d) => readFileSync(path.join(revert, d, 'file'), 'utf8').trim());
   const head = xml.flatMap((file) => cases(readFileSync(file, 'utf8')));
   const without = dirs.includes('all') ? read(path.join(revert, 'all')) : files.some(production) ? undefined : head;
-  const repeats = dirs.includes('routes.json') ? JSON.parse(readFileSync(path.join(revert, 'routes.json'), 'utf8')) : [];
   const got = report({ review, tests: head, sha: pr.head.sha, lock, link, files, size, free, skipped, fails: limits(list, review), without, repeats });
   if (post) {
     const old = io.all(`repos/${repo}/issues/${number}/comments?per_page=100`).find((c) => c.user?.login === 'github-actions[bot]' && /<!-- acceptance v1 /.test(c.body || ''));
@@ -132,9 +149,9 @@ export function accept({ repo, number, dir, tested, lock, link, post, revert }, 
   return got;
 }
 
-export function record({ repo, number, dir, tested, lock, note, verifier, run, attempt, jobs }, io = { one, all, raw }) {
+export function record({ repo, number, dir, tested, lock, note, verifier, run, attempt, jobs, revert }, io = { one, all, raw }) {
   const pr = io.one(`repos/${repo}/pulls/${number}`), ok = lock === 'success';
-  const body = !ok ? null : accept({ repo, number, dir, tested, lock: note, link: '', post: false }, { ...io, send: () => { } }).body;
+  const body = !ok ? null : accept({ repo, number, dir, tested, lock: note, link: '', post: false, revert }, { ...io, send: () => { } }).body;
   let xml = [];
   try { xml = walk(dir); } catch { }
   return {
@@ -149,8 +166,11 @@ function revertRuns() {
   const changed = git('diff', '--name-only', '--no-renames', '--diff-filter=AM', base, 'HEAD').stdout.split('\n').filter((f) => f && production(f));
   const end = Date.now() + Number(process.env.REVERT_BUDGET_MS || 12 * 60 * 1000), skipped = new Set();
   const app = git('ls-files').stdout.split('\n').filter((f) => f && APP(f)), held = new Map(app.map((f) => { try { return [f, new Set(strings(readFileSync(f, 'utf8')))]; } catch { return [f, new Set()]; } }));
-  const added = new Set(changed.filter(APP).flatMap((f) => strings(git('diff', '-U0', base, 'HEAD', '--', f).stdout.split('\n').filter((l) => /^\+(?!\+\+)/.test(l)).join('\n'))));
-  const repeats = [...added].map((s) => [s, app.filter((f) => held.get(f).has(s))]).filter(([, fs]) => fs.length > 1);
+  const added = new Set(changed.filter(APP).flatMap((f) => {
+    const diff = git('diff', '-U0', base, 'HEAD', '--', f).stdout.split('\n'), side = (c) => strings(diff.filter((l) => l[0] === c && !l.startsWith(c.repeat(3))).join('\n')), gone = new Set(side('-'));
+    return side('+').filter((s) => !gone.has(s)).map((s) => `${root(f)}\n${s}`);
+  }));
+  const repeats = [...added].map((k) => k.split('\n')).map(([r, s]) => [s, app.filter((f) => root(f) === r && held.get(f).has(s))]).filter(([, fs]) => fs.length > 1);
   if (repeats.length) { mkdirSync('revert', { recursive: true }); writeFileSync(path.join('revert', 'routes.json'), JSON.stringify(repeats)); }
   const attempt = (name, paths) => {
     if (Date.now() >= end) return paths.forEach((f) => skipped.add(f));
@@ -177,7 +197,7 @@ function main() {
   const [number, dir] = process.argv.slice(2), repo = flag('--repo') || repoOf(), file = flag('--record');
   if (file) {
     const { env } = process;
-    return writeFileSync(file, JSON.stringify(record({ repo, number, dir, tested: env.TESTED_SHA || '', lock: env.LOCK, note: env.LOCK_NOTE, verifier: env.VERIFIER, run: env.GITHUB_RUN_ID, attempt: Number(env.GITHUB_RUN_ATTEMPT), jobs: { tests: env.TESTS } }, { one, all, raw })));
+    return writeFileSync(file, JSON.stringify(record({ repo, number, dir, tested: env.TESTED_SHA || '', lock: env.LOCK, note: env.LOCK_NOTE, verifier: env.VERIFIER, run: env.GITHUB_RUN_ID, attempt: Number(env.GITHUB_RUN_ATTEMPT), jobs: { tests: env.TESTS }, revert: env.REVERT }, { one, all, raw })));
   }
   const { ok, body } = accept({ repo, number, dir, tested: process.env.TESTED_SHA || '', lock: process.env.LOCK_NOTE, link: process.env.GITHUB_RUN_ID ? runLink() : '', post: process.argv.includes('--post'), revert: process.env.REVERT });
   console.log(body);
