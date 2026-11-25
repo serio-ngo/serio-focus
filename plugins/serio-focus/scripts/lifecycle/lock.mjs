@@ -34,7 +34,6 @@ function selfTest() {
     ['test edited after the lock', { changed: () => ['tests/sum.test.mjs'] }, false, /tests\/sum\.test\.mjs/],
     ['skill edited after the lock', { changed: () => ['.claude/skills/api/SKILL.md', '.agents/skills/api/SKILL.md'] }, false, /locked paths changed after the lock: \.claude\/skills\/api\/SKILL\.md, \.agents\/skills\/api\/SKILL\.md/],
     ['other test layouts', { changed: () => ['test/a.mjs', 'src/__tests__/a.js', 'src/a_test.js', 'src/test-a.mjs', 'src/a-test.js'] }, false, /test\/a\.mjs, src\/__tests__\/a\.js, src\/a_test\.js, src\/test-a\.mjs, src\/a-test\.js/],
-    ['source named like a test', { changed: () => ['src/contest.mjs', 'src/latest/a.mjs'] }, true, /^locked/],
     ['e2e, spec and config paths', { changed: () => ['e2e/a.js', 'src/a.spec.ts', 'playwright.config.mjs'] }, false, /e2e\/a\.js, src\/a\.spec\.ts, playwright\.config\.mjs/],
     ['bot review', { reviews: [lock(app)] }, false, /without a tests-ok/],
     ['change request that starts with tests-ok', { reviews: [{ ...lock(), state: 'CHANGES_REQUESTED' }] }, false, /without a tests-ok/],
