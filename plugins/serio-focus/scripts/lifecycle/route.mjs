@@ -59,6 +59,8 @@ export function route(name, ev, s) {
     if (!lock) return stop('no test lock yet');
     if (w.created_at < reviews.find((r) => owns(r.user, s.own) && testsOk(r.body)).submitted_at) return stop('CI started before the first test lock');
     if (fixMarkers(s.comments(pr.number)).some((f) => f.run === w.id && f.attempt === w.run_attempt)) return stop('duplicate CI event');
+    const jobs = s.jobs?.(w) || [], job = (name) => jobs.find((j) => j.name.endsWith(name));
+    if (job('tests')?.conclusion === 'success' && job('lock and acceptance')?.steps?.some((st) => st.name === 'Test lock' && st.conclusion === 'failure')) return stop(`tests pass and only the test lock fails; a person reads its "test lock:" line. Locked paths changed: review https://github.com/${s.repo}/compare/${lock.commit_id}...${pr.head.sha} and accept with a tests-ok review on the head. Any other cause: fix the spec review or spec-ok it names. Then gh run rerun ${w.id} --failed -R ${s.repo}`, pr.number);
     const red = new Set(s.failures(w).filter((f) => f.created_at > lock.submitted_at).map((f) => f.id)).add(w.id);
     if (red.size > 2) return { park: pr.number, stop: `CI failed after 2 fix runs: ${w.html_url}` };
     return run('pr-loop', issueOf(pr.head.ref), { pr: pr.number, ref: pr.head.ref, sha: pr.head.sha, bot: true, marker: `<!-- fix-ci v1 run=${w.id} attempt=${w.run_attempt} sha=${w.head_sha} -->` });
@@ -75,6 +77,7 @@ function selfTest() {
   const earlier = { user: actions, body: comment({ verdict: 'questions', criteria: [{ id: 1, text: 'Given a | b, When x, Then y', level: 'unit', test: 'x gives y' }, { id: 2, text: 'Given 2, When Add, Then 3', level: 'e2e', test: 'Add shows the sum' }], questions: [{ question: 'Which locale?', recommended: 'pl-PL' }] }, '000000000000') };
   const lock = { user: ada, body: 'tests-ok', commit_id: 'h1', state: 'COMMENTED', submitted_at: '2026-01-02' };
   const fail = (id, created_at = '2026-01-03') => ({ id, created_at });
+  const lockOnly = [{ name: 'gate / tests', conclusion: 'success' }, { name: 'gate / lock and acceptance', conclusion: 'failure', steps: [{ name: 'Test lock', conclusion: 'failure' }] }];
   const fix = (run) => ({ user: actions, body: `<!-- fix-ci v1 run=${run} attempt=1 sha=abc -->` });
   const pr = { number: 9, state: 'open', draft: true, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
   const state = (over = {}) => ({ repo: 'o/r', guarded: true, failures: () => [], own: owners('* @ada\n'), issue: () => issue, comments: () => [ready], reviews: () => [lock], pulls: () => [pr], openPulls: () => [pr], pull: () => pr, ...over });
@@ -113,6 +116,8 @@ function selfTest() {
     ['second red CI', 'workflow_run', ci(), state({ failures: () => [fail(4), fail(5)] }), 'pr-loop'],
     ['red CI from before the lock', 'workflow_run', ci(), state({ failures: () => [fail(2, '2026-01-01'), fail(3, '2026-01-01'), fail(5)] }), 'pr-loop'],
     ['third red CI', 'workflow_run', ci(), state({ failures: () => [fail(3), fail(4), fail(5)] }), undefined],
+    ['red CI only on the test lock', 'workflow_run', ci(), state({ jobs: () => lockOnly }), undefined],
+    ['red CI on tests and the test lock', 'workflow_run', ci(), state({ jobs: () => [{ ...lockOnly[0], conclusion: 'failure' }, lockOnly[1]] }), 'pr-loop'],
     ['team-only code owners', 'pull_request_review', review('tests-ok', 'commented'), state({ own: owners('* @o/team\n') }), undefined],
     ['edited marker', 'issues', label('spec-ok', eve), state({ comments: () => [{ ...ready, created_at: 'a', updated_at: 'b' }] }), undefined],
   ];
@@ -133,7 +138,10 @@ function selfTest() {
   const red = route('workflow_run', ci(), state());
   assert.equal(red.bot, true); assert.match(red.marker, /fix-ci v1 run=5 attempt=1 sha=h1/);
   assert.equal(route('workflow_run', ci(), state({ failures: () => [fail(3), fail(4), fail(5)] })).park, 9);
-  console.log(`route self-test: ${cases.length + tells.length + 7} checks passed`);
+  const held = route('workflow_run', ci(), state({ jobs: () => lockOnly }));
+  assert.deepEqual([held.tell, held.marker, held.park], [9, undefined, undefined]);
+  assert.ok(held.stop.endsWith('https://github.com/o/r/compare/h1...h1 and accept with a tests-ok review on the head. Any other cause: fix the spec review or spec-ok it names. Then gh run rerun 5 --failed -R o/r'), held.stop);
+  console.log(`route self-test: ${cases.length + tells.length + 10} checks passed`);
 }
 
 function main() {
@@ -142,6 +150,7 @@ function main() {
   try { guarded = all(`repos/${repo}/rules/branches/${ev.repository.default_branch}?per_page=100`).some((rule) => rule.type === 'update'); } catch { }
   const s = {
     repo, guarded, private: ev.repository.private, own: ownersOf(repo),
+    jobs: (w) => { try { return all(`repos/${repo}/actions/runs/${w.id}/attempts/${w.run_attempt}/jobs?per_page=100`).flatMap((page) => page.jobs); } catch { return []; } },
     failures: (w) => all(`repos/${repo}/actions/workflows/${w.workflow_id}/runs?branch=${w.head_branch}&status=failure&per_page=100`).flatMap((page) => page.workflow_runs),
     issue: (n) => seen.get(n) || seen.set(n, one(`repos/${repo}/issues/${n}`)).get(n),
     comments: (n) => all(`repos/${repo}/issues/${n}/comments?per_page=100`),
