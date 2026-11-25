@@ -107,7 +107,7 @@ jobs:
         run: npm ci
       - name: Install browsers
         if: needs.route.outputs.stage != 'spec-review' && hashFiles('playwright.config.*') != ''
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install ${{ inputs.runner == 'ubuntu-latest' && '--with-deps ' || '' }}chromium
       - name: Plugin at the pinned ref
         env:
           REF: ${{ needs.route.outputs.focus || inputs.focus_ref }}

@@ -62,7 +62,7 @@ jobs:
         run: mkdir -p junit && bash -c "$COMMAND"
       - name: Install browsers
         if: ${{ !cancelled() && hashFiles('playwright.config.*') != '' }}
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install ${{ inputs.runner == 'ubuntu-latest' && '--with-deps ' || '' }}chromium
       - name: e2e tests
         if: ${{ !cancelled() && hashFiles('playwright.config.*') != '' }}
         env:
