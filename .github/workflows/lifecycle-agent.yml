@@ -3,6 +3,10 @@ name: lifecycle agent
 on:
   workflow_call:
     inputs:
+      runner:
+        description: Runner label for every job; a private repository passes serio-runner, the self-hosted runner set up by serio-ngo/ops lifecycle/runner.ps1
+        type: string
+        default: ubuntu-latest
       focus_ref:
         description: serio-focus ref that holds the trusted scripts
         type: string
@@ -35,7 +39,7 @@ jobs:
       (github.event_name != 'issues' || contains(fromJSON('["spec-review","spec-ok","tests-ok"]'), github.event.label.name)) &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'failure') &&
       (github.event_name != 'pull_request_review' || github.event.review.state != 'approved' || contains(github.event.review.body, 'tests-ok'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -70,7 +74,7 @@ jobs:
     name: ${{ needs.route.outputs.stage || 'agent' }}
     needs: route
     if: needs.route.outputs.stage != ''
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ fromJSON(needs.route.outputs.timeout) }}
     permissions:
       contents: read
@@ -236,7 +240,7 @@ jobs:
     name: publish
     needs: [route, agent]
     if: always() && needs.route.outputs.stage != ''
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 5
     permissions:
       contents: read
