@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- In a local attended session deliver stops at the commit and the person types `/ship`, which reviews with `/code-review`; pr-loop never runs while a `/ship` or `/steward` watch runs, and on native Windows it runs on the desktop app's Auto-fix events.
 - A review bot whose reply says its usage limit is reached (Codex) never blocks pr-loop: the reviewer's `ready` on the whole diff at the head stands in; findings the bot already posted still need an answer.
 - The session card lists local leftovers (uncommitted work, branches, worktrees, stashes) with one action each; git only, no network call.
 - The tester tests only behaviour a caller sees and extends the test that covers the boundary; versions, sizes, layout, documents and config get no test.
