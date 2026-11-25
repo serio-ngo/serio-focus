@@ -84,7 +84,7 @@ function selfTest() {
   assert.match(late.body, /\nNot reverted in time: `src\/a\.mjs`, `src\/b\.mjs`\n/); assert.equal(late.ok, true);
   rmSync(path.join(repo, 'revert'), { recursive: true, force: true }); mkdirSync(path.join(repo, 'src/content/impact'), { recursive: true });
   writeFileSync(path.join(repo, 'src/b.astro'), '<a href="/about"></a><a href="/en/"></a><a href="/api/game/start"></a><a href="https://github.com/serio-ngo"></a><img src="/img/x.png"><svg xmlns="http://www.w3.org/2000/svg"></svg>');
-  writeFileSync(path.join(repo, 'src/content/impact/x.json'), '{"source":"https://www.gov.pl/a"}');
+  writeFileSync(path.join(repo, 'src/content/impact/x.yaml'), '{"source":"https://www.gov.pl/a"}');
   mkdirSync(path.join(repo, 'src/data')); writeFileSync(path.join(repo, 'src/data/x.json'), '{"repo":"https://github.com/y"}'); writeFileSync(path.join(repo, 'src/s.scss'), '/* https://github.com */');
   for (const f of ['c', 'd']) writeFileSync(path.join(repo, `src/${f}.astro`), '<a href="/contact"></a>');
   for (const d of ['backend/app', 'frontend/src']) mkdirSync(path.join(repo, d), { recursive: true });
