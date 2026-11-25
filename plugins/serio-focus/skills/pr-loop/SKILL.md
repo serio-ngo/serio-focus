@@ -4,7 +4,7 @@ description: Use when a pull request has failing checks or unresolved review fee
 argument-hint: "[PR number]"
 ---
 
-Bring pull request $ARGUMENTS (default: the current branch) to a clean head. Requires an authenticated `gh`. Before the first dispatch read the agent table in `${CLAUDE_PLUGIN_ROOT}/skills/deliver/SKILL.md`: every dispatch names its model and effort from that table, never the main session's model.
+Bring pull request $ARGUMENTS (default: the current branch) to a clean head. Never while `/ship` or `/steward` watches it: that watch does this work. Requires an authenticated `gh`. Before the first dispatch read the agent table in `${CLAUDE_PLUGIN_ROOT}/skills/deliver/SKILL.md`: every dispatch names its model and effort from that table, never the main session's model.
 
 | Step | Do | Evidence |
 |---|---|---|
