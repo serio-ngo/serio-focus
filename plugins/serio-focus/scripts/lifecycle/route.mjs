@@ -60,7 +60,7 @@ export function route(name, ev, s) {
     if (w.created_at < reviews.find((r) => owns(r.user, s.own) && testsOk(r.body)).submitted_at) return stop('CI started before the first test lock');
     if (fixMarkers(s.comments(pr.number)).some((f) => f.run === w.id && f.attempt === w.run_attempt)) return stop('duplicate CI event');
     const jobs = s.jobs?.(w) || [], job = (name) => jobs.find((j) => j.name.endsWith(name));
-    if (job('tests')?.conclusion === 'success' && job('lock and acceptance')?.steps?.some((st) => st.name === 'Test lock' && st.conclusion === 'failure')) return stop(`tests pass and only locked tests changed after the lock; a person decides: https://github.com/${s.repo}/compare/${lock.commit_id}...${pr.head.sha} - accept with a tests-ok review on the head, then gh run rerun ${w.id} --failed -R ${s.repo}`, pr.number);
+    if (job('tests')?.conclusion === 'success' && job('lock and acceptance')?.steps?.some((st) => st.name === 'Test lock' && st.conclusion === 'failure')) return stop(`tests pass and only the test lock fails; a person reads its "test lock:" line. Locked paths changed: review https://github.com/${s.repo}/compare/${lock.commit_id}...${pr.head.sha} and accept with a tests-ok review on the head. Any other cause: fix the spec review or spec-ok it names. Then gh run rerun ${w.id} --failed -R ${s.repo}`, pr.number);
     const red = new Set(s.failures(w).filter((f) => f.created_at > lock.submitted_at).map((f) => f.id)).add(w.id);
     if (red.size > 2) return { park: pr.number, stop: `CI failed after 2 fix runs: ${w.html_url}` };
     return run('pr-loop', issueOf(pr.head.ref), { pr: pr.number, ref: pr.head.ref, sha: pr.head.sha, bot: true, marker: `<!-- fix-ci v1 run=${w.id} attempt=${w.run_attempt} sha=${w.head_sha} -->` });
@@ -140,7 +140,7 @@ function selfTest() {
   assert.equal(route('workflow_run', ci(), state({ failures: () => [fail(3), fail(4), fail(5)] })).park, 9);
   const held = route('workflow_run', ci(), state({ jobs: () => lockOnly }));
   assert.deepEqual([held.tell, held.marker, held.park], [9, undefined, undefined]);
-  assert.ok(held.stop.endsWith('https://github.com/o/r/compare/h1...h1 - accept with a tests-ok review on the head, then gh run rerun 5 --failed -R o/r'), held.stop);
+  assert.ok(held.stop.endsWith('https://github.com/o/r/compare/h1...h1 and accept with a tests-ok review on the head. Any other cause: fix the spec review or spec-ok it names. Then gh run rerun 5 --failed -R o/r'), held.stop);
   console.log(`route self-test: ${cases.length + tells.length + 10} checks passed`);
 }
 
