@@ -1,7 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
-const call = (args, input) => execFileSync('gh', ['api', ...args], { encoding: 'utf8', input, maxBuffer: 64e6, stdio: ['pipe', 'pipe', 'pipe'] });
+const call = (args, input, tries = 3) => {
+  try {
+    return execFileSync('gh', ['api', ...args], { encoding: 'utf8', input, maxBuffer: 64e6, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch (e) {
+    if (input === undefined && tries > 1 && /dial tcp|timeout|connection reset|unexpected EOF/i.test(String(e.stderr))) return call(args, input, tries - 1);
+    throw e;
+  }
+};
 export const one = (path) => JSON.parse(call([path]));
 export const all = (path) => JSON.parse(call([path, '--paginate', '--slurp'])).flat();
 export const send = (method, path, body) => JSON.parse(call([path, '-X', method, '--input', '-'], JSON.stringify(body)) || 'null');
