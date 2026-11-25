@@ -43,7 +43,7 @@ export const taskOf = (pr) => pr.head.repo?.full_name === pr.base.repo.full_name
 
 const STATUS = '<!-- lifecycle-status v1 -->', flat = (s) => String(s).replace(/\s+/g, ' ').trim();
 const routed = (l) => /<!-- step-note stage=route /.test(l);
-const trim = (lines) => { const gone = new Set(lines.map((_, i) => i).filter((i) => !lines[i].includes('pr-loop does not start again on head ')).sort((a, b) => routed(lines[b]) - routed(lines[a]) || a - b).slice(0, Math.max(0, lines.length - 20))); return lines.filter((_, i) => !gone.has(i)); };
+const trim = (lines) => { const gone = new Set(lines.map((_, i) => i).filter((i) => !/^- \*\*needs-human\*\*: .*pr-loop does not start again on head /.test(lines[i])).sort((a, b) => routed(lines[b]) - routed(lines[a]) || a - b).slice(0, Math.max(0, lines.length - 20))); return lines.filter((_, i) => !gone.has(i)); };
 export const statusLog = (body) => String(body || '').split('**Log**\n')[1]?.split('\n').filter((l) => l.startsWith('- ')) || [];
 export const isStatus = (c, own) => (robot(c.user) || owns(c.user, own)) && String(c.body || '').startsWith(STATUS);
 const statusBody = (previous, { now, next, line }) => [

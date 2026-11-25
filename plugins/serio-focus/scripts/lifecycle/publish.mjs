@@ -152,7 +152,10 @@ function selfTest() {
   const held = [];
   status('o/r', 7, { now: 'x', line: note('Wrote it.', 'deliver', 99, stats, '2026-01-02T03:04:05Z') }, { all: () => [{ ...old, body: old.body.replace(at(0), '- **needs-human**: x. pr-loop does not start again on head h1. <!-- park at=2026-01-02T03:04:05Z -->') }], send: (...a) => held.push(a), raw: () => '' });
   assert.ok(held[0][2].body.includes('pr-loop does not start again on head h1.'), 'the no-push park survives the 20-line log');
-  console.log(`publish self-test: ${bad.length + 26} checks passed`);
+  const noted = [];
+  status('o/r', 7, { now: 'x', line: note('Wrote it.', 'deliver', 99, stats, '2026-01-02T03:04:05Z') }, { all: () => [{ ...old, body: old.body.replace(at(0), '- Note (pr-loop): pr-loop does not start again on head h1. <!-- step-note stage=pr-loop run=1 at=2026-01-02T03:04:05Z -->') }], send: (...a) => noted.push(a), raw: () => '' });
+  assert.ok(!noted[0][2].body.includes('pr-loop does not start again on head h1.'), 'a note that quotes the no-push line is trimmed like any note');
+  console.log(`publish self-test: ${bad.length + 27} checks passed`);
 }
 
 export function pushed({ repo, number, stage, before, spec, note: text, reason }, io = { one, all, send, raw }) {
