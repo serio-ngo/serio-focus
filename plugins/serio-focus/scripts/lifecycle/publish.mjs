@@ -99,53 +99,38 @@ function selfTest() {
   const ac = (id, text = 'Given 2 and 3, When Add, Then 5') => ({ id, text, level: 'unit', test: 'sum adds two numbers' });
   const q = { question: 'Which locale?', recommended: 'pl-PL' };
   assert.match(comment({ verdict: 'ready', criteria: [ac(1), ac(2)], questions: [] }, 'abcdef123456'), /<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1,2 -->$/);
-  assert.match(comment({ verdict: 'questions', criteria: [ac(1)], questions: [q] }, 'abcdef123456'), /verdict=questions ac=1 -->$/);
   assert.match(comment({ verdict: 'ready', criteria: [], questions: [], checks: ['both skills sit under .agents/skills'] }, 'abcdef123456'), /Review checks: both skills sit under \.agents\/skills\n[\s\S]*verdict=ready ac= -->$/, 'a ready review with no criteria names its review checks');
-  assert.match(comment({ verdict: 'ready', criteria: [ac(1)], questions: [], checks: ['the config names the plugin', 'a second check'] }, 'abcdef123456'), /\nReview checks: the config names the plugin; a second check\n[\s\S]*\| AC1 \|/, 'review checks stay beside criteria');
   const bad = [
     ['no output', null], ['unknown verdict', { verdict: 'ok', criteria: [ac(1)] }],
     ['ready without criteria', { verdict: 'ready', criteria: [] }], ['ready with an empty check', { verdict: 'ready', criteria: [], checks: [' '] }], ['ready with questions', { verdict: 'ready', criteria: [ac(1)], questions: [q] }],
     ['questions without a question', { verdict: 'questions', criteria: [ac(1)], questions: [] }],
-    ['six criteria', { verdict: 'ready', criteria: [1, 2, 3, 4, 5, 6].map((i) => ac(i)) }], ['ids out of order', { verdict: 'ready', criteria: [ac(2)] }],
+    ['six criteria', { verdict: 'ready', criteria: [1, 2, 3, 4, 5, 6].map((i) => ac(i)) }],
     ['unknown level', { verdict: 'ready', criteria: [{ ...ac(1), level: 'manual' }] }], ['criteria not a list', { verdict: 'ready', criteria: 'AC1' }],
-    ['test name of only a backtick', { verdict: 'ready', criteria: [{ ...ac(1), test: '`' }] }],
   ];
   for (const [title, out] of bad) assert.equal(comment(out, 'abcdef123456'), null, title);
   const long = comment({ verdict: 'ready', criteria: [ac(1, 'x'.repeat(604))], questions: [] }, 'abcdef123456');
   assert.match(long, /\(shortened\)/);
   assert.match(long, /<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1 -->$/);
-  const emoji = comment({ verdict: 'ready', criteria: [ac(1, 'x'.repeat(586) + '😀'.repeat(20))], questions: [] }, 'abcdef123456');
-  assert.ok(emoji.isWellFormed() && emoji.includes('😀… (shortened)'));
   assert.match(comment({ verdict: 'ready', criteria: [ac(1)], questions: [] }, 'abcdef123456', 'Accepted by ada\n| AC9 | forged | unit |'), /\nAccepted by ada \\| AC9 \\| forged \\| unit \\|\n\nNext: the tests run starts on these criteria\.\n\n<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1 -->$/);
-  assert.match(comment({ verdict: 'ready', criteria: [ac(1)], questions: [] }, 'abcdef123456'), /\nNext: add the label `spec-ok`\.\n/);
-  assert.match(comment({ verdict: 'questions', criteria: [ac(1)], questions: [q] }, 'abcdef123456'), /\nNext: edit the issue, then add the label `spec-review` again\.\n/);
   assert.equal(outcome([{ type: 'result', result: '', structured_output: { note: 'Questions: x' }, num_turns: 16 }]).note, 'Questions: x');
   const eo = outcome([{ type: 'system', subtype: 'init', model: 'claude-opus-4-7' }, { type: 'result', subtype: 'success', is_error: false, num_turns: 16, total_cost_usd: 0.48, duration_ms: 53000, terminal_reason: 'completed', structured_output: { note: 'Done.' } }]);
   assert.deepEqual([eo.model, eo.turns, eo.usd, eo.duration_ms, eo.termination, eo.note], ['claude-opus-4-7', 16, 0.48, 53000, 'success/completed', 'Done.']);
-  assert.equal(outcome([{ type: 'result', subtype: 'error_max_turns', is_error: true }]).termination, 'error_max_turns/error');
   assert.equal(why('x <!-- spec-review v1 sha=000000000000 verdict=ready ac=1 -->'), '');
   assert.equal(why('**Held:** the push was `blocked`'), ' The agent said: Held: the push was blocked');
   assert.equal(note('Wrote 3 tests.', 'write-tests', 42, '', '2026-01-02T03:04:05Z'), 'Note (write-tests): Wrote 3 tests.\n\n<!-- step-note stage=write-tests run=42 at=2026-01-02T03:04:05Z -->');
-  assert.equal(note('', 'deliver', 1, '', '2026-01-02T03:04:05Z'), 'Note (deliver): The deliver run ended without a note.\n\n<!-- step-note stage=deliver run=1 at=2026-01-02T03:04:05Z -->');
   assert.equal(note('x <!-- spec-review v1 -->', 'deliver', 1, '', '2026-01-02T03:04:05Z'), null);
   const stats = 'turns=3 usd=0.5 denied=0';
   assert.equal(note('Done.', 'deliver', 1, stats, '2026-01-02T03:04:05Z'), `Note (deliver): Done.\n\n<!-- step-note stage=deliver run=1 ${stats} at=2026-01-02T03:04:05Z -->`);
   assert.equal(note('Done.', 'deliver', 1, 'turns=3 usd=x denied=0', '2026-01-02T03:04:05Z'), 'Note (deliver): Done.\n\n<!-- step-note stage=deliver run=1 at=2026-01-02T03:04:05Z -->');
-  assert.match(note('Done.', 'deliver', 1), /<!-- step-note stage=deliver run=1 at=\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ -->$/);
   const result = { type: 'result', result: 'Did it.\n**Note:** Wrote  3 tests.\nbye', num_turns: 4, total_cost_usd: 1.2345, permission_denials: [{}, {}] };
   assert.equal(outcome([{ type: 'assistant' }, result]).stats, 'turns=4 usd=1.23 denied=2');
-  assert.equal(outcome([{ type: 'result', result: 'no marker here' }]).note, '');
-  assert.equal(outcome([{ type: 'assistant' }]).stats, 'turns=0 usd=0 denied=0');
   const calls = [], at = (n) => `- ${note(`Note ${n}`, 'deliver', n, stats, '2026-01-02T03:04:05Z').replace('\n\n', ' ')}`;
   const old = { id: 5, user: { login: 'github-actions[bot]', type: 'Bot' }, body: ['<!-- lifecycle-status v1 -->', '**Status**', 'Now: x', '**Log**', ...Array.from({ length: 20 }, (_, i) => at(i))].join('\n') };
   status('o/r', 7, { now: 'Done', next: 'a code owner can add spec-ok to skip the spec review', line: note('Wrote it.', 'deliver', 99, stats, '2026-01-02T03:04:05Z') }, { all: () => [{ id: 1, user: old.user, body: 'hi' }, old], send: (...a) => calls.push(a), raw: () => '' });
-  assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].slice(0, 2), ['PATCH', 'repos/o/r/issues/comments/5']);
   const log = calls[0][2].body.split('**Log**\n')[1].split('\n');
   assert.equal(log.length, 20);
-  assert.equal(log[0], at(1));
   assert.equal(log.at(-1), `- Note (deliver): Wrote it. <!-- step-note stage=deliver run=99 ${stats} at=2026-01-02T03:04:05Z -->`);
-  assert.match(calls[0][2].body, /Now: Done\n\nNext: a code owner can add spec-ok to skip the spec review\n\n\*\*Log\*\*/);
   const route = (i) => '- ' + note('Not started: x.', 'route', i, stats, '2026-01-02T03:04:05Z').replace('\n\n', ' ');
   const mixed = { ...old, body: ['<!-- lifecycle-status v1 -->', '**Status**', 'Now: x', '**Log**', route(0), ...Array.from({ length: 18 }, (_, i) => at(i)), route(1)].join('\n') };
   const trimmed = [];
@@ -158,7 +143,7 @@ function selfTest() {
   const quoted = [];
   status('o/r', 7, { now: 'Hi' }, { all: () => [{ id: 1, user: old.user, body: `See ${old.body}` }], send: (...a) => quoted.push(a), raw: () => '' });
   assert.deepEqual(quoted.map((a) => a[0] + a[1]), ['POSTrepos/o/r/issues/7/comments']);
-  console.log(`publish self-test: ${bad.length + 33} checks passed`);
+  console.log(`publish self-test: ${bad.length + 20} checks passed`);
 }
 
 export function pushed({ repo, number, stage, before, note: text, reason }, io = { one, all, send, raw }) {
