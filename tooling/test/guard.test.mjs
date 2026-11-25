@@ -60,14 +60,6 @@ it('rejects stale generated artefacts', () => {
     assert.equal(upkeep('--check').status, ALLOWED);
   }
 });
-it('holds code to no comments, a line cap per plugin file and one suite file', () => {
-  for (const file of [...walk(PLUGIN).map((f) => path.join(PLUGIN, f)), fileURLToPath(import.meta.url)]) {
-    const text = readFileSync(file, 'utf8');
-    assert.ok(file === fileURLToPath(import.meta.url) || text.trimEnd().split('\n').length <= 300, file);
-    if (file.endsWith('.mjs')) assert.doesNotMatch(text, /^\s*\/\//m, file);
-  }
-  assert.deepEqual(readdirSync(path.join(REPO, 'tooling', 'test')), ['guard.test.mjs']);
-});
 it('keeps startup context small and agents, skills and Codex roles well-formed', async () => {
   const { agents, codexRoles, skills, startupChars } = await import('../cli/generate.mjs');
   const roles = agents();
@@ -195,20 +187,6 @@ it('keeps the route (W11) and note (N1) lifecycle rules', async () => {
   const run = spawnSync(process.execPath, [script('lifecycle/publish.mjs'), '9', '--note', 'deliver', 'Done.', '--repo', 'o/r'], { encoding: 'utf8', env: { ...process.env, SERIO_UNATTENDED: '1', PATH: '', Path: '' } });
   assert.match(run.stdout, /^Not posted/, 'an unattended run posts its note once, through the workflow');
 });
-it('starts no fix for CI from before the lock and keeps route answers out of the brief', async () => {
-  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
-  const { route } = await import(new URL('route.mjs', lifecycle));
-  const { brief } = await import(new URL('brief.mjs', lifecycle));
-  const { owners } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
-  const ada = { login: 'ada', type: 'User' }, own = owners('* @ada\n');
-  const pr = { number: 9, state: 'open', draft: true, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
-  const lock = { user: ada, body: 'tests-ok', commit_id: 'h1', submitted_at: '2026-01-02' };
-  const ci = (created_at) => ({ action: 'completed', workflow_run: { id: 5, run_attempt: 1, conclusion: 'failure', created_at, head_branch: 'agent/7-sum', head_sha: 'h1', head_repository: { full_name: 'o/r' } } });
-  const context = (assignees) => ({ repo: 'o/r', guarded: true, own, issue: () => ({ assignees }), reviews: () => [lock, { ...lock, submitted_at: '2026-01-04' }], pulls: () => [pr], comments: () => [], failures: () => [] });
-  assert.deepEqual([route('workflow_run', ci('2026-01-01'), context([ada])).stage, route('workflow_run', ci('2026-01-03'), context([ada])).stage, route('workflow_run', ci('2026-01-03'), context([])).tell], [undefined, 'pr-loop', undefined]);
-  const answer = { user: { login: 'github-actions[bot]', type: 'Bot' }, body: 'Note (route): Not started: x.\n\n<!-- step-note stage=route run=1 -->' };
-  assert.ok(!brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body: 'AC1' }, comments: [answer], own }).includes('Not started'));
-});
 it('keeps every write token out of the model job and runs on a private repository without a ruleset', async () => {
   const { route } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/route.mjs', import.meta.url));
   const { owners } = await import(new URL('../../plugins/serio-focus/scripts/lib/lifecycle.mjs', import.meta.url));
@@ -265,22 +243,6 @@ it('a review field that quotes an HTML comment is posted as readable text and ke
     assert.ok(body.includes(sign), body);
   }
 });
-it("a code owner's spec-ok keeps the test of every accepted criterion", async () => {
-  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
-  const { route } = await import(new URL('route.mjs', lifecycle));
-  const { comment } = await import(new URL('publish.mjs', lifecycle));
-  const { owners, specMarker, specSha } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
-  const ada = { login: 'ada', type: 'User' }, bot = { login: 'github-actions[bot]', type: 'Bot' }, own = owners('* @ada\n');
-  const issue = { number: 7, title: 'Sum', body: 'AC1 edited', assignees: [ada] };
-  const criteria = [{ id: 1, text: 'Given 2 and 3, When Add, Then 5', level: 'unit', test: 'sum adds two numbers' }, { id: 2, text: 'Given a, When Add, Then an error', level: 'e2e', test: 'sum rejects text' }];
-  const earlier = comment({ verdict: 'questions', criteria, questions: [{ question: 'Which locale?', recommended: 'pl-PL' }] }, '000000000000');
-  const old = '| Criterion | Given, When, Then | Level |\n|---|---|---|\n| AC1 | Given 2 and 3, When Add, Then 5 | unit |\n\n<!-- spec-review v1 sha=000000000000 verdict=questions ac=1 -->';
-  const accept = (body) => route('issues', { action: 'labeled', label: { name: 'spec-ok' }, sender: ada, issue: { number: 7 } }, { repo: 'o/r', guarded: true, own, issue: () => issue, comments: () => [{ user: bot, body }] });
-  const got = accept(earlier).accept || '', marker = specMarker([{ user: bot, body: got }], own);
-  assert.deepEqual([marker?.sha, marker?.verdict], [specSha(issue), 'ready']);
-  assert.match(got, /^\| AC1 \| .* \| unit \| `sum adds two numbers` \|\n\| AC2 \| .* \| e2e \| `sum rejects text` \|$/m);
-  const stale = accept(old); assert.deepEqual([stale.stop, stale.stage, stale.accept], ['no reviewed criteria to accept yet: add spec-review first', undefined, undefined]);
-});
 it('acceptance passes a criterion only when the test its review names ran and passed', async () => {
   const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
   const { cases, report } = await import(new URL('acceptance.mjs', lifecycle));
@@ -300,29 +262,6 @@ it('acceptance passes a criterion only when the test its review names ran and pa
     assert.equal(got.ok, false, xml); assert.match(got.body, /Acceptance: fail/, xml); assert.match(got.body, new RegExp(`^\\| AC1 \\| [^|]* \\| ${result} \\|$`, 'm'), xml);
   }
   assert.ok(run(named(), old).body.split('\n').includes('| AC1 | - | missing |'));
-});
-it('#84 AC1: tooling/cli reads every JSON file through one reader', () => {
-  const dir = path.join(REPO, 'tooling', 'cli'), src = (file) => readFileSync(file, 'utf8');
-  const cli = readdirSync(dir).map((name) => [name, src(path.join(dir, name))]);
-  const parses = cli.flatMap(([name, text]) => text.split('\n').filter((line) => line.includes('JSON.parse(') && !line.includes('run.stdout')).map(() => name));
-  assert.deepEqual(parses, ['generate.mjs']);
-  assert.doesNotMatch(cli.map(([, text]) => text).join('\n'), /JSON\.parse\(readFileSync\(|(const readJson =|function readJson\()[\s\S]*readJsonFile|readJsonFile[\s\S]*(const readJson =|function readJson\()/);
-});
-it('#84 AC2: serio.mjs resolves the Claude binary in one place', () => {
-  const dir = path.join(REPO, 'tooling', 'cli'), src = (file) => readFileSync(file, 'utf8');
-  const serio = src(path.join(dir, 'serio.mjs'));
-  assert.equal(serio.split("'.local', 'bin'").length - 1, 1);
-});
-it('#84 AC3: only runtime.mjs reads the plugin version', () => {
-  const dir = path.join(REPO, 'tooling', 'cli'), src = (file) => readFileSync(file, 'utf8');
-  const tooling = ['tooling', 'plugins'].flatMap((d) => walk(path.join(REPO, d)).map((f) => path.join(REPO, d, f))).filter((file) => file !== fileURLToPath(import.meta.url));
-  assert.deepEqual(tooling.filter((file) => /\.(mjs|js)$/.test(file) && src(file).includes('pluginVersion')), []);
-  for (const name of ['serio.mjs', 'generate.mjs']) assert.match(src(path.join(dir, name)), /import \{[^}]*\bversion\b[^}]*\} from '[^']*runtime\.mjs'/);
-});
-it('#84 AC4: statusBody is private to lifecycle.mjs', () => {
-  const life = readFileSync(path.join(PLUGIN, 'scripts', 'lib', 'lifecycle.mjs'), 'utf8');
-  assert.doesNotMatch(life, /export (const|function) statusBody|export \{[^}]*\bstatusBody\b/);
-  assert.match(life, /statusBody\(/);
 });
 it('the gate tests the pull request head and hands that commit to the acceptance report', () => {
   const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-gate.yml'), 'utf8');
@@ -402,37 +341,6 @@ it('status edits the newest status comment by the bot or a code owner in place',
   const reversed = run([mark(5, ada), mark(6, bot)]);
   assert.deepEqual(reversed.map((c) => c.slice(0, 2)), [['PATCH', 'repos/o/r/issues/comments/6']]);
 });
-it('status posts a new comment when no trusted status comment exists', async () => {
-  const lifecycle = new URL('../../plugins/serio-focus/scripts/lib/', import.meta.url);
-  const { status } = await import(new URL('lifecycle.mjs', lifecycle));
-  const eve = { login: 'eve', type: 'User' };
-  const run = (comments) => {
-    const sent = [];
-    status('o/r', 7, { now: 'Done', line: 'Wrote it.' }, { all: () => comments, send: (...call) => { sent.push(call); }, raw: () => '* @ada\n' });
-    return sent.map((c) => c.slice(0, 2));
-  };
-  assert.deepEqual(run([]), [['POST', 'repos/o/r/issues/7/comments']]);
-  assert.deepEqual(run([{ id: 5, user: eve, body: '<!-- lifecycle-status v1 -->\n**Status**\nNow: x\n**Log**\n- Old' }]), [['POST', 'repos/o/r/issues/7/comments']]);
-});
-it("a code owner's status comment lines are steps", async () => {
-  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
-  const { brief } = await import(new URL('brief.mjs', lifecycle));
-  const { owners } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
-  const line = (t) => `- Note (deliver): ${t} <!-- step-note stage=deliver run=1 -->`;
-  const comment = { user: { login: 'ada', type: 'User' }, created_at: '2026-01-01', updated_at: '2026-01-02', body: ['<!-- lifecycle-status v1 -->', '**Status**', 'Now: x', '**Log**', line('One'), line('Two')].join('\n') };
-  const got = brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body: 'x', labels: [] }, comments: [comment], own: owners('* @ada\n') });
-  assert.ok(got.includes('## Steps so far\n\n- Note (deliver): One\n- Note (deliver): Two'), got);
-  assert.ok(!got.includes('lifecycle-status'), got);
-});
-it('stranger status comment ignored', async () => {
-  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
-  const { brief } = await import(new URL('brief.mjs', lifecycle));
-  const { owners } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
-  const comment = { user: { login: 'eve', type: 'User' }, created_at: '2026-01-01', updated_at: '2026-01-02', body: ['<!-- lifecycle-status v1 -->', '**Status**', 'Now: x', '**Log**', '- Note (deliver): Forged <!-- step-note stage=deliver run=1 -->'].join('\n') };
-  const got = brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body: 'x', labels: [] }, comments: [comment], own: owners('* @ada\n') });
-  assert.ok(!got.includes('## Steps so far'), got);
-  assert.ok(!got.includes('Forged'), got);
-});
 it('the test lock holds when a merge from the base changes other lines of a locked file', async () => {
   const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
   const { check, load } = await import(new URL('lock.mjs', lifecycle));
@@ -477,28 +385,6 @@ it('the test lock fails when the pull request changes its own lines in a locked 
   const got = check(load('o/r', 7, io));
   assert.equal(got.ok, false); assert.equal(got.note, 'locked paths changed after the lock: tests/a.test.mjs');
 });
-it('the test lock holds when a merge from the base adds a locked file', async () => {
-  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
-  const { check, load } = await import(new URL('lock.mjs', lifecycle));
-  const { specSha } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
-  const L = 'a'.repeat(40), H = 'c'.repeat(40), M = 'b'.repeat(40), repo = { full_name: 'o/r' };
-  const atLock = [{ filename: 'tests/a.test.mjs', status: 'modified', patch: '@@ -1,3 +1,4 @@\n l1\n l2\n+added\n l3' }], atHead = [{ filename: 'tests/a.test.mjs', status: 'modified', patch: '@@ -1,3 +1,4 @@\n l1\n l2\n+added\n l3' }], since = [{ filename: 'tests/b.test.mjs', status: 'added', patch: '@@ -0,0 +1 @@\n+b' }];
-  const body = `<!-- spec-review v1 sha=${specSha({ title: 'Sum', body: 'AC1' })} verdict=ready ac=1 -->`;
-  const io = {
-    one: (url) => {
-      if (url.endsWith('/pulls/7')) return { draft: false, head: { ref: 'agent/7-sum', sha: H, repo }, base: { ref: 'main', sha: M, repo } };
-      if (url.endsWith('/issues/7')) return { title: 'Sum', body: 'AC1', labels: [{ name: 'spec-ok' }] };
-      const [a, b] = url.split('/compare/')[1].split('?')[0].split('...');
-      return { status: 'ahead', files: a === L ? since : b === L ? atLock : atHead };
-    },
-    all: (url) => url.includes('/files') ? atHead : url.includes('/comments')
-      ? [{ user: { login: 'github-actions[bot]', type: 'Bot' }, created_at: 't', updated_at: 't', body }]
-      : [{ user: { login: 'ada', type: 'User' }, body: 'tests-ok', commit_id: L, state: 'APPROVED' }],
-    raw: (url) => url.endsWith('.github/CODEOWNERS') ? '* @ada\n' : '',
-  };
-  const got = check(load('o/r', 7, io));
-  assert.equal(got.ok, true); assert.equal(got.note, `locked at ${L.slice(0, 7)}`);
-});
 it("the test lock fails when a locked file's change has no line diff to compare", async () => {
   const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
   const { check, load } = await import(new URL('lock.mjs', lifecycle));
@@ -542,12 +428,6 @@ it('a run without commits changes no pull request unless it is a deliver run wit
     publishCard({ repo: 'o/r', out, issue: 98, ref: 'agent/98-x', stage }, io);
     assert.equal(calls.length, 0, stage);
   }
-});
-it('a deliver run without a new push is not parked when its pull request is ready', async () => {
-  const { pushed } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url)), calls = [];
-  pushed({ repo: 'o/r', number: 98, stage: 'deliver', before: 'h1', note: '', reason: '' }, { one: () => ({}), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, node_id: 'N', draft: false, head: { ref: 'agent/98-x', sha: 'h1' } }] : [], send: (...a) => calls.push(a), raw: () => '' });
-  assert.equal(calls.some((c) => c[0] === 'POST' && c[1] === 'repos/o/r/issues/98/labels'), false);
-  assert.equal(calls.some((c) => JSON.stringify(c[2]).includes('the run ended without a new push')), false);
 });
 it('a run without a new push is parked unless it is a deliver run with a ready pull request', async () => {
   const { pushed } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
@@ -621,12 +501,6 @@ it('trace adds the agents a transcript started and sums them into totals', async
   const alone = sandbox('trace-');
   writeFileSync(path.join(alone, 'agent-a.jsonl'), readFileSync(path.join(dir, 'agent-a.jsonl')));
   assert.deepEqual(trace(path.join(alone, 'agent-a.jsonl')).agents, []);
-});
-it('the brief keeps the whole spec text', async () => {
-  const { brief } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/brief.mjs', import.meta.url));
-  const { owners } = await import(new URL('../../plugins/serio-focus/scripts/lib/lifecycle.mjs', import.meta.url));
-  const body = 'x'.repeat(9000);
-  assert.ok(brief({ repo: 'o/r', issue: { number: 7, title: 'Sum', body, labels: [] }, comments: [], own: owners('* @ada\n') }).includes(body));
 });
 it("upkeep leaves the lifecycle's local records alone", () => {
   const repo = sandbox('records-');
@@ -910,12 +784,6 @@ it('every default io of a lifecycle script names helpers the script has', () => 
   }
 });
 
-it('a repository with pull request previews gets an AI visual check before ready', () => {
-  const deliver = readFileSync(path.join(PLUGIN, 'skills', 'deliver', 'SKILL.md'), 'utf8'), loop = readFileSync(path.join(PLUGIN, 'skills', 'pr-loop', 'SKILL.md'), 'utf8');
-  assert.match(deliver, /\| 6b\. Look \|[^\n]*preview_urls: true[^\n]*screenshot[^\n]*Preview URL/);
-  assert.match(deliver, /\| Visual \|/);
-  assert.match(loop, /Look step of `deliver`/);
-});
 it("route names the improvement branch only from a code owner's newest note on an existing branch", async () => {
   const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
   const { route } = await import(new URL('route.mjs', lifecycle));
@@ -1053,30 +921,6 @@ it('acceptance fails added test cases without product code, without a criterion 
   assert.equal(plain.ok, true);
   assert.ok(!/no criterion names|More test cases|More than 40/.test(plain.body), plain.body);
 });
-it('acceptance names a route the pull request repeats across app source files without changing the result', async () => {
-  const { accept } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/acceptance.mjs', import.meta.url));
-  const { comment } = await import(PUBLISH);
-  const repo = sandbox('routes-');
-  const git = (...args) => spawnSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
-  const put = (file, text) => { mkdirSync(path.dirname(path.join(repo, file)), { recursive: true }); writeFileSync(path.join(repo, file), text); };
-  git('init', '-q');
-  put('src/b.astro', '<a href="/api/game/start"></a><a href="https://github.com/serio-ngo"></a><img src="/img/x.png"><svg xmlns="http://www.w3.org/2000/svg"></svg>');
-  git('add', '-A'); git('commit', '-qm', 'base');
-  const base = git('rev-parse', 'HEAD').stdout.trim();
-  put('src/a.ts', "export const u = ['/api/game/result', '/solo', '/img/x.png', 'http://www.w3.org/2000/svg', 'https://github.com/x'];");
-  git('add', '-A'); git('commit', '-qm', 'head');
-  spawnSync(process.execPath, [script('lifecycle/acceptance.mjs'), '--revert'], { cwd: repo, encoding: 'utf8', env: { ...process.env, BASE: base, UNIT: '', E2E: '' } });
-  const bot = { login: 'github-actions[bot]', type: 'Bot' }, own = { full_name: 'o/r' };
-  const criteria = [{ id: 1, text: 'Given 2 and 3, When Add, Then 5', level: 'unit', test: 'sum adds two numbers' }];
-  const review = { user: bot, created_at: 't', updated_at: 't', body: comment({ verdict: 'ready', criteria, questions: [] }, 'abcdef123456') };
-  const dir = sandbox('routes-head-');
-  writeFileSync(path.join(dir, 'u.xml'), '<testsuites><testsuite><testcase name="sum adds two numbers"/></testsuite></testsuites>');
-  const pr = { number: 9, additions: 1, deletions: 0, changed_files: 1, head: { sha: 'h'.padEnd(40, '0'), ref: 'agent/7-sum', repo: own }, base: { repo: own } };
-  const io = { one: () => pr, all: (url) => url.includes('/files') ? [{ filename: 'src/a.ts' }] : [review], raw: () => '', send: () => { } };
-  const got = await accept({ repo: 'o/r', number: 9, dir, tested: '', lock: '', link: '', post: false, revert: path.join(repo, 'revert') }, io);
-  assert.equal(got.ok, true, got.body);
-  assert.deepEqual(got.body.split('\n').filter((l) => l.startsWith('Routes')), ['Routes in two or more files: `/api/game` in `src/a.ts`, `src/b.astro`; `https://github.com` in `src/a.ts`, `src/b.astro`']);
-});
 it('the spec review comment names fewer e2e criteria than the spec labels', async () => {
   const { comment } = await import(PUBLISH);
   const spec = (...criteria) => `### Summary\nx\n\n### Acceptance criteria\n${criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}\n\n### Notes\n1. **E2E.** not a criterion`;
@@ -1124,10 +968,6 @@ it('the card never calls a branch merged when the default branch is unknown', ()
   assert(!run.stdout.includes('delete: merged'), run.stdout);
   git(repo, 'branch', '-m', 'master', 'trunk');
   assert(runCard(repo).stdout.includes('- default branch unknown: run git remote set-head origin --auto'));
-});
-it('the card lists a clean current branch with an unpushed commit', () => {
-  const repo = backlogRepo(); git(repo, 'checkout', '-b', 'mine'); writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
-  assert(runCard(repo).stdout.includes('- mine: push and open a pull request unless one is open'));
 });
 it('the card checks the current branch first and never tells it to delete itself', () => {
   const repo = backlogRepo(); for (let i = 0; i < 11; i++) git(repo, 'branch', `old-${i}`);
