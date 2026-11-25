@@ -4,7 +4,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { check } from './lock.mjs';
 import { comment, note } from './publish.mjs';
-import { all, fixMarkers, isStatus, issueOf, lockOf, lockReview, one, owners, ownersOf, owns, park, person, robot, send, specComment, specMarker, status, specSha, statusLog, taskOf, testsOk } from '../lib/lifecycle.mjs';
+import { all, fixMarkers, isStatus, issueOf, lockOf, lockReview, NO_PUSH, one, owners, ownersOf, owns, park, person, robot, send, specComment, specMarker, status, specSha, statusLog, taskOf, TESTS_PARK, testsOk } from '../lib/lifecycle.mjs';
 
 const FOCUS = new URL(JSON.parse(readFileSync(new URL('../../.claude-plugin/plugin.json', import.meta.url))).repository).pathname.slice(1);
 const CAPS = { 'spec-review': [40, 10], 'write-tests': [80, 20], deliver: [160, 40], 'pr-loop': [60, 15] };
@@ -20,14 +20,14 @@ export function route(name, ev, s) {
     return { stage, issue, assignee: login, ...extra, focus: /^improve\/[a-z0-9-]+$/.test(named) && s.branch(named) ? named : '' };
   };
   const tests = (n, extra = {}) => {
-    const marks = s.comments(n).filter((c) => robot(c.user) && /^<!-- write-tests v1 spec=[0-9a-f]{12} -->$/.test(c.body || '')), wrote = marks.map((c) => /spec=(\w+)/.exec(c.body)[1]), last = marks.at(-1);
+    const wrote = s.comments(n).filter((c) => robot(c.user)).map((c) => /^<!-- write-tests v1 spec=([0-9a-f]{12}) -->$/.exec(c.body || '')?.[1]).filter(Boolean);
     const draft = s.openPulls().find((p) => taskOf(p) === n), spec = specSha(s.issue(n));
-    const retry = last && [n, draft?.number].filter(Boolean).flatMap((k) => s.comments(k)).some((c) => isStatus(c, s.own) && [...c.body.matchAll(/^- \*\*needs-human\*\*: the (?:write-tests run did not finish|run ended without a new push: [^(\n]*\(write-tests\))[^\n]*<!-- park at=(\S+) -->/gm)].some((m) => m[1] > last.created_at));
-    if (!extra.pr && !retry && wrote.at(-1) === spec) return stop('the tests were written for this spec text; edit the spec to write them again, or request changes on the draft', n);
-    if (wrote.length > 1) return { park: n, stop: `the tests were written ${wrote.length} times. Decide: write them by hand with /serio-focus:write-tests ${n}, or close the task` };
+    const runs = wrote.length + [n, draft?.number].filter(Boolean).flatMap((k) => s.comments(k)).filter((c) => isStatus(c, s.own)).flatMap((c) => statusLog(c.body)).filter((l) => TESTS_PARK.test(l)).length;
+    if (runs > 1) return { park: n, stop: `write-tests ran ${runs} times. Decide: write the tests by hand with /serio-focus:write-tests ${n}, or close the task` };
+    if (!extra.pr && wrote.at(-1) === spec) return stop('the tests were written for this spec text; edit the spec to write them again, or request changes on the draft', n);
     return run('write-tests', n, { sha: draft?.head.sha, spec, ...extra });
   };
-  const idle = (pr) => s.comments(pr.number).some((c) => isStatus(c, s.own) && statusLog(c.body).some((l) => l.startsWith('- **needs-human**: ') && (l.includes(`pr-loop does not start again on head ${pr.head.sha}.`) || l.includes(`<!-- no-push v1 sha=${pr.head.sha} -->`))));
+  const idle = (pr) => s.comments(pr.number).some((c) => isStatus(c, s.own) && statusLog(c.body).some((l) => NO_PUSH.exec(l)?.[1] === pr.head.sha));
   if (name === 'issues' && ev.action === 'labeled') {
     const n = ev.issue.number;
     if (!person(ev.sender) || ev.issue.pull_request) return stop('label is not from a person on an issue');
@@ -144,14 +144,15 @@ function selfTest() {
     ['changes after a pr-loop run pushed nothing on this head', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ comments: () => [ready, idle('h1')] }), 'pr-loop'],
     ['cap reached through a change request before the lock', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ reviews: () => [], comments: () => [ready, wrote('000000000000'), wrote(sha)] }), undefined],
     ['bypass on the spec the tests were written for', 'issues', label('spec-ok'), state({ comments: () => [earlier, wrote(sha)] }), undefined],
-    ['retry after the last tests run parked', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha), parked('the run ended without a new push: u (write-tests).')] }), 'write-tests'],
-    ['park before the last tests run', 'issues', label('spec-ok'), state({ comments: () => [ready, parked('the run ended without a new push: u (write-tests).'), wrote(sha, actions, '2026-01-04T00:00:00Z')] }), undefined],
-    ['retry after a deliver park', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha), parked('the run ended without a new push: u (deliver).')] }), undefined],
-    ['retry after a failed tests run parked the draft', 'issues', label('spec-ok'), state({ comments: (k) => k === 9 ? [parked('the write-tests run did not finish: u.')] : [ready, wrote(sha)] }), 'write-tests'],
+    ['spec-ok after one tests run that pushed nothing', 'issues', label('spec-ok'), state({ comments: (k) => k === 7 ? [ready, parked('the run ended without a new push: u (write-tests).')] : [] }), 'write-tests'],
+    ['a pushed and a parked tests run reach the cap', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha), parked('the run ended without a new push: u (write-tests).')] }), undefined],
+    ['a deliver park is no tests run', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha), parked('the run ended without a new push: u (deliver).')] }), undefined],
+    ['a failed tests run parked on the draft counts', 'issues', label('spec-ok'), state({ issue: () => edited, comments: (k) => k === 9 ? [parked('the write-tests run did not finish: u.')] : [readyEdited, wrote(sha)] }), undefined],
+    ['a change request after one failed tests run', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ reviews: () => [], comments: (k) => k === 9 ? [parked('the write-tests run did not finish: u.')] : [ready] }), 'write-tests'],
     ['red CI on a new head after a pr-loop run pushed nothing', 'workflow_run', ci(), state({ comments: () => [idle('h0')] }), 'pr-loop'],
     ['forged no-push status', 'workflow_run', ci(), state({ comments: () => [{ ...idle('h1'), user: eve }] }), 'pr-loop'],
     ['a note that quotes the no-push line', 'workflow_run', ci(), state({ comments: () => [{ user: actions, body: '<!-- lifecycle-status v1 -->\n\n**Log**\n- Note (pr-loop): pr-loop does not start again on head h1. <!-- step-note stage=pr-loop run=1 -->' }] }), 'pr-loop'],
-    ['no-push park in the earlier format', 'workflow_run', ci(), state({ comments: () => [parked('the run ended without a new push: u. <!-- no-push v1 sha=h1 -->')] }), undefined],
+    ['a failed pr-loop park that quotes the no-push line', 'workflow_run', ci(), state({ comments: () => [parked('the pr-loop run did not finish: u. The agent said: the run ended without a new push: u (pr-loop). pr-loop does not start again on head h1.')] }), 'pr-loop'],
   ];
   for (const [title, name, ev, s, want] of cases) assert.equal(route(name, ev, s).stage, want, title);
   const tells = [

@@ -42,8 +42,10 @@ export const issueOf = (ref) => Number(/^agent\/(\d+)-[a-z0-9-]+$/.exec(ref || '
 export const taskOf = (pr) => pr.head.repo?.full_name === pr.base.repo.full_name ? issueOf(pr.head.ref) : 0;
 
 const STATUS = '<!-- lifecycle-status v1 -->', flat = (s) => String(s).replace(/\s+/g, ' ').trim();
+export const TESTS_PARK = /^- \*\*needs-human\*\*: the (?:write-tests run did not finish|run ended without a new push: [^(\n]*\(write-tests\)\.)[^\n]*<!-- park at=/;
+export const NO_PUSH = /^- \*\*needs-human\*\*: the run ended without a new push: [^(\n]*\(pr-loop\)\. pr-loop does not start again on head (\S+)\./;
 const routed = (l) => /<!-- step-note stage=route /.test(l);
-const trim = (lines) => { const gone = new Set(lines.map((_, i) => i).filter((i) => !/^- \*\*needs-human\*\*: .*pr-loop does not start again on head /.test(lines[i])).sort((a, b) => routed(lines[b]) - routed(lines[a]) || a - b).slice(0, Math.max(0, lines.length - 20))); return lines.filter((_, i) => !gone.has(i)); };
+const trim = (lines) => { const gone = new Set(lines.map((_, i) => i).filter((i) => !TESTS_PARK.test(lines[i]) && !NO_PUSH.test(lines[i])).sort((a, b) => routed(lines[b]) - routed(lines[a]) || a - b).slice(0, Math.max(0, lines.length - 20))); return lines.filter((_, i) => !gone.has(i)); };
 export const statusLog = (body) => String(body || '').split('**Log**\n')[1]?.split('\n').filter((l) => l.startsWith('- ')) || [];
 export const isStatus = (c, own) => (robot(c.user) || owns(c.user, own)) && String(c.body || '').startsWith(STATUS);
 const statusBody = (previous, { now, next, line }) => [

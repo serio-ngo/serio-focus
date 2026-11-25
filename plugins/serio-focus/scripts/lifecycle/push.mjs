@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,6 +83,7 @@ function main() {
   const body = existsSync(card) ? readFileSync(card, 'utf8').slice(0, 60000) : undefined;
   const pushRef = (r) => push(`https://x-access-token:${GH_TOKEN}@github.com/${repo}.git`, bundle, r, mkdtempSync(join(tmpdir(), 'serio-push-')));
   const { head, pr } = publish({ repo, ref, issue: ISSUE, stage: STAGE, body }, { one, all, send, push: pushRef });
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `head=${head}\n`);
   console.log(`pushed ${head} to ${ref}, pull request #${pr.number}`);
 }
 
