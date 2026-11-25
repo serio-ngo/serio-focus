@@ -102,7 +102,7 @@ function selfTest() {
   assert.match(comment({ verdict: 'ready', criteria: [], questions: [], checks: ['both skills sit under .agents/skills'] }, 'abcdef123456'), /Review checks: both skills sit under \.agents\/skills\n[\s\S]*verdict=ready ac= -->$/, 'a ready review with no criteria names its review checks');
   const bad = [
     ['no output', null], ['unknown verdict', { verdict: 'ok', criteria: [ac(1)] }],
-    ['ready without criteria', { verdict: 'ready', criteria: [] }], ['ready with questions', { verdict: 'ready', criteria: [ac(1)], questions: [q] }],
+    ['ready without criteria', { verdict: 'ready', criteria: [] }], ['ready with an empty check', { verdict: 'ready', criteria: [], checks: [' '] }], ['ready with questions', { verdict: 'ready', criteria: [ac(1)], questions: [q] }],
     ['questions without a question', { verdict: 'questions', criteria: [ac(1)], questions: [] }],
     ['six criteria', { verdict: 'ready', criteria: [1, 2, 3, 4, 5, 6].map((i) => ac(i)) }],
     ['unknown level', { verdict: 'ready', criteria: [{ ...ac(1), level: 'manual' }] }], ['criteria not a list', { verdict: 'ready', criteria: 'AC1' }],
@@ -116,6 +116,7 @@ function selfTest() {
   const eo = outcome([{ type: 'system', subtype: 'init', model: 'claude-opus-4-7' }, { type: 'result', subtype: 'success', is_error: false, num_turns: 16, total_cost_usd: 0.48, duration_ms: 53000, terminal_reason: 'completed', structured_output: { note: 'Done.' } }]);
   assert.deepEqual([eo.model, eo.turns, eo.usd, eo.duration_ms, eo.termination, eo.note], ['claude-opus-4-7', 16, 0.48, 53000, 'success/completed', 'Done.']);
   assert.equal(why('x <!-- spec-review v1 sha=000000000000 verdict=ready ac=1 -->'), '');
+  assert.equal(why('**Held:** the push was `blocked`'), ' The agent said: Held: the push was blocked');
   assert.equal(note('Wrote 3 tests.', 'write-tests', 42, '', '2026-01-02T03:04:05Z'), 'Note (write-tests): Wrote 3 tests.\n\n<!-- step-note stage=write-tests run=42 at=2026-01-02T03:04:05Z -->');
   assert.equal(note('x <!-- spec-review v1 -->', 'deliver', 1, '', '2026-01-02T03:04:05Z'), null);
   const stats = 'turns=3 usd=0.5 denied=0';
@@ -142,7 +143,7 @@ function selfTest() {
   const quoted = [];
   status('o/r', 7, { now: 'Hi' }, { all: () => [{ id: 1, user: old.user, body: `See ${old.body}` }], send: (...a) => quoted.push(a), raw: () => '' });
   assert.deepEqual(quoted.map((a) => a[0] + a[1]), ['POSTrepos/o/r/issues/7/comments']);
-  console.log(`publish self-test: ${bad.length + 19} checks passed`);
+  console.log(`publish self-test: ${bad.length + 20} checks passed`);
 }
 
 export function pushed({ repo, number, stage, before, note: text, reason }, io = { one, all, send, raw }) {

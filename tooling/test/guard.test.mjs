@@ -60,6 +60,23 @@ it('rejects stale generated artefacts', () => {
     assert.equal(upkeep('--check').status, ALLOWED);
   }
 });
+it('keeps startup context small and agents, skills and Codex roles well-formed', async () => {
+  const { agents, codexRoles, skills, startupChars } = await import('../cli/generate.mjs');
+  const roles = agents();
+  assert.deepEqual(roles.map((agent) => agent.name), ['architect', 'coder', 'reviewer', 'tester']);
+  for (const doc of [...roles, ...skills()]) assert.ok(doc.description.length > 0 && doc.description.length <= 300, doc.name);
+  for (const skill of skills()) assert.equal(skill.name, skill.dir, skill.dir);
+  for (const agent of roles) assert.equal(/\b(?:Edit|Write)\b/.test(agent.tools), ['coder', 'tester'].includes(agent.name), agent.name);
+  for (const agent of roles) assert.equal(/\bBash\b/.test(agent.tools), agent.name !== 'architect', agent.name);
+  for (const [role, agent] of codexRoles().map((role, i) => [role, roles[i]])) {
+    assert.match(role.text, new RegExp(`^name = "serio-${agent.name}"\\ndescription = ".+"\\n`));
+    assert.doesNotMatch(role.text, /^sandbox_mode\s*=/m, agent.name);
+    assert.ok(role.text.endsWith(`'''\n${agent.body}\n'''\n`) && !agent.body.includes("'''"), agent.name);
+  }
+  assert.ok(startupChars() < 1950, String(startupChars()));
+  const hooks = JSON.parse(readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
+  assert.deepEqual(Object.keys(hooks).sort(), ['PreToolUse', 'SessionStart', 'Stop']);
+});
 it('writes the session receipt', () => {
   const box = sandbox('guard-');
   const env = { ...process.env, SERIO_OS_DIR: box };
@@ -118,6 +135,13 @@ it('preserves global role collisions before native installation or removal and u
     assert.equal(readFileSync(target, 'utf8'), `${owned}user edit\n`); assert.equal(readFileSync(log, 'utf8'), calls);
   }
 });
+it('keeps ordinary git work out of the committed settings denials', () => {
+  const policy = JSON.parse(readFileSync(new URL('../../.claude/settings.json', import.meta.url), 'utf8'));
+  const denied = (command) => policy.permissions.deny.map((rule) => /^Bash\((.*)\)$/.exec(rule)?.[1]).filter(Boolean)
+    .some((glob) => new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(command));
+  for (const command of ['git status', 'git commit -m x', 'git push origin main', 'git checkout main', 'git stash push -m wip']) assert(!denied(command), command);
+  for (const command of ['git push --force origin feat', 'gh pr merge 1']) assert(denied(command), command);
+});
 it('denies a subagent call that does not name model and effort', () => {
   const box = sandbox('flow-');
   const flow = path.join(box, 'flow.js');
@@ -146,6 +170,23 @@ it('denies main-session edits only when orchestrating', () => {
 it('denies a malformed payload that names a tool', () => {
   assert.equal(fire(script('guard.mjs'), '{"tool_name":"Agent",').deny, DENY);
 });
+it('keeps the route (W11) and note (N1) lifecycle rules', async () => {
+  const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
+  const { route } = await import(new URL('route.mjs', lifecycle));
+  const { owners } = await import(new URL('../lib/lifecycle.mjs', lifecycle));
+  const { note } = await import(new URL('publish.mjs', lifecycle));
+  const ada = { login: 'ada', type: 'User' };
+  const pr = { number: 9, state: 'open', draft: false, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
+  const review = { user: ada, body: 'tests-ok', state: 'commented', commit_id: 'h1' };
+  const context = { repo: 'o/r', guarded: true, own: owners('* @ada\n'), issue: () => ({ assignees: [ada] }), pull: () => pr };
+  assert.equal(route('pull_request_review', { action: 'submitted', pull_request: pr, review }, context).stage, undefined, 'W11');
+  assert.equal(route('pull_request_review', { action: 'submitted', pull_request: { ...pr, draft: true }, review }, context).stage, undefined, 'a queued tests-ok routes on the live pull request, not its stale payload');
+  assert.deepEqual([note('Wrote 3 tests.', 'write-tests', 42, '', '2026-01-02T03:04:05Z'), note('', 'deliver', 1, '', '2026-01-02T03:04:05Z'), note('x <!-- spec-review v1 -->', 'deliver', 1, '', '2026-01-02T03:04:05Z')], [
+    'Note (write-tests): Wrote 3 tests.\n\n<!-- step-note stage=write-tests run=42 at=2026-01-02T03:04:05Z -->',
+    'Note (deliver): The deliver run ended without a note.\n\n<!-- step-note stage=deliver run=1 at=2026-01-02T03:04:05Z -->', null], 'N1');
+  const run = spawnSync(process.execPath, [script('lifecycle/publish.mjs'), '9', '--note', 'deliver', 'Done.', '--repo', 'o/r'], { encoding: 'utf8', env: { ...process.env, SERIO_UNATTENDED: '1', PATH: '', Path: '' } });
+  assert.match(run.stdout, /^Not posted/, 'an unattended run posts its note once, through the workflow');
+});
 it('keeps every write token out of the model job and runs on a private repository without a ruleset', async () => {
   const { route } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/route.mjs', import.meta.url));
   const { owners } = await import(new URL('../../plugins/serio-focus/scripts/lib/lifecycle.mjs', import.meta.url));
@@ -155,6 +196,13 @@ it('keeps every write token out of the model job and runs on a private repositor
   const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8'), job = (name) => flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith(`${name}:`));
   assert.doesNotMatch(job('agent'), /AGENT_APP|steps\.app|contents: write|pull-requests: write|issues: write/);
   assert.match(job('publish'), /AGENT_APP_KEY[\s\S]+lifecycle\/push\.mjs/);
+});
+it('blocks a spec review that asks consent for content the issue supplies, and a result judged by the step exit', () => {
+  const skill = readFileSync(path.join(PLUGIN, 'skills', 'spec-review', 'SKILL.md'), 'utf8'), flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-agent.yml'), 'utf8');
+  assert.deepEqual(skill.split('\n').filter((l) => /consent|permission|rights/i.test(l.replace('Never ask for consent, permission or rights', ''))), []);
+  assert.doesNotMatch(flow, /steps\.claude\.outcome|--json-schema '\{/);
+  assert.match(flow, /if: always\(\) && steps\.trace\.outputs\.finished != 'true'\n\s+run: exit 1/);
+  assert.match(flow, /id: claude\n\s+continue-on-error: true/);
 });
 it('the spec review table shows the test of each criterion and refuses a criterion without one', async () => {
   const { comment } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
@@ -214,6 +262,16 @@ it('acceptance passes a criterion only when the test its review names ran and pa
     assert.equal(got.ok, false, xml); assert.match(got.body, /Acceptance: fail/, xml); assert.match(got.body, new RegExp(`^\\| AC1 \\| [^|]* \\| ${result} \\|$`, 'm'), xml);
   }
   assert.ok(run(named(), old).body.split('\n').includes('| AC1 | - | missing |'));
+});
+it('the gate tests the pull request head and hands that commit to the acceptance report', () => {
+  const flow = readFileSync(path.join(REPO, '.github', 'workflows', 'lifecycle-gate.yml'), 'utf8');
+  const job = (name) => flow.split(/^  (?=[a-z]+:\n)/m).find((part) => part.startsWith(`${name}:`)).split('\n').map((line) => line.trim());
+  const head = 'github.event.pull_request.head.sha';
+  const tests = job('tests'), start = tests.findIndex((line) => line.includes('actions/checkout@'));
+  const next = tests.findIndex((line, i) => i > start && line.startsWith('- ')), step = tests.slice(start, next < 0 ? undefined : next);
+  assert.ok(step.some((line) => line.startsWith('ref:') && line.includes(head)), step.join('\n'));
+  const control = job('control'), env = control.slice(0, control.indexOf('steps:'));
+  assert.ok(env.some((line) => line.startsWith('TESTED_SHA:') && line.includes(head)), env.join('\n'));
 });
 it('acceptance reports on the commit the tests ran on', async () => {
   const lifecycle = new URL('../../plugins/serio-focus/scripts/lifecycle/', import.meta.url);
@@ -360,6 +418,16 @@ it('a deliver run without commits applies the card and marks the draft pull requ
   assert.deepEqual(patch && patch[2], { title: 'T', body: 'Card text' });
   assert.deepEqual(ready && ready[2].variables, { id: 'N' });
   assert.match(ready[2].query, /markPullRequestReadyForReview/);
+});
+it('a run without commits changes no pull request unless it is a deliver run with a card', async () => {
+  const { publishCard } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/push.mjs', import.meta.url));
+  for (const [stage, card] of [['deliver', false], ['write-tests', true], ['pr-loop', true]]) {
+    const out = sandbox('push-ac2-'), calls = [];
+    if (card) writeFileSync(path.join(out, 'pr.md'), 'Card text');
+    const io = { one: () => ({ title: 'T' }), all: () => [{ number: 5, node_id: 'N', draft: true, head: { ref: 'agent/98-x', sha: 'h1' } }], send: (...a) => calls.push(a), raw: () => '' };
+    publishCard({ repo: 'o/r', out, issue: 98, ref: 'agent/98-x', stage }, io);
+    assert.equal(calls.length, 0, stage);
+  }
 });
 it('a run without a new push is parked unless it is a deliver run with a ready pull request', async () => {
   const { pushed } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
@@ -548,6 +616,21 @@ it('the archive writes one record per run with no release asset and no tool inpu
   assert.match(job('publish'), /owner: serio-ngo\b/);
   assert.match(job('publish'), /repositories: lifecycle-runs\b/);
 });
+it('the archived trace counts errors, denials and repeats per tool while trace.mjs keeps each input', async () => {
+  const { archive, transcriptFile } = await import(PUBLISH);
+  const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));
+  const file = path.join(sandbox('trace-'), 'run.jsonl');
+  writeFileSync(file, transcriptFile(errRows));
+  const hit = lifecycleIo(), none = lifecycleIo();
+  await archive({ ...runBase, transcript: transcriptFile(errRows) }, hit.io);
+  await archive({ ...runBase, transcript: transcriptFile(runRows) }, none.io);
+  assert.deepEqual(decode(hit.puts[0]).trace, { ...trace(file), errors: { Bash: 1 }, denied: {}, repeats: { Read: 1 } });
+  const empty = decode(none.puts[0]).trace;
+  assert.deepEqual([empty.errors, empty.denied, empty.repeats], [{}, {}, {}]);
+  const cli = JSON.parse(spawnSync(process.execPath, [script('trace.mjs'), file], { encoding: 'utf8' }).stdout);
+  assert.ok(cli.errors[0].input.includes('cd /c/Users/x/Repos'), JSON.stringify(cli.errors));
+  assert.ok(cli.repeats[0].input.includes('a.md'), JSON.stringify(cli.repeats));
+});
 it('an archive write sweeps assets past the retention and makes no other release call', async () => {
   const { archive, transcriptFile } = await import(PUBLISH);
   const rel = `repos/${LR}/releases`, api = `repos/${LR}/contents/runs/o/r/2026-11-20/7-2-deliver.json`;
@@ -693,6 +776,12 @@ it("the gate archive writes only the gate record under the run's path in the arc
   const id = /^(?:- )?id: (\S+)/m.exec(steps[make])?.[1];
   assert.ok(id, steps[make]);
   assert.ok(steps.slice(make + 1).some((s) => s.includes(`steps.${id}.outputs.token`) && s.includes('publish.mjs') && s.includes('--gate') && /^(?:- )?if:.*always\(\)/m.test(s) && /^(?:- )?continue-on-error: true$/m.test(s)), steps.join('\n'));
+});
+it('every default io of a lifecycle script names helpers the script has', () => {
+  for (const dir of [path.join(PLUGIN, 'scripts', 'lifecycle'), path.join(PLUGIN, 'scripts', 'lib')]) for (const file of readdirSync(dir).filter((f) => f.endsWith('.mjs'))) {
+    const text = readFileSync(path.join(dir, file), 'utf8'), imported = new Set([...text.matchAll(/^import \{([^}]+)\} from/gm)].flatMap((m) => m[1].split(',').map((s) => s.trim().split(/\s+as\s+/).pop())));
+    for (const [, names] of text.matchAll(/\bio = \{ ([^}]+) \}/g)) for (const name of names.split(',').map((s) => s.trim())) assert.ok(imported.has(name) || new RegExp(`^(?:export )?(?:const|function) ${name}\\b`, 'm').test(text), `${file}: ${name}`);
+  }
 });
 
 it("route names the improvement branch only from a code owner's newest note on an existing branch", async () => {
@@ -885,6 +974,10 @@ it('the card checks the current branch first and never tells it to delete itself
   git(repo, 'checkout', '-b', 'fresh'); assert(!runCard(repo).stdout.includes('- fresh:'));
   writeFileSync(path.join(repo, 'c.txt'), 'c\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'c');
   assert(runCard(repo).stdout.includes('- fresh: push and open a pull request'));
+});
+it('the card lists a branch with unrelated history', () => {
+  const repo = backlogRepo(); git(repo, 'checkout', '--orphan', 'lone'); git(repo, 'commit', '-m', 'lone'); git(repo, 'checkout', 'main');
+  assert(runCard(repo).stdout.includes('- lone: push and open a pull request unless one is open'));
 });
 it('the card lists uncommitted work on a detached HEAD', () => {
   const repo = backlogRepo(); git(repo, 'checkout', '--detach'); writeFileSync(path.join(repo, 'u.txt'), 'u\n');
