@@ -5,6 +5,8 @@
 ## Unreleased
 
 - A `pr-loop` run that pushed nothing parks the pull request and a red CI does not start it again on that head; `write-tests` starts again from `spec-ok` only when the spec text changed since the last tests run that pushed, or as a retry after a park; a refused push is not counted; and the third tests run of a task parks with one decision.
+- A read-only `gh api` call retries twice on a network timeout or reset, so one dropped connection no longer aborts a whole snapshot.
+- In a local attended session deliver runs `/ship`'s steps itself: push, pull request, `/code-review` in place of its own review, then the desktop app's Auto-fix with `pr-loop` on each event; pr-loop never runs while a `/ship` or `/steward` watch runs.
 - Unattended spec-review reads with Read, Glob and Grep only and opens each skill and named file in full; write-tests runs each repository command on its own with output to the terminal, reads the deliver agent table before dispatching, and takes the e2e command from the lifecycle gate inputs; write-tests and deliver name a command that fails for a cause outside the task instead of stopping a process or changing the environment.
 - A review bot whose reply says its usage limit is reached (Codex) never blocks pr-loop: the reviewer's `ready` on the whole diff at the head stands in; findings the bot already posted still need an answer.
 - The session card lists local leftovers (uncommitted work, branches, worktrees, stashes) with one action each; git only, no network call.
