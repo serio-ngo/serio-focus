@@ -433,7 +433,7 @@ it('a run without a new push is parked unless it is a deliver run with a ready p
   const { pushed } = await import(new URL('../../plugins/serio-focus/scripts/lifecycle/publish.mjs', import.meta.url));
   for (const [stage, draft] of [['deliver', true], ['write-tests', false], ['pr-loop', false]]) {
     const calls = [];
-    pushed({ repo: 'o/r', number: 98, stage, before: 'h1', note: '', reason: '' }, { one: () => ({}), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, node_id: 'N', draft, head: { ref: 'agent/98-x', sha: 'h1' } }] : [], send: (...a) => calls.push(a), raw: () => '' });
+    pushed({ repo: 'o/r', number: 98, stage, before: 'h1', note: '', reason: '' }, { one: () => ({}), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, node_id: 'N', draft, head: { ref: 'agent/98-x', sha: 'h1', repo: { full_name: 'o/r' } }, base: { repo: { full_name: 'o/r' } } }] : [], send: (...a) => calls.push(a), raw: () => '' });
     const label = calls.find((c) => c[0] === 'POST' && c[1] === `repos/o/r/issues/${stage === 'pr-loop' ? 5 : 98}/labels`);
     assert.deepEqual(label && label[2], { labels: ['needs-human'] }, stage);
     assert.ok(calls.some((c) => JSON.stringify(c[2]).includes('the run ended without a new push')), stage);

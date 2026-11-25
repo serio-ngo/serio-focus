@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trace as traced } from '../trace.mjs';
 import { scan } from '../lib/gitleaks.mjs';
-import { all, flag, issueOf, one, park, raw, redact, repoOf, runLink, send, specSha, status } from '../lib/lifecycle.mjs';
+import { all, flag, one, park, raw, redact, repoOf, runLink, send, specSha, status, taskOf } from '../lib/lifecycle.mjs';
 
 const SCHEMA = JSON.parse(readFileSync(new URL('../lib/spec-review.schema.json', import.meta.url))), { criteria: C, questions: Q } = SCHEMA.properties;
 const MAX = { text: C.items.properties.text.maxLength, question: Q.items.properties.question.maxLength, recommended: Q.items.properties.recommended.maxLength };
@@ -143,24 +143,29 @@ function selfTest() {
   const quoted = [];
   status('o/r', 7, { now: 'Hi' }, { all: () => [{ id: 1, user: old.user, body: `See ${old.body}` }], send: (...a) => quoted.push(a), raw: () => '' });
   assert.deepEqual(quoted.map((a) => a[0] + a[1]), ['POSTrepos/o/r/issues/7/comments']);
-  const runs = (stage, before) => { const sent = []; pushed({ repo: 'o/r', number: 98, stage, before, note: '', reason: '' }, { one: () => ({ title: 'T', body: 'B' }), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, draft: true, head: { ref: 'agent/98-x', sha: 'h2' } }] : [], send: (...a) => sent.push(a), raw: () => '' }); return sent.map((a) => `${a[1]} ${JSON.stringify(a[2])}`).join('\n'); };
+  const runs = (stage, before, spec, repo = 'o/r') => { const sent = []; pushed({ repo: 'o/r', number: 98, stage, before, spec, note: '', reason: '' }, { one: () => ({ title: 'T', body: 'B' }), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, draft: true, head: { ref: 'agent/98-x', sha: 'h2', repo: { full_name: repo } }, base: { repo: { full_name: 'o/r' } } }] : [], send: (...a) => sent.push(a), raw: () => '' }); return sent.map((a) => `${a[1]} ${JSON.stringify(a[2])}`).join('\n'); };
   assert.match(runs('write-tests', 'h1'), /issues\/98\/comments \{"body":"<!-- write-tests v1 spec=[0-9a-f]{12} -->"\}/, 'a tests run that pushed records the spec it wrote tests for');
+  assert.match(runs('write-tests', 'h1', 'abcdef123456'), /<!-- write-tests v1 spec=abcdef123456 -->/, 'the marker names the spec the run started from');
   assert.doesNotMatch(runs('write-tests', 'h2'), /write-tests v1 spec=/, 'a tests run whose push was refused records no spec');
-  assert.match(runs('pr-loop', 'h2'), /issues\/5\/labels[\s\S]*no-push v1 sha=h2/, 'a pr-loop run without a push parks the pull request with its head');
-  console.log(`publish self-test: ${bad.length + 23} checks passed`);
+  assert.match(runs('write-tests', 'h1', '', 'x/r'), /issues\/98\/labels/, 'a fork pull request is not the task draft');
+  assert.match(runs('pr-loop', 'h2'), /issues\/5\/labels[\s\S]*\(pr-loop\)\. pr-loop does not start again on head h2\./, 'a pr-loop run without a push parks the pull request with its head');
+  const held = [];
+  status('o/r', 7, { now: 'x', line: note('Wrote it.', 'deliver', 99, stats, '2026-01-02T03:04:05Z') }, { all: () => [{ ...old, body: old.body.replace(at(0), '- **needs-human**: x. pr-loop does not start again on head h1. <!-- park at=2026-01-02T03:04:05Z -->') }], send: (...a) => held.push(a), raw: () => '' });
+  assert.ok(held[0][2].body.includes('pr-loop does not start again on head h1.'), 'the no-push park survives the 20-line log');
+  console.log(`publish self-test: ${bad.length + 26} checks passed`);
 }
 
-export function pushed({ repo, number, stage, before, note: text, reason }, io = { one, all, send, raw }) {
-  const pr = io.all(`repos/${repo}/pulls?state=open&per_page=100`).find((p) => issueOf(p.head.ref) === Number(number)), head = pr?.head.sha;
+export function pushed({ repo, number, stage, before, spec, note: text, reason }, io = { one, all, send, raw }) {
+  const pr = io.all(`repos/${repo}/pulls?state=open&per_page=100`).find((p) => taskOf(p) === Number(number)), head = pr?.head.sha;
   say(text, pr?.number || number, stage, io, repo);
   if (head && head !== before) {
     for (const n of [number, pr.number]) try { io.send('DELETE', `repos/${repo}/issues/${n}/labels/needs-human`, {}); } catch { }
-    if (stage === 'write-tests') io.send('POST', `repos/${repo}/issues/${number}/comments`, { body: `<!-- write-tests v1 spec=${specSha(io.one(`repos/${repo}/issues/${number}`))} -->` });
+    if (stage === 'write-tests') io.send('POST', `repos/${repo}/issues/${number}/comments`, { body: `<!-- write-tests v1 spec=${spec || specSha(io.one(`repos/${repo}/issues/${number}`))} -->` });
     return console.log(`pushed ${head}`);
   }
   if (stage === 'deliver' && pr && !pr.draft) return;
   const loop = stage === 'pr-loop' && pr;
-  park(repo, loop ? pr.number : number, `the run ended without a new push: ${runLink()}.${why(reason)}${loop ? ` pr-loop does not start again on head ${head.slice(0, 7)}. <!-- no-push v1 sha=${head} -->` : ''}`, io);
+  park(repo, loop ? pr.number : number, `the run ended without a new push: ${runLink()} (${stage}).${why(reason)}${loop ? ` pr-loop does not start again on head ${head}.` : ''}`, io);
 }
 
 const io = { one, all, send, scan, sleep };
@@ -206,7 +211,7 @@ function main() {
     if (!r.ok) { console.log(`::error::${r.note}`); process.exit(1); }
     return console.log('archived');
   }
-  if (process.argv.includes('--pushed')) return pushed({ repo, number, stage: process.env.STAGE, before: process.env.BEFORE_SHA, note: ev.note, reason: ev.reason });
+  if (process.argv.includes('--pushed')) return pushed({ repo, number, stage: process.env.STAGE, before: process.env.BEFORE_SHA, spec: process.env.SPEC_SHA, note: ev.note, reason: ev.reason });
   let out = null;
   try { out = scrub(ev.structured ?? JSON.parse(file ? readFileSync(file, 'utf8') : process.env.STRUCTURED_OUTPUT)); } catch { }
   const issue = one(`repos/${repo}/issues/${number}`), body = comment(out, process.env.SPEC_SHA || specSha(issue), '', issue.body || '');

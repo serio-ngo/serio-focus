@@ -4,7 +4,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { check } from './lock.mjs';
 import { comment, note } from './publish.mjs';
-import { all, fixMarkers, isStatus, issueOf, lockOf, lockReview, one, owners, ownersOf, owns, park, person, robot, send, specComment, specMarker, status, specSha, testsOk } from '../lib/lifecycle.mjs';
+import { all, fixMarkers, isStatus, issueOf, lockOf, lockReview, one, owners, ownersOf, owns, park, person, robot, send, specComment, specMarker, status, specSha, taskOf, testsOk } from '../lib/lifecycle.mjs';
 
 const FOCUS = new URL(JSON.parse(readFileSync(new URL('../../.claude-plugin/plugin.json', import.meta.url))).repository).pathname.slice(1);
 const CAPS = { 'spec-review': [40, 10], 'write-tests': [80, 20], deliver: [160, 40], 'pr-loop': [60, 15] };
@@ -21,12 +21,13 @@ export function route(name, ev, s) {
   };
   const tests = (n, extra = {}) => {
     const marks = s.comments(n).filter((c) => robot(c.user) && /^<!-- write-tests v1 spec=[0-9a-f]{12} -->$/.test(c.body || '')), wrote = marks.map((c) => /spec=(\w+)/.exec(c.body)[1]), last = marks.at(-1);
-    const retry = last && s.comments(n).some((c) => isStatus(c, s.own) && [...c.body.matchAll(/<!-- park at=(\S+) -->/g)].some((m) => m[1] > last.created_at));
-    if (!extra.pr && !retry && wrote.at(-1) === specSha(s.issue(n))) return stop('the tests were written for this spec text; edit the spec to write them again, or request changes on the draft', n);
+    const draft = s.openPulls().find((p) => taskOf(p) === n), spec = specSha(s.issue(n));
+    const retry = last && [n, draft?.number].filter(Boolean).flatMap((k) => s.comments(k)).some((c) => isStatus(c, s.own) && [...c.body.matchAll(/\*\*needs-human\*\*: the (?:write-tests run did not finish|run ended without a new push: [^(\n]*\(write-tests\))[^\n]*<!-- park at=(\S+) -->/g)].some((m) => m[1] > last.created_at));
+    if (!extra.pr && !retry && wrote.at(-1) === spec) return stop('the tests were written for this spec text; edit the spec to write them again, or request changes on the draft', n);
     if (wrote.length > 1) return { park: n, stop: `the tests were written ${wrote.length} times. Decide: write them by hand with /serio-focus:write-tests ${n}, or close the task` };
-    return run('write-tests', n, { sha: s.openPulls().find((p) => issueOf(p.head.ref) === n)?.head.sha, ...extra });
+    return run('write-tests', n, { sha: draft?.head.sha, spec, ...extra });
   };
-  const idle = (pr) => s.comments(pr.number).some((c) => isStatus(c, s.own) && c.body.includes(`<!-- no-push v1 sha=${pr.head.sha} -->`));
+  const idle = (pr) => s.comments(pr.number).some((c) => isStatus(c, s.own) && c.body.includes(`pr-loop does not start again on head ${pr.head.sha}.`));
   if (name === 'issues' && ev.action === 'labeled') {
     const n = ev.issue.number;
     if (!person(ev.sender) || ev.issue.pull_request) return stop('label is not from a person on an issue');
@@ -90,9 +91,10 @@ function selfTest() {
   const lockOnly = [{ name: 'gate / tests', conclusion: 'success' }, { name: 'gate / lock and acceptance', conclusion: 'failure', steps: [{ name: 'Test lock', conclusion: 'failure' }] }];
   const fix = (run) => ({ user: actions, body: `<!-- fix-ci v1 run=${run} attempt=1 sha=abc -->` });
   const wrote = (spec, who = actions, created_at = '2026-01-02T00:00:00Z') => ({ user: who, created_at, body: `<!-- write-tests v1 spec=${spec} -->` });
-  const idle = (head) => ({ user: actions, body: `<!-- lifecycle-status v1 -->\n\n**Log**\n- **needs-human**: the run ended without a new push. <!-- no-push v1 sha=${head} --> <!-- park at=2026-01-03T00:00:00Z -->` });
+  const parked = (why) => ({ user: actions, body: `<!-- lifecycle-status v1 -->\n\n**Log**\n- **needs-human**: ${why} <!-- park at=2026-01-03T00:00:00Z -->` });
+  const idle = (head) => parked(`the run ended without a new push: u (pr-loop). pr-loop does not start again on head ${head}.`);
   const edited = { ...issue, body: 'AC1 edited' }, readyEdited = { user: actions, body: `<!-- spec-review v1 sha=${specSha(edited)} verdict=ready ac=1 -->` };
-  const pr = { number: 9, state: 'open', draft: true, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
+  const pr = { number: 9, state: 'open', draft: true, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } }, base: { repo: { full_name: 'o/r' } } };
   const state = (over = {}) => ({ repo: 'o/r', guarded: true, failures: () => [], own: owners('* @ada\n'), issue: () => issue, comments: () => [ready], reviews: () => [lock], pulls: () => [pr], openPulls: () => [pr], pull: () => pr, ...over });
   const label = (name, sender = ada) => ({ action: 'labeled', label: { name }, sender, issue: { number: 7 } });
   const review = (body, state_, who = ada, commit = 'h1') => ({ action: 'submitted', pull_request: pr, review: { user: who, body, state: state_, commit_id: commit } });
@@ -142,8 +144,10 @@ function selfTest() {
     ['changes after a pr-loop run pushed nothing on this head', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ comments: () => [ready, idle('h1')] }), 'pr-loop'],
     ['cap reached through a change request before the lock', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ reviews: () => [], comments: () => [ready, wrote('000000000000'), wrote(sha)] }), undefined],
     ['bypass on the spec the tests were written for', 'issues', label('spec-ok'), state({ comments: () => [earlier, wrote(sha)] }), undefined],
-    ['retry after the last tests run parked', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha), idle('h9')] }), 'write-tests'],
-    ['park before the last tests run', 'issues', label('spec-ok'), state({ comments: () => [ready, idle('h9'), wrote(sha, actions, '2026-01-04T00:00:00Z')] }), undefined],
+    ['retry after the last tests run parked', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha), parked('the run ended without a new push: u (write-tests).')] }), 'write-tests'],
+    ['park before the last tests run', 'issues', label('spec-ok'), state({ comments: () => [ready, parked('the run ended without a new push: u (write-tests).'), wrote(sha, actions, '2026-01-04T00:00:00Z')] }), undefined],
+    ['retry after a deliver park', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha), parked('the run ended without a new push: u (deliver).')] }), undefined],
+    ['retry after a failed tests run parked the draft', 'issues', label('spec-ok'), state({ comments: (k) => k === 9 ? [parked('the write-tests run did not finish: u.')] : [ready, wrote(sha)] }), 'write-tests'],
     ['red CI on a new head after a pr-loop run pushed nothing', 'workflow_run', ci(), state({ comments: () => [idle('h0')] }), 'pr-loop'],
     ['forged no-push status', 'workflow_run', ci(), state({ comments: () => [{ ...idle('h1'), user: eve }] }), 'pr-loop'],
   ];
@@ -164,14 +168,15 @@ function selfTest() {
   const red = route('workflow_run', ci(), state());
   assert.equal(red.bot, true); assert.match(red.marker, /fix-ci v1 run=5 attempt=1 sha=h1/);
   assert.equal(route('workflow_run', ci(), state({ failures: () => [fail(3), fail(4), fail(5)] })).park, 9);
-  const parked = route('issues', label('spec-ok'), state({ issue: () => edited, comments: () => [readyEdited, wrote(sha), wrote('000000000000')] }));
-  assert.deepEqual([parked.park, parked.stage], [7, undefined]); assert.match(parked.stop, /Decide: /);
+  const capped = route('issues', label('spec-ok'), state({ issue: () => edited, comments: () => [readyEdited, wrote(sha), wrote('000000000000')] }));
+  assert.deepEqual([capped.park, capped.stage], [7, undefined]); assert.match(capped.stop, /Decide: /);
   assert.equal(route('pull_request_review', review('fix AC1', 'changes_requested'), state({ reviews: () => [], comments: () => [ready, wrote('000000000000'), wrote(sha)] })).park, 7);
-  assert.deepEqual([route('issues', label('spec-ok'), state()).sha, route('issues', label('spec-ok'), state({ openPulls: () => [] })).sha], ['h1', undefined], 'a spec-ok start passes the open draft head as the head before the run');
+  assert.deepEqual([route('issues', label('spec-ok'), state()).sha, route('issues', label('spec-ok'), state({ openPulls: () => [] })).sha, route('issues', label('spec-ok'), state({ openPulls: () => [{ ...pr, head: { ...pr.head, repo: { full_name: 'x/r' } } }] })).sha], ['h1', undefined, undefined], 'a spec-ok start passes the head of the task draft, never a fork, as the head before the run');
+  assert.deepEqual([route('issues', label('spec-ok'), state()).spec, route('pull_request_review', review('fix AC1', 'changes_requested'), state({ reviews: () => [] })).spec], [sha, sha], 'a tests run carries the spec it starts from');
   const held = route('workflow_run', ci(), state({ jobs: () => lockOnly }));
   assert.deepEqual([held.tell, held.marker, held.park], [9, undefined, undefined]);
   assert.ok(held.stop.endsWith('https://github.com/o/r/compare/h1...h1 and accept with a tests-ok review on the head. Any other cause: fix the spec review or spec-ok it names. Then gh run rerun 5 --failed -R o/r'), held.stop);
-  console.log(`route self-test: ${cases.length + tells.length + 15} checks passed`);
+  console.log(`route self-test: ${cases.length + tells.length + 16} checks passed`);
 }
 
 function main() {
