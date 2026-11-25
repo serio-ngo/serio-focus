@@ -151,10 +151,12 @@ export function pushed({ repo, number, stage, before, note: text, reason }, io =
   say(text, pr?.number || number, stage, io, repo);
   if (head && head !== before) {
     for (const n of [number, pr.number]) try { io.send('DELETE', `repos/${repo}/issues/${n}/labels/needs-human`, {}); } catch { }
+    if (stage === 'write-tests') io.send('POST', `repos/${repo}/issues/${number}/comments`, { body: `<!-- write-tests v1 spec=${specSha(io.one(`repos/${repo}/issues/${number}`))} -->` });
     return console.log(`pushed ${head}`);
   }
   if (stage === 'deliver' && pr && !pr.draft) return;
-  park(repo, number, `the run ended without a new push: ${runLink()}.${why(reason)}`, io);
+  const loop = stage === 'pr-loop' && pr;
+  park(repo, loop ? pr.number : number, `the run ended without a new push: ${runLink()}.${why(reason)}${loop ? ` pr-loop does not start again on head ${head.slice(0, 7)}. <!-- no-push v1 sha=${head} -->` : ''}`, io);
 }
 
 const io = { one, all, send, scan, sleep };

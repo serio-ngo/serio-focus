@@ -434,10 +434,14 @@ it('a run without a new push is parked unless it is a deliver run with a ready p
   for (const [stage, draft] of [['deliver', true], ['write-tests', false], ['pr-loop', false]]) {
     const calls = [];
     pushed({ repo: 'o/r', number: 98, stage, before: 'h1', note: '', reason: '' }, { one: () => ({}), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, node_id: 'N', draft, head: { ref: 'agent/98-x', sha: 'h1' } }] : [], send: (...a) => calls.push(a), raw: () => '' });
-    const label = calls.find((c) => c[0] === 'POST' && c[1] === 'repos/o/r/issues/98/labels');
+    const label = calls.find((c) => c[0] === 'POST' && c[1] === `repos/o/r/issues/${stage === 'pr-loop' ? 5 : 98}/labels`);
     assert.deepEqual(label && label[2], { labels: ['needs-human'] }, stage);
     assert.ok(calls.some((c) => JSON.stringify(c[2]).includes('the run ended without a new push')), stage);
+    assert.equal(calls.some((c) => JSON.stringify(c[2]).includes('<!-- no-push v1 sha=h1 -->')), stage === 'pr-loop', stage);
   }
+  const calls = [];
+  pushed({ repo: 'o/r', number: 98, stage: 'write-tests', before: '', note: '', reason: '' }, { one: () => ({ title: 'T', body: 'B' }), all: (url) => url.startsWith('repos/o/r/pulls?state=open') ? [{ number: 5, draft: true, head: { ref: 'agent/98-x', sha: 'h2' } }] : [], send: (...a) => calls.push(a), raw: () => '' });
+  assert.ok(calls.some((c) => c[0] === 'POST' && c[1] === 'repos/o/r/issues/98/comments' && /^<!-- write-tests v1 spec=[0-9a-f]{12} -->$/.test(c[2].body)), 'a tests run that pushed records the spec it wrote tests for');
 });
 it('trace counts each assistant message once with its tool calls, tokens, duration and models', async () => {
   const { trace } = await import(new URL('../../plugins/serio-focus/scripts/trace.mjs', import.meta.url));

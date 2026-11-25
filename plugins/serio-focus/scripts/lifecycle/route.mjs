@@ -4,7 +4,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { check } from './lock.mjs';
 import { comment, note } from './publish.mjs';
-import { all, fixMarkers, issueOf, lockOf, lockReview, one, owners, ownersOf, owns, park, person, send, specComment, specMarker, status, specSha, testsOk } from '../lib/lifecycle.mjs';
+import { all, fixMarkers, isStatus, issueOf, lockOf, lockReview, one, owners, ownersOf, owns, park, person, robot, send, specComment, specMarker, status, specSha, testsOk } from '../lib/lifecycle.mjs';
 
 const FOCUS = new URL(JSON.parse(readFileSync(new URL('../../.claude-plugin/plugin.json', import.meta.url))).repository).pathname.slice(1);
 const CAPS = { 'spec-review': [40, 10], 'write-tests': [80, 20], deliver: [160, 40], 'pr-loop': [60, 15] };
@@ -19,6 +19,13 @@ export function route(name, ev, s) {
     const named = (s.comments?.(issue) || []).filter((c) => owns(c.user, s.own)).map((c) => /^<!-- improve v1 focus=(\S+) -->\s*$/m.exec(c.body)?.[1]).filter(Boolean).pop();
     return { stage, issue, assignee: login, ...extra, focus: /^improve\/[a-z0-9-]+$/.test(named) && s.branch(named) ? named : '' };
   };
+  const tests = (n, extra = {}) => {
+    const wrote = s.comments(n).filter((c) => robot(c.user)).map((c) => /^<!-- write-tests v1 spec=([0-9a-f]{12}) -->$/.exec(c.body || '')?.[1]).filter(Boolean);
+    if (!extra.pr && wrote.at(-1) === specSha(s.issue(n))) return stop('the tests were written for this spec text; edit the spec to write them again, or request changes on the draft', n);
+    if (wrote.length > 1) return { park: n, stop: `the tests were written ${wrote.length} times. Decide: write them by hand with /serio-focus:write-tests ${n}, or close the task` };
+    return run('write-tests', n, extra);
+  };
+  const idle = (pr) => s.comments(pr.number).some((c) => isStatus(c, s.own) && c.body.includes(`<!-- no-push v1 sha=${pr.head.sha} -->`));
   if (name === 'issues' && ev.action === 'labeled') {
     const n = ev.issue.number;
     if (!person(ev.sender) || ev.issue.pull_request) return stop('label is not from a person on an issue');
@@ -35,9 +42,9 @@ export function route(name, ev, s) {
       const criteria = [...(earlier?.body || '').matchAll(/^\| AC(\d+) \| (.*) \| (unit|e2e) \| `([^`]+)` \|$/gm)].map(([, id, text, level, test]) => ({ id: +id, text: text.replace(/\\\|/g, '|'), level, test }));
       const kept = /^Review checks: (.+)$/m.exec(earlier?.body || '')?.[1];
       const accept = comment({ verdict: 'ready', criteria, checks: kept ? [kept] : [] }, specSha(s.issue(n)), `Accepted by ${ev.sender.login} without a ready review; open questions stay on the earlier review.`, s.issue(n).body);
-      return accept ? run('write-tests', n, { bypass: ev.sender.login, accept }) : stop('no reviewed criteria to accept yet: add spec-review first', n);
+      return accept ? tests(n, { bypass: ev.sender.login, accept }) : stop('no reviewed criteria to accept yet: add spec-review first', n);
     }
-    return run('write-tests', n);
+    return tests(n);
   }
   if (name === 'pull_request_review' && ev.action === 'submitted') {
     const pr = s.pull(ev.pull_request.number), n = issueOf(pr.head.ref);
@@ -47,7 +54,8 @@ export function route(name, ev, s) {
     const at = { pr: pr.number, ref: pr.head.ref, sha: pr.head.sha };
     if (testsOk(ev.review.body) && ev.review.state !== 'changes_requested') return !pr.draft ? stop('tests-ok on a ready pull request', pr.number) : ev.review.commit_id === pr.head.sha ? run('deliver', n, at) : stop('tests-ok is not on the current head', pr.number);
     if (ev.review.state !== 'changes_requested') return stop('review is not routed');
-    return run(lockOf(s.reviews(pr.number), s.own) ? 'pr-loop' : 'write-tests', n, at);
+    if (!lockOf(s.reviews(pr.number), s.own)) return tests(n, at);
+    return idle(pr) ? stop('a pr-loop run pushed nothing on this head: push a change, or run /serio-focus:pr-loop by hand', pr.number) : run('pr-loop', n, at);
   }
   if (name === 'workflow_run' && ev.action === 'completed') {
     const w = ev.workflow_run;
@@ -59,6 +67,7 @@ export function route(name, ev, s) {
     if (!lock) return stop('no test lock yet');
     if (w.created_at < reviews.find((r) => owns(r.user, s.own) && testsOk(r.body)).submitted_at) return stop('CI started before the first test lock');
     if (fixMarkers(s.comments(pr.number)).some((f) => f.run === w.id && f.attempt === w.run_attempt)) return stop('duplicate CI event');
+    if (idle(pr)) return stop('a pr-loop run pushed nothing on this head');
     const jobs = s.jobs?.(w) || [], job = (name) => jobs.find((j) => j.name.endsWith(name));
     if (job('tests')?.conclusion === 'success' && job('lock and acceptance')?.steps?.some((st) => st.name === 'Test lock' && st.conclusion === 'failure')) return stop(`tests pass and only the test lock fails; a person reads its "test lock:" line. Locked paths changed: review https://github.com/${s.repo}/compare/${lock.commit_id}...${pr.head.sha} and accept with a tests-ok review on the head. Any other cause: fix the spec review or spec-ok it names. Then gh run rerun ${w.id} --failed -R ${s.repo}`, pr.number);
     const red = new Set(s.failures(w).filter((f) => f.created_at > lock.submitted_at).map((f) => f.id)).add(w.id);
@@ -79,6 +88,9 @@ function selfTest() {
   const fail = (id, created_at = '2026-01-03') => ({ id, created_at });
   const lockOnly = [{ name: 'gate / tests', conclusion: 'success' }, { name: 'gate / lock and acceptance', conclusion: 'failure', steps: [{ name: 'Test lock', conclusion: 'failure' }] }];
   const fix = (run) => ({ user: actions, body: `<!-- fix-ci v1 run=${run} attempt=1 sha=abc -->` });
+  const wrote = (spec, who = actions) => ({ user: who, body: `<!-- write-tests v1 spec=${spec} -->` });
+  const idle = (head) => ({ user: actions, body: `<!-- lifecycle-status v1 -->\n\n**Log**\n- **needs-human**: the run ended without a new push. <!-- no-push v1 sha=${head} --> <!-- park at=2026-01-03T00:00:00Z -->` });
+  const edited = { ...issue, body: 'AC1 edited' }, readyEdited = { user: actions, body: `<!-- spec-review v1 sha=${specSha(edited)} verdict=ready ac=1 -->` };
   const pr = { number: 9, state: 'open', draft: true, head: { ref: 'agent/7-sum', sha: 'h1', repo: { full_name: 'o/r' } } };
   const state = (over = {}) => ({ repo: 'o/r', guarded: true, failures: () => [], own: owners('* @ada\n'), issue: () => issue, comments: () => [ready], reviews: () => [lock], pulls: () => [pr], openPulls: () => [pr], pull: () => pr, ...over });
   const label = (name, sender = ada) => ({ action: 'labeled', label: { name }, sender, issue: { number: 7 } });
@@ -120,6 +132,15 @@ function selfTest() {
     ['red CI on tests and the test lock', 'workflow_run', ci(), state({ jobs: () => [{ ...lockOnly[0], conclusion: 'failure' }, lockOnly[1]] }), 'pr-loop'],
     ['team-only code owners', 'pull_request_review', review('tests-ok', 'commented'), state({ own: owners('* @o/team\n') }), undefined],
     ['edited marker', 'issues', label('spec-ok', eve), state({ comments: () => [{ ...ready, created_at: 'a', updated_at: 'b' }] }), undefined],
+    ['spec-ok again on the spec the tests were written for', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha)] }), undefined],
+    ['spec-ok after the spec changed', 'issues', label('spec-ok'), state({ issue: () => edited, comments: () => [readyEdited, wrote(sha)] }), 'write-tests'],
+    ['spec-ok with a forged tests marker', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha, eve)] }), 'write-tests'],
+    ['second rewrite', 'issues', label('spec-ok'), state({ issue: () => edited, comments: () => [readyEdited, wrote(sha), wrote('000000000000')] }), undefined],
+    ['changes before the lock on the same spec', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ reviews: () => [], comments: () => [ready, wrote(sha)] }), 'write-tests'],
+    ['red CI after a pr-loop run pushed nothing on this head', 'workflow_run', ci(), state({ comments: () => [idle('h1')] }), undefined],
+    ['changes after a pr-loop run pushed nothing on this head', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ comments: () => [ready, idle('h1')] }), undefined],
+    ['red CI on a new head after a pr-loop run pushed nothing', 'workflow_run', ci(), state({ comments: () => [idle('h0')] }), 'pr-loop'],
+    ['forged no-push status', 'workflow_run', ci(), state({ comments: () => [{ ...idle('h1'), user: eve }] }), 'pr-loop'],
   ];
   for (const [title, name, ev, s, want] of cases) assert.equal(route(name, ev, s).stage, want, title);
   const tells = [
@@ -138,10 +159,13 @@ function selfTest() {
   const red = route('workflow_run', ci(), state());
   assert.equal(red.bot, true); assert.match(red.marker, /fix-ci v1 run=5 attempt=1 sha=h1/);
   assert.equal(route('workflow_run', ci(), state({ failures: () => [fail(3), fail(4), fail(5)] })).park, 9);
+  const parked = route('issues', label('spec-ok'), state({ issue: () => edited, comments: () => [readyEdited, wrote(sha), wrote('000000000000')] }));
+  assert.deepEqual([parked.park, parked.stage], [7, undefined]); assert.match(parked.stop, /Decide: /);
+  assert.equal(route('pull_request_review', review('fix AC1', 'changes_requested'), state({ comments: () => [ready, idle('h1')] })).tell, 9);
   const held = route('workflow_run', ci(), state({ jobs: () => lockOnly }));
   assert.deepEqual([held.tell, held.marker, held.park], [9, undefined, undefined]);
   assert.ok(held.stop.endsWith('https://github.com/o/r/compare/h1...h1 and accept with a tests-ok review on the head. Any other cause: fix the spec review or spec-ok it names. Then gh run rerun 5 --failed -R o/r'), held.stop);
-  console.log(`route self-test: ${cases.length + tells.length + 10} checks passed`);
+  console.log(`route self-test: ${cases.length + tells.length + 14} checks passed`);
 }
 
 function main() {
