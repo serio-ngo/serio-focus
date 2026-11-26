@@ -307,6 +307,7 @@ jobs:
           name: commits
           path: ${{ runner.temp }}/out
       - name: Push the run's commits
+        id: push
         if: steps.app.outcome == 'success'
         continue-on-error: true
         env:
@@ -322,6 +323,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ needs.route.outputs.issue }}
           BEFORE_SHA: ${{ needs.route.outputs.sha }}
+          SPEC_SHA: ${{ needs.route.outputs.spec }}
+          PUSHED_SHA: ${{ steps.push.outputs.head }}
           STATS: ${{ needs.agent.outputs.stats }}
           STAGE: ${{ needs.route.outputs.stage }}
         run: node plugins/serio-focus/scripts/lifecycle/publish.mjs "$ISSUE" --pushed --eval "$RUNNER_TEMP/eval/eval.json"
