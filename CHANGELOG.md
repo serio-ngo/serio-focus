@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- improve writes only its serio-focus branch and pull request and the task's issue, never waits for a person before End, and treats a step that needs one as a lifecycle defect; spec-review no longer recommends a person-merged setup pull request, and the tester's Load row names no runtime API.
 - A `pr-loop` run that pushed nothing parks the pull request and a red CI does not start it again on that head; `write-tests` starts again from `spec-ok` only when the spec text changed since the last tests run that pushed (the spec hash taken at its start); a tests run counts once it pushed its own head or parked, on the issue or its draft, never for a fork pull request; the no-push and write-tests park lines stay in the 20-line status log; and the third tests run of a task parks with one decision.
 - A read-only `gh api` call retries twice on a network timeout or reset, so one dropped connection no longer aborts a whole snapshot.
 - In a local attended session deliver runs `/ship`'s steps itself: push, pull request, `/code-review` in place of its own review, then the desktop app's Auto-fix with `pr-loop` on each event; pr-loop never runs while a `/ship` or `/steward` watch runs.
