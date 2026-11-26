@@ -150,6 +150,7 @@ function selfTest() {
   assert.match(runs('write-tests', 'h1', '', 'x/r'), /issues\/98\/labels/, 'a fork pull request is not the task draft');
   assert.match(runs('pr-loop', 'h2'), /issues\/5\/labels[\s\S]*\(pr-loop\)\. pr-loop does not start again on head h2\./, 'a pr-loop run without a push parks the pull request with its head');
   assert.doesNotMatch(runs('write-tests', 'h1', '', 'o/r', ''), /write-tests v1 spec=/, 'a head another push moved records no spec');
+  assert.match(runs('write-tests', 'h1', '', 'o/r', ''), /\(write-tests\)\./, 'a write-tests run whose head another push moved parks, so it counts toward the cap');
   const keeps = [
     ['- **needs-human**: the run ended without a new push: u (pr-loop). pr-loop does not start again on head h1. <!-- park at=2026-01-02T03:04:05Z -->', true],
     ['- **needs-human**: the write-tests run did not finish: u. <!-- park at=2026-01-02T03:04:05Z -->', true],
@@ -162,15 +163,15 @@ function selfTest() {
     status('o/r', 7, { now: 'x', line: note('Wrote it.', 'deliver', 99, stats, '2026-01-02T03:04:05Z') }, { all: () => [{ ...old, body: old.body.replace(at(0), first) }], send: (...a) => sent.push(a), raw: () => '' });
     assert.equal(sent[0][2].body.includes(first), kept, first);
   }
-  console.log(`publish self-test: ${bad.length + 26 + keeps.length} checks passed`);
+  console.log(`publish self-test: ${bad.length + 27 + keeps.length} checks passed`);
 }
 
 export function pushed({ repo, number, stage, before, spec, pushedSha, note: text, reason }, io = { one, all, send, raw }) {
   const pr = io.all(`repos/${repo}/pulls?state=open&per_page=100`).find((p) => taskOf(p) === Number(number)), head = pr?.head.sha;
   say(text, pr?.number || number, stage, io, repo);
-  if (head && head !== before) {
+  if (head && head !== before && (stage !== 'write-tests' || pushedSha === head)) {
     for (const n of [number, pr.number]) try { io.send('DELETE', `repos/${repo}/issues/${n}/labels/needs-human`, {}); } catch { }
-    if (stage === 'write-tests' && pushedSha === head) io.send('POST', `repos/${repo}/issues/${number}/comments`, { body: `<!-- write-tests v1 spec=${spec || specSha(io.one(`repos/${repo}/issues/${number}`))} -->` });
+    if (stage === 'write-tests') io.send('POST', `repos/${repo}/issues/${number}/comments`, { body: `<!-- write-tests v1 spec=${spec || specSha(io.one(`repos/${repo}/issues/${number}`))} -->` });
     return console.log(`pushed ${head}`);
   }
   if (stage === 'deliver' && pr && !pr.draft) return;
