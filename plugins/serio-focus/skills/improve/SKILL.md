@@ -9,7 +9,7 @@ Improve issue $ARGUMENTS. Agents, models and efforts are as in `deliver`. The is
 
 | Step | Does |
 |---|---|
-| Start | Cut `improve/<repo>-<N>` (lowercase; other characters to `-`) from serio-focus `main` and push it. Post one comment on the task as the code owner: the hash of the spec text, the base commit and the improve marker `<!-- improve v1 focus=improve/<repo>-<N> -->`. Assign the task, so every stage runs on Actions with that branch's instructions and is archived |
+| Start | Read the task repository's default branch first: stages run only when its workflows call `lifecycle-agent.yml` and `lifecycle-gate.yml` of serio-focus and the labels `spec-review` and `spec-ok` exist. When one is missing, no stage can run: label `needs-human` on the task with the missing items and go to End. Otherwise cut `improve/<repo>-<N>` (lowercase; other characters to `-`) from serio-focus `main` and push it. Post one comment on the task as the code owner: the hash of the spec text, the base commit and the improve marker `<!-- improve v1 focus=improve/<repo>-<N> -->`. Assign the task, so every stage runs on Actions with that branch's instructions and is archived |
 | Run | Give the gate that starts the stage; wait for the run's archive record |
 | Audit | One table per stage: one row per Evidence cell of the stage skill, plus the audit rows below. Each row: the instruction, the artifact (command output, `file:line` or record path), `holds`, `off` or `not checked`. Script rows are copied verbatim. A fresh `reviewer` may add `off` rows; nothing turns a script row's `off` into `holds` |
 | Pass | Every row holds: give the next gate yourself, as the code owner would: `spec-ok`, or a review that starts with `tests-ok` |
