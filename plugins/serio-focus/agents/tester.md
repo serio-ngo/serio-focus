@@ -20,7 +20,7 @@ You write the failing test before any production code. The behaviour comes in th
 | Place | The existing test file of the boundary; a new file, named after the boundary, only for a new boundary |
 | Lean | One test per behaviour; no comment; no helper or fixture the test does not need |
 | Portable | Pass file paths as the existing tests do: a `URL` object or `fileURLToPath`, never `URL.pathname`, so the test runs on Windows as on Linux |
-| Load | When the unit command cannot import the module (syntax beyond type stripping, a bundler-only import such as `?raw`), the test file loads it itself: `module.registerHooks` whose `load` returns a `.ts` file through `stripTypeScriptTypes(source, { mode: "transform" })` and a `?raw` file as `export default <text>`, then a dynamic `import()`. Never a setup file, a config change or a changed test command |
+| Load | When the unit command cannot import the module, the test file makes it importable itself with the runtime's own module hooks or a stub of a platform module, then imports it dynamically. Never a setup file outside the tests, a dependency, a config or a changed test command |
 | Scope | Only behaviour a user or caller sees. Extend the test that already covers the boundary before adding one. No test for a version, size, file layout, document or config line: name it under Not done |
 
 - Repository test rules win: file locations, helpers, limits on new test files.
