@@ -153,10 +153,28 @@ it('denies a subagent call that does not name model and effort', () => {
   for (const tool_input of [{ scriptPath: flow }, { scriptPath: path.join(box, 'none.js') }]) assert.equal(guard({ tool_name: 'Workflow', tool_input }), DENY, JSON.stringify(tool_input));
   assert.equal(guard({ tool_name: 'Workflow', tool_input: { name: 'review' } }), ALLOWED);
 });
-it('matches the hook to edit, spawn and mail-send tools only', () => {
+it('matches the hook to edit, spawn, shell, act and mail-send tools only', () => {
   const { matcher } = JSON.parse(readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks.PreToolUse[0];
-  for (const tool of ['Edit', 'Agent', 'mcp__gmail__send_message', 'mcp__gmail__send_draft', 'mcp__s__slack_send_message']) assert.match(tool, new RegExp(matcher));
-  for (const tool of ['Bash', 'PowerShell', 'Read', 'TaskCreate', 'EnterWorktree', 'mcp__gmail__create_draft', 'mcp__x__get_post']) assert.doesNotMatch(tool, new RegExp(matcher));
+  for (const tool of ['Edit', 'Agent', 'Bash', 'PowerShell', 'mcp__serio-lifecycle__act', 'mcp__gmail__send_message', 'mcp__gmail__send_draft', 'mcp__s__slack_send_message']) assert.match(tool, new RegExp(matcher));
+  for (const tool of ['Read', 'TaskCreate', 'EnterWorktree', 'mcp__gmail__create_draft', 'mcp__x__get_post', 'mcp__serio-lifecycle__state']) assert.doesNotMatch(tool, new RegExp(matcher));
+});
+it('denies a GitHub write or commit that carries eight words the owner typed in chat', () => {
+  const box = sandbox('chat-'), file = path.join(box, 't.jsonl'), local = { ...process.env, GITHUB_ACTIONS: '' };
+  writeFileSync(file, [{ type: 'user', message: { content: 'wywal te buzie z ludka, większe oczy trochę i ciemniejsze tło' } },
+    { type: 'user', message: { content: [{ type: 'tool_result', content: 'max cztery potwory na pokoj zawsze tutaj bez wyjatku teraz' }] } },
+    { type: 'user', isMeta: true, message: { content: 'meta tekst ktory nie jest czatem wcale nigdy przenigdy juz' } },
+    { type: 'user', message: { content: [{ type: 'text', text: '<system-reminder>reguly systemu ktore nie sa slowami wlasciciela nigdy tutaj</system-reminder>\n```\nnpm run verify and then commit the brand rules file here\n```\nsee https://github.com/serio-ngo/ops/issues/150' }] } },
+    { type: 'attachment', attachment: { type: 'queued_command', commandMode: 'prompt', origin: { kind: 'human' }, prompt: 'zrob dodatkowe issue na przeniesienie gry teraz do poludzku' } },
+    { type: 'attachment', attachment: { type: 'queued_command', commandMode: 'prompt', origin: { kind: 'peer' }, prompt: 'raport innej sesji o scalaniu galezi dzisiaj po poludniu' } }]
+    .map((row) => JSON.stringify(row)).join('\n'));
+  writeFileSync(path.join(box, 'body.md'), '> wywal te buzie z ludka, wieksze oczy troche i ciemniejsze');
+  const run = (tool_name, tool_input, env = local) => guard({ tool_name, tool_input, cwd: box, transcript_path: file }, env);
+  for (const command of ['gh issue create -t x -b "Wywal te BUZIE z ludka, wieksze oczy troche i"', 'gh issue comment 1 --body-file body.md', 'git commit -F "body.md"', 'gh issue edit 2 -b "> zrob dodatkowe issue na przeniesienie gry teraz do"'])
+    assert.equal(run('Bash', { command }), DENY, command);
+  assert.equal(run('mcp__serio-lifecycle__act', { body: 'wywal te buzie z ludka wieksze oczy troche' }), DENY);
+  for (const command of ['gh issue create -t x -b "Remove the mouth; eyes slightly larger"', 'echo wywal te buzie z ludka wieksze oczy troche', 'gh pr comment 1 -b "max cztery potwory na pokoj zawsze tutaj bez wyjatku"', 'gh pr comment 1 -b "meta tekst ktory nie jest czatem wcale nigdy przenigdy"', 'gh pr comment 1 -b "reguly systemu ktore nie sa slowami wlasciciela nigdy tutaj"', 'gh pr comment 1 -b "raport innej sesji o scalaniu galezi dzisiaj po poludniu"', 'git commit -m "npm run verify and then commit the brand rules file here"', 'gh issue edit 2 -b "Related: https://github.com/serio-ngo/ops/issues/150"'])
+    assert.equal(run('PowerShell', { command }), ALLOWED, command);
+  assert.equal(run('Bash', { command: 'gh issue create -b "wywal te buzie z ludka wieksze oczy troche"' }, { ...process.env, GITHUB_ACTIONS: 'true' }), ALLOWED);
 });
 it('denies every mail send on every attempt and allows other connector sends', () => {
   for (const tool of ['mcp__gmail__send_message', 'mcp__gmail__send_draft', 'mcp__gmail__reply_email', 'mcp__gmail__forward_email', 'mcp__email__send_email', 'mcp__email__reply_email', 'mcp__email__forward_email', 'mcp__outlook__send_mail', 'mcp__outlook__reply_email', 'mcp__outlook__forward_email'])
