@@ -16,6 +16,16 @@ export function target(ref, issue, open) {
   return name;
 }
 
+const closers = (text) => {
+  const word = '(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)', ref = '(?:[\\w.-]+\\/[\\w.-]+)?#\\d+';
+  return String(text || '').replace(/^\s*(`{3,}|~{3,})[\s\S]*?(?:^ {0,3}\1[`~]* *$|(?![\s\S]))/gm, '').replace(/(`+)[^\n]*?\1/g, '').split('\n').filter((l) => new RegExp(`^ {0,3}(?:[-*] )?${word}:? ${ref}`, 'i').test(l)).flatMap((l) => [...l.matchAll(new RegExp(`\\b${word}:? (${ref})\\b`, 'gi'))].map((m) => `Fixes ${m[1]}`));
+};
+
+export const closes = (body, task) => {
+  const has = new Set(closers(body).map((l) => l.toLowerCase()));
+  return [body, ...closers(task).filter((l) => !has.has(l.toLowerCase()) && has.add(l.toLowerCase()))].join('\n');
+};
+
 export function push(remote, bundle, ref, dir) {
   execFileSync('git', ['clone', '-q', '--bare', '--filter=blob:none', remote, dir], { stdio: ['ignore', 'pipe', 'pipe'] });
   git(dir, '-c', 'fetch.fsckObjects=true', 'fetch', '-q', bundle, 'HEAD');
@@ -49,7 +59,19 @@ function selfTest() {
   calls.length = 0;
   assert.throws(() => publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'deliver', body: 'b' }, { ...io(true), send: (m, p, b) => { calls.push(b?.query?.match(/\{(\w+)\(/)?.[1] || p); return {}; }, push: () => { throw new Error('refused'); } }), /refused/);
   assert.deepEqual(calls, ['markPullRequestReadyForReview', 'convertPullRequestToDraft'], 'a failed push puts the pull request back to draft');
-  console.log('push self-test: 13 checks passed');
+  assert.equal(closes('Fixes #7', 'Step 1 of o/a#1\nFixes o/ops#111\ncloses O/x#2 \n'), 'Fixes #7\nFixes o/ops#111\nFixes O/x#2', 'the task\'s closing lines reach the pull request; a plain mention does not');
+  assert.equal(closes('Fixes #7\nFixes o/ops#111', 'Fixes o/ops#111'), 'Fixes #7\nFixes o/ops#111', 'a closing line already in the body is not repeated');
+  assert.equal(closes('Fixes o/ops#111\nfixes o/ops#12', '- Fixes: o/ops#11.\nFixes o/ops#12\nFixes o/ops#11'), 'Fixes o/ops#111\nfixes o/ops#12\nFixes o/ops#11', 'whole lines are compared, in any case, and list, colon and full-stop forms count');
+  assert.equal(closes('Fixes #7', 'Fixes o/a#1, fixes o/b#2 and closes o/c#3, o/e#5\nThis fixes o/d#4 in part\n```\nFixes o/f#6\n```\nFixes o/g#7, see `fixes o/h#8` and ``fixes o/j#10``\n~~~\nFixes o/i#9'), 'Fixes #7\nFixes o/a#1\nFixes o/b#2\nFixes o/c#3\nFixes o/g#7', 'each reference after a closing word on a closing line counts; a bare reference, a closing word inside prose or code, fenced, unclosed or inline, does not');
+  assert.equal(closes('Fixes #7', 'Fixes #12, fixes o/ops#111'), 'Fixes #7\nFixes #12\nFixes o/ops#111', 'a closing line may mix references in this repository and another');
+  const sent = []; publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'write-tests' }, { all: () => [], one: () => ({ title: 't', body: 'Fixes o/ops#111', default_branch: 'main' }), send: (m, p, b) => { sent.push(b); return { number: 9 }; }, push: () => 'h' });
+  assert.equal(sent[0].body, 'Fixes #7\nFixes o/ops#111', 'a new draft closes the task and the issue it fixes in another repository');
+  sent.length = 0; publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'write-tests' }, { all: () => [{ number: 9, body: 'Fixes #7' }], one: () => ({ title: 't', body: 'Fixes o/ops#111' }), send: (m, p, b) => { sent.push(b); return {}; }, push: () => 'h' });
+  assert.deepEqual(sent, [{ body: 'Fixes #7\nFixes o/ops#111' }], 'an open pull request without a new card still gets the task\'s closing lines');
+  assert.equal(closes('Card\n```\nFixes o/ops#1\n```', 'Fixes o/ops#1'), 'Card\n```\nFixes o/ops#1\n```\nFixes o/ops#1', 'a fenced example in the body is no closer');
+  assert.equal(closes('Card\n    Fixes o/ops#1', 'Fixes o/ops#1\n    Fixes o/ops#2\n\tFixes o/ops#3'), 'Card\n    Fixes o/ops#1\nFixes o/ops#1', 'an indented code line is no closer, in the body or the task');
+  assert.equal(closes('Fixes #7', '```\n```js\nFixes o/ops#2\n```\nFixes o/ops#1'), 'Fixes #7\nFixes o/ops#1', 'a fence closes only on a bare fence line');
+  console.log('push self-test: 23 checks passed');
 }
 
 export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, send, raw }) {
@@ -57,7 +79,8 @@ export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, s
   if (stage !== 'deliver' || !existsSync(card)) return;
   const pr = io.all(`repos/${repo}/pulls?state=open&head=${repo.split('/')[0]}:${ref}`)[0];
   if (!pr) return;
-  io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title: io.one(`repos/${repo}/issues/${issue}`).title, body: readFileSync(card, 'utf8').slice(0, 60000) });
+  const task = io.one(`repos/${repo}/issues/${issue}`);
+  io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title: task.title, body: closes(readFileSync(card, 'utf8').slice(0, 60000), task.body) });
   if (pr.draft) io.send('POST', 'graphql', { query: 'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } });
 }
 
@@ -70,9 +93,10 @@ export function publish({ repo, ref, issue, stage, body }, io) {
     if (ready) try { io.send('POST', 'graphql', { query: 'mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } }); } catch (c) { e.message += `; back to draft failed: ${c.message}`; }
     throw e;
   }
-  const title = io.one(`repos/${repo}/issues/${issue}`).title;
-  if (!pr) pr = io.send('POST', `repos/${repo}/pulls`, { title, head: ref, base: io.one(`repos/${repo}`).default_branch, body: body || `Fixes #${issue}`, draft: true });
-  else if (body) io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title, body });
+  const { title, body: task } = io.one(`repos/${repo}/issues/${issue}`);
+  if (!pr) pr = io.send('POST', `repos/${repo}/pulls`, { title, head: ref, base: io.one(`repos/${repo}`).default_branch, body: closes(body || `Fixes #${issue}`, task), draft: true });
+  else if (body) io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title, body: closes(body, task) });
+  else if (closes(pr.body || '', task) !== (pr.body || '')) io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { body: closes(pr.body || '', task) });
   return { head, pr };
 }
 
