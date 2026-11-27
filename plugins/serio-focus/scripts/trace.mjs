@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { readFileSync, readdirSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -72,4 +74,18 @@ export function trace(file) {
   return { ...out, totals };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) console.log(JSON.stringify(trace(process.argv[2])));
+function selfTest() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'trace-')), file = path.join(dir, 't.jsonl'), ls = { command: 'ls' };
+  try {
+    writeFileSync(file, [
+      { type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 'x1', name: 'Bash', input: ls }] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'x1', is_error: true, content: 'Permission for this action was denied' }] } },
+      { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: ls, tool_use_id: 'x1' }] },
+    ].map((r) => JSON.stringify(r)).join('\n'));
+    const got = trace(file);
+    assert.deepEqual([got.errors, got.denied], [[], [{ tool: 'Bash', input: JSON.stringify(ls) }]], 'a refusal listed in permission_denials is a denial, not an error');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  console.log('trace self-test: 1 check passed');
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) process.argv.includes('--self-test') ? selfTest() : console.log(JSON.stringify(trace(process.argv[2])));

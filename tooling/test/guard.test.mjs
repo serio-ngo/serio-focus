@@ -470,12 +470,6 @@ it('trace lists failed, denied and repeated calls once each with the start of th
   const got = trace(file);
   assert.deepEqual(got.errors, [{ tool: 'Bash', input: JSON.stringify(bash) }]);
   assert.deepEqual(got.denied, [{ tool: 'Write', input: JSON.stringify(write).slice(0, 200) }]);
-  const ls = { command: 'ls' }, auto = path.join(dir, 'auto.jsonl');
-  writeFileSync(auto, [call('x1', 'Bash', ls), { ...result('x1', {}, true), message: { content: [{ type: 'tool_result', tool_use_id: 'x1', is_error: true, content: 'Permission for this action was denied' }] } },
-    { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: ls, tool_use_id: 'x1' }] }].map((r) => JSON.stringify(r)).join('\n'));
-  const classified = trace(auto);
-  assert.deepEqual(classified.errors, []);
-  assert.deepEqual(classified.denied, [{ tool: 'Bash', input: JSON.stringify(ls) }]);
   assert.deepEqual(got.repeats, [{ tool: 'Read', input: '{"file_path":"a"}', times: 2 }]);
   const empty = path.join(dir, 'empty.jsonl');
   writeFileSync(empty, '');
