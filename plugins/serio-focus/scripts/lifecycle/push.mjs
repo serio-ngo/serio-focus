@@ -19,8 +19,7 @@ export function target(ref, issue, open) {
 export const closes = (body, task) => {
   const has = new Set(body.toLowerCase().split('\n').map((l) => l.trim()));
   const word = '(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)', ref = '(?:[\\w.-]+\\/[\\w.-]+)?#\\d+';
-  const only = new RegExp(`^(?:[-*] )?${word}:? ${ref}(?:(?:,? and |, ?)(?:${word}:? )?${ref})*\\.?\\s*$`, 'i');
-  const lines = String(task || '').split('\n').filter((l) => only.test(l.trim())).flatMap((l) => l.match(new RegExp(ref, 'g'))).map((r) => `Fixes ${r}`);
+  const lines = String(task || '').split('\n').filter((l) => new RegExp(`^(?:[-*] )?${word}:? ${ref}`, 'i').test(l.trim())).flatMap((l) => [...l.matchAll(new RegExp(`\\b${word}:? (${ref})\\b`, 'gi'))].map((m) => `Fixes ${m[1]}`));
   return [body, ...lines.filter((l) => !has.has(l.toLowerCase()) && has.add(l.toLowerCase()))].join('\n');
 };
 
@@ -60,7 +59,7 @@ function selfTest() {
   assert.equal(closes('Fixes #7', 'Step 1 of o/a#1\nFixes o/ops#111\ncloses O/x#2 \n'), 'Fixes #7\nFixes o/ops#111\nFixes O/x#2', 'the task\'s closing lines reach the pull request; a plain mention does not');
   assert.equal(closes('Fixes #7\nFixes o/ops#111', 'Fixes o/ops#111'), 'Fixes #7\nFixes o/ops#111', 'a closing line already in the body is not repeated');
   assert.equal(closes('Fixes o/ops#111\nfixes o/ops#12', '- Fixes: o/ops#11.\nFixes o/ops#12\nFixes o/ops#11'), 'Fixes o/ops#111\nfixes o/ops#12\nFixes o/ops#11', 'whole lines are compared, in any case, and list, colon and full-stop forms count');
-  assert.equal(closes('Fixes #7', 'Fixes o/a#1, fixes o/b#2 and o/c#3\nThis fixes o/d#4 in part'), 'Fixes #7\nFixes o/a#1\nFixes o/b#2\nFixes o/c#3', 'every reference of a closing line counts; a closing word inside prose does not');
+  assert.equal(closes('Fixes #7', 'Fixes o/a#1, fixes o/b#2 and closes o/c#3, o/e#5\nThis fixes o/d#4 in part'), 'Fixes #7\nFixes o/a#1\nFixes o/b#2\nFixes o/c#3', 'each reference after a closing word on a closing line counts; a bare reference or a closing word inside prose does not');
   assert.equal(closes('Fixes #7', 'Fixes #12, fixes o/ops#111'), 'Fixes #7\nFixes #12\nFixes o/ops#111', 'a closing line may mix references in this repository and another');
   const sent = []; publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'write-tests' }, { all: () => [], one: () => ({ title: 't', body: 'Fixes o/ops#111', default_branch: 'main' }), send: (m, p, b) => { sent.push(b); return { number: 9 }; }, push: () => 'h' });
   assert.equal(sent[0].body, 'Fixes #7\nFixes o/ops#111', 'a new draft closes the task and the issue it fixes in another repository');
