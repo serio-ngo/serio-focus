@@ -37,6 +37,8 @@ export function refusal(out, extra = '', spec = '') {
   const owner = ownerLevels(spec);
   if (out.verdict !== 'ready' || !owner.length || !criteria.every((c) => Number.isInteger(c.from))) return '';
   const seen = [...criteria.map((c) => c.from), ...held.map((h) => h?.from)], missing = owner.map((_, i) => i + 1).filter((n) => !seen.includes(n));
+  const outside = seen.filter((n) => !(n >= 1 && n <= owner.length));
+  if (outside.length) return `from ${outside.join(', ')} names no owner criterion`;
   if (missing.length) return `owner criteria ${missing.join(', ')} are neither a criterion nor held`;
   const lowered = criteria.filter((c) => owner[c.from - 1] === 'e2e' && c.level !== 'e2e').map((c) => c.from);
   if (lowered.length) return `owner criteria ${lowered.join(', ')} lost their e2e level`;
@@ -138,10 +140,10 @@ function selfTest() {
   assert.match(refusal(trace([from(1, 'e2e'), from(3)], [{ from: 2, where: 'nowhere' }]), '', spec), /owner criteria 2 cite no file:line/);
   assert.match(comment({ verdict: 'ready', criteria: [ac()] }, sha, '', spec), /Levels: the spec names 2 e2e criteria; this review has 0./);
   assert.equal(refusal({ verdict: 'questions', criteria: [from(1)], held: [], questions: [q] }, '', spec), '');
+  assert.match(refusal(trace([from(1, 'e2e'), from(3), from(9)]), '', spec), /from 9 names no owner criterion/);
   const defect = [], dio = { one: () => ({ title: 'T', body: 'B' }), all: () => [], send: (...a) => defect.push(a), raw: () => '' };
   pushed({ repo: 'o/r', number: 98, stage: 'write-tests', before: 'h1', spec: 'abcdef123456', note: 'Spec defect: AC1 holds at a/b.ext:3', reason: '' }, dio);
   const bodies = defect.map((a) => a[2].body || '').join('\n'), parked = bodies.split('\n').find((l) => l.startsWith('- **needs-human**'));
-  assert.match(bodies, /<!-- spec-defect v1 spec=abcdef123456 -->/);
   assert.match(parked, /found a spec defect/);
   assert.doesNotMatch(parked, TESTS_PARK);
   const post = [];
@@ -218,8 +220,7 @@ export function pushed({ repo, number, stage, before, spec, pushedSha, note: tex
   }
   if (stage === 'deliver' && pr && !pr.draft) return;
   if (stage === 'write-tests' && /^Spec defect:/.test(text || '')) {
-    io.send('POST', `repos/${repo}/issues/${number}/comments`, { body: `<!-- spec-defect v1 spec=${spec || specSha(io.one(`repos/${repo}/issues/${number}`))} -->` });
-    return park(repo, number, `the write-tests run found a spec defect: ${runLink()}. Edit the spec, then remove and add the label spec-review.${why(reason)}`, io);
+    return park(repo, number, `the write-tests run found a spec defect: ${runLink()}. Remove and add the label spec-review; the review reads this note.${why(reason)}`, io);
   }
   const loop = stage === 'pr-loop' && pr;
   park(repo, loop ? pr.number : number, `the run ended without a new push: ${runLink()} (${stage}).${loop ? ` pr-loop does not start again on head ${head}.` : ''}${why(reason)}`, io);
