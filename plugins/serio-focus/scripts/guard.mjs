@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -59,7 +61,7 @@ function sent(tool, input, cwd) {
   if (!SHELL.test(tool)) return JSON.stringify(input);
   const command = String(input.command || '');
   if (!OUTWARD.test(command)) return '';
-  const files = [...command.matchAll(/(?:--body-file|--notes-file|--input|--file|-F|<)[\s=]+(?:"([^"]+)"|'([^']+)'|([^\s;|&)<]+))|=@([^\s;|&)'"]+)/g)].map((hit) => hit.slice(1).find(Boolean));
+  const files = [...command.matchAll(/(?:--body-file|--notes-file|--input|--file|-F|<|\$\(\s*cat|Get-Content)[\s=]+(?:"([^"]+)"|'([^']+)'|([^\s;|&)<]+))|=@([^\s;|&)'"]+)/g)].map((hit) => hit.slice(1).find(Boolean));
   const dirs = [cwd || '.', ...[...command.matchAll(/\b(?:cd|Set-Location)\s+(?:"([^"]+)"|'([^']+)'|([^\s;|&)]+))/g)].map((hit) => hit.slice(1).find(Boolean).replace(/^\/([a-z])\//i, '$1:/'))];
   const read = (file) => dirs.reduce((found, dir) => { if (found) return found; try { return readFileSync(path.resolve(cwd || '.', dir, file), 'utf8'); } catch { return ''; } }, '');
   return [command, ...files.map(read)].join('\n');
@@ -89,7 +91,46 @@ function judge(payload) {
   if (tool.startsWith('mcp__') && MAIL.test(tool) && VERB.test(tool)) return `OUTWARD: "${tool}" sends email`;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+function selfTest() {
+  const ci = process.env.GITHUB_ACTIONS;
+  process.env.GITHUB_ACTIONS = '';
+  const box = mkdtempSync(path.join(tmpdir(), 'guard-')), file = path.join(box, 't.jsonl');
+  const said = 'wywal te buzie z ludka, większe oczy trochę i ciemniejsze tło', moved = 'zrob dodatkowe issue na przeniesienie gry teraz do poludzku';
+  writeFileSync(file, [{ type: 'user', message: { content: said } },
+    { type: 'user', message: { content: [{ type: 'tool_result', content: 'max cztery potwory na pokoj zawsze tutaj bez wyjatku teraz' }] } },
+    { type: 'user', isMeta: true, message: { content: 'meta tekst ktory nie jest czatem wcale nigdy przenigdy juz' } },
+    { type: 'user', message: { content: [{ type: 'text', text: '<system-reminder>reguly systemu ktore nie sa slowami wlasciciela nigdy tutaj</system-reminder>\n```\nnpm run verify and then commit the brand rules file here\n```\nsee https://github.com/serio-ngo/ops/issues/150' }] } },
+    { type: 'attachment', attachment: { type: 'queued_command', commandMode: 'prompt', origin: { kind: 'human' }, prompt: moved } },
+    { type: 'attachment', attachment: { type: 'queued_command', commandMode: 'prompt', origin: { kind: 'peer' }, prompt: 'raport innej sesji o scalaniu galezi dzisiaj po poludniu' } }]
+    .map((row) => JSON.stringify(row)).join('\n'));
+  writeFileSync(path.join(box, 'body.md'), `> ${said}`);
+  mkdirSync(path.join(box, 'other'));
+  writeFileSync(path.join(box, 'other', 'issue.md'), moved);
+  const run = (tool_name, tool_input) => quote({ cwd: box, transcript_path: file }, tool_name, tool_input);
+  const denied = ['gh issue create -t x -b "Wywal te BUZIE z ludka, wieksze oczy troche i"', 'gh issue comment 1 --body-file body.md', 'git commit -F "body.md"',
+    'cd other && gh issue create --body-file issue.md', 'gh issue comment 3 --body-file - < body.md', 'gh issue create --body "$(cat body.md)"',
+    'gh pr comment 2 --body (Get-Content body.md -Raw)', 'gh issue edit 2 -b "> zrob dodatkowe issue na przeniesienie gry teraz do"'];
+  for (const command of denied) assert.match(run('Bash', { command }) || '', /^CHAT QUOTE/, command);
+  assert.match(run('mcp__serio-lifecycle__act', { body: 'wywal te buzie z ludka wieksze oczy troche' }) || '', /^CHAT QUOTE/);
+  const allowed = ['gh issue create -t x -b "Remove the mouth; eyes slightly larger"', 'echo wywal te buzie z ludka wieksze oczy troche',
+    'gh pr comment 1 -b "max cztery potwory na pokoj zawsze tutaj bez wyjatku"', 'gh pr comment 1 -b "meta tekst ktory nie jest czatem wcale nigdy przenigdy"',
+    'gh pr comment 1 -b "reguly systemu ktore nie sa slowami wlasciciela nigdy tutaj"', 'gh pr comment 1 -b "raport innej sesji o scalaniu galezi dzisiaj po poludniu"',
+    'git commit -m "npm run verify and then commit the brand rules file here"', 'gh issue edit 2 -b "Related: https://github.com/serio-ngo/ops/issues/150"'];
+  for (const command of allowed) assert.equal(run('PowerShell', { command }), undefined, command);
+  assert.equal(run('Write', { content: said }), undefined);
+  const hooks = JSON.parse(readFileSync(new URL('../hooks/hooks.json', import.meta.url), 'utf8')).hooks.PreToolUse.map((entry) => new RegExp(entry.matcher));
+  for (const tool of ['Bash', 'PowerShell', 'mcp__serio-lifecycle__act']) assert.ok(hooks.some((re) => re.test(tool)), tool);
+  assert.ok(!hooks.some((re) => re.test('mcp__serio-lifecycle__state')));
+  process.env.GITHUB_ACTIONS = 'true';
+  assert.equal(run('Bash', { command: `gh issue create -b "${said}"` }), undefined);
+  process.env.GITHUB_ACTIONS = ci ?? '';
+  rmSync(box, { recursive: true, force: true });
+  console.log(`guard self-test: ${denied.length + allowed.length + 7} checks passed`);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv.includes('--self-test')) {
+  try { selfTest(); } catch (e) { console.error(e.message); process.exit(1); }
+} else if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const raw = readFileSync(0, 'utf8');
   let payload = null;
   try { payload = JSON.parse(raw); } catch {
