@@ -16,6 +16,8 @@ export function target(ref, issue, open) {
   return name;
 }
 
+export const closes = (body, task) => [body, ...[...String(task || '').matchAll(/^(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) ([\w.-]+\/[\w.-]+#\d+)\s*$/gim)].map((m) => `Fixes ${m[1]}`).filter((line) => !body.includes(line))].join('\n');
+
 export function push(remote, bundle, ref, dir) {
   execFileSync('git', ['clone', '-q', '--bare', '--filter=blob:none', remote, dir], { stdio: ['ignore', 'pipe', 'pipe'] });
   git(dir, '-c', 'fetch.fsckObjects=true', 'fetch', '-q', bundle, 'HEAD');
@@ -49,7 +51,11 @@ function selfTest() {
   calls.length = 0;
   assert.throws(() => publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'deliver', body: 'b' }, { ...io(true), send: (m, p, b) => { calls.push(b?.query?.match(/\{(\w+)\(/)?.[1] || p); return {}; }, push: () => { throw new Error('refused'); } }), /refused/);
   assert.deepEqual(calls, ['markPullRequestReadyForReview', 'convertPullRequestToDraft'], 'a failed push puts the pull request back to draft');
-  console.log('push self-test: 13 checks passed');
+  assert.equal(closes('Fixes #7', 'Step 1 of o/a#1\nFixes o/ops#111\ncloses O/x#2 \n'), 'Fixes #7\nFixes o/ops#111\nFixes O/x#2', 'the task\'s closing lines reach the pull request; a plain mention does not');
+  assert.equal(closes('Fixes #7\nFixes o/ops#111', 'Fixes o/ops#111'), 'Fixes #7\nFixes o/ops#111', 'a closing line already in the body is not repeated');
+  const sent = []; publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'write-tests' }, { all: () => [], one: () => ({ title: 't', body: 'Fixes o/ops#111', default_branch: 'main' }), send: (m, p, b) => { sent.push(b); return { number: 9 }; }, push: () => 'h' });
+  assert.equal(sent[0].body, 'Fixes #7\nFixes o/ops#111','a new draft closes the task and the issue it fixes in another repository');
+  console.log('push self-test: 16 checks passed');
 }
 
 export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, send, raw }) {
@@ -57,7 +63,8 @@ export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, s
   if (stage !== 'deliver' || !existsSync(card)) return;
   const pr = io.all(`repos/${repo}/pulls?state=open&head=${repo.split('/')[0]}:${ref}`)[0];
   if (!pr) return;
-  io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title: io.one(`repos/${repo}/issues/${issue}`).title, body: readFileSync(card, 'utf8').slice(0, 60000) });
+  const task = io.one(`repos/${repo}/issues/${issue}`);
+  io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title: task.title, body: closes(readFileSync(card, 'utf8').slice(0, 60000), task.body) });
   if (pr.draft) io.send('POST', 'graphql', { query: 'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } });
 }
 
@@ -70,9 +77,9 @@ export function publish({ repo, ref, issue, stage, body }, io) {
     if (ready) try { io.send('POST', 'graphql', { query: 'mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){clientMutationId}}', variables: { id: pr.node_id } }); } catch (c) { e.message += `; back to draft failed: ${c.message}`; }
     throw e;
   }
-  const title = io.one(`repos/${repo}/issues/${issue}`).title;
-  if (!pr) pr = io.send('POST', `repos/${repo}/pulls`, { title, head: ref, base: io.one(`repos/${repo}`).default_branch, body: body || `Fixes #${issue}`, draft: true });
-  else if (body) io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title, body });
+  const { title, body: task } = io.one(`repos/${repo}/issues/${issue}`);
+  if (!pr) pr = io.send('POST', `repos/${repo}/pulls`, { title, head: ref, base: io.one(`repos/${repo}`).default_branch, body: closes(body || `Fixes #${issue}`, task), draft: true });
+  else if (body) io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title, body: closes(body, task) });
   return { head, pr };
 }
 
