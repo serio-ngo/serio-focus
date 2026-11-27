@@ -46,6 +46,11 @@ export function refusal(out, extra = '', spec = '') {
   return unproven.length ? `held owner criteria ${unproven.join(', ')} cite no file:line that makes them true` : '';
 }
 
+export const uncited = (held, tree, read) => (held || []).filter((h) => {
+  const [, file, n] = /^(.+?):(\d+)/.exec(h?.where || '') || [], hits = file ? tree.filter((p) => p === file || p.endsWith(`/${file}`)) : [];
+  return hits.length !== 1 || read(hits[0]).split('\n').length < +n;
+}).map((h) => h.where);
+
 export function comment(out, sha, extra = '', spec = '') {
   if (refusal(out, extra, spec)) return null;
   const criteria = out.criteria || [], questions = out.questions || [], checks = out.checks || [];
@@ -141,6 +146,8 @@ function selfTest() {
   assert.match(comment({ verdict: 'ready', criteria: [ac()] }, sha, '', spec), /Levels: the spec names 2 e2e criteria; this review has 0./);
   assert.equal(refusal({ verdict: 'questions', criteria: [from(1)], held: [], questions: [q] }, '', spec), '');
   assert.match(refusal(trace([from(1, 'e2e'), from(3), from(9)]), '', spec), /from 9 names no owner criterion/);
+  const tree = ['src/a/b.ext', 'x/y.ext', 'z/y.ext'], five = () => '1\n2\n3\n4\n5';
+  assert.deepEqual(uncited(['b.ext:3', 'src/a/b.ext:5-6', 'b.ext:9', 'none.ext:1', 'y.ext:1', 'nowhere'].map((where) => ({ where })), tree, five), ['b.ext:9', 'none.ext:1', 'y.ext:1', 'nowhere'], 'a held line must exist in exactly one file of the default branch');
   const defect = [], dio = { one: () => ({ title: 'T', body: 'B' }), all: () => [], send: (...a) => defect.push(a), raw: () => '' };
   pushed({ repo: 'o/r', number: 98, stage: 'write-tests', before: 'h1', spec: 'abcdef123456', note: 'Spec defect: AC1 holds at a/b.ext:3', reason: '' }, dio);
   const bodies = defect.map((a) => a[2].body || '').join('\n'), parked = bodies.split('\n').find((l) => l.startsWith('- **needs-human**'));
@@ -204,7 +211,7 @@ function selfTest() {
     status('o/r', 7, { now: 'x', line: note('Wrote it.', 'deliver', 99, stats, '2026-01-02T03:04:05Z') }, { all: () => [{ ...old, body: old.body.replace(at(0), first) }], send: (...a) => sent.push(a), raw: () => '' });
     assert.equal(sent[0][2].body.includes(first), kept, first);
   }
-  console.log(`publish self-test: ${bad.length + 42 + keeps.length} checks passed`);
+  console.log(`publish self-test: ${bad.length + 43 + keeps.length} checks passed`);
 }
 
 const unlabel = (repo, numbers, io) => { for (const n of numbers) try { io.send('DELETE', `repos/${repo}/issues/${n}/labels/needs-human`, {}); } catch { } };
@@ -273,7 +280,10 @@ function main() {
   let out = null;
   try { out = scrub(ev.structured ?? JSON.parse(file ? readFileSync(file, 'utf8') : process.env.STRUCTURED_OUTPUT)); } catch { }
   const issue = one(`repos/${repo}/issues/${number}`), body = comment(out, process.env.SPEC_SHA || specSha(issue), '', issue.body || '');
-  if (!body) { park(repo, number, `the spec review returned no valid result (${refusal(out, '', issue.body || '')}): ${runLink()}`); process.exit(1); }
+  const branch = body && out.held?.length ? one(`repos/${repo}`).default_branch : '';
+  const lost = branch ? uncited(out.held, one(`repos/${repo}/git/trees/${branch}?recursive=1`).tree.map((t) => t.path), (p) => raw(`repos/${repo}/contents/${p}?ref=${branch}`)) : [];
+  const reason = body ? lost.length && `held lines missing on ${branch}: ${tidy(lost.join(', '))}` : refusal(out, '', issue.body || '');
+  if (reason) { park(repo, number, `the spec review returned no valid result (${reason}): ${runLink()}`); process.exit(1); }
   posted({ repo, number, body });
   say(ev.note || out.note, number, 'spec-review');
   console.log(body);
