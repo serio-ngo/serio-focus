@@ -16,7 +16,9 @@ export function target(ref, issue, open) {
   return name;
 }
 
-export const closes = (body, task) => [body, ...[...String(task || '').matchAll(/^(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) ([\w.-]+\/[\w.-]+#\d+)\s*$/gim)].map((m) => `Fixes ${m[1]}`).filter((line) => !body.includes(line))].join('\n');
+export const closes = (body, task) => { const has = new Set(body.toLowerCase().split('
+').map((l) => l.trim())); return [body, ...[...String(task || '').matchAll(/^(?:[-*] )?(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):? ([w.-]+/[w.-]+#d+).?s*$/gim)].map((m) => `Fixes ${m[1]}`).filter((l) => !has.has(l.toLowerCase()) && has.add(l.toLowerCase()))].join('
+'); };
 
 export function push(remote, bundle, ref, dir) {
   execFileSync('git', ['clone', '-q', '--bare', '--filter=blob:none', remote, dir], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -53,9 +55,15 @@ function selfTest() {
   assert.deepEqual(calls, ['markPullRequestReadyForReview', 'convertPullRequestToDraft'], 'a failed push puts the pull request back to draft');
   assert.equal(closes('Fixes #7', 'Step 1 of o/a#1\nFixes o/ops#111\ncloses O/x#2 \n'), 'Fixes #7\nFixes o/ops#111\nFixes O/x#2', 'the task\'s closing lines reach the pull request; a plain mention does not');
   assert.equal(closes('Fixes #7\nFixes o/ops#111', 'Fixes o/ops#111'), 'Fixes #7\nFixes o/ops#111', 'a closing line already in the body is not repeated');
+  assert.equal(closes('Fixes o/ops#111
+fixes o/ops#12', '- Fixes: o/ops#11.
+Fixes o/ops#12
+Fixes o/ops#11'), 'Fixes o/ops#111
+fixes o/ops#12
+Fixes o/ops#11', 'whole lines are compared, in any case, and list, colon and full-stop forms count');
   const sent = []; publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'write-tests' }, { all: () => [], one: () => ({ title: 't', body: 'Fixes o/ops#111', default_branch: 'main' }), send: (m, p, b) => { sent.push(b); return { number: 9 }; }, push: () => 'h' });
   assert.equal(sent[0].body, 'Fixes #7\nFixes o/ops#111','a new draft closes the task and the issue it fixes in another repository');
-  console.log('push self-test: 16 checks passed');
+  console.log('push self-test: 17 checks passed');
 }
 
 export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, send, raw }) {
