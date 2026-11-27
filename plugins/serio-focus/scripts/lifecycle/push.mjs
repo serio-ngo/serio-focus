@@ -18,7 +18,7 @@ export function target(ref, issue, open) {
 
 const closers = (text) => {
   const word = '(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)', ref = '(?:[\\w.-]+\\/[\\w.-]+)?#\\d+';
-  return String(text || '').replace(/^\s*(`{3,}|~{3,})[\s\S]*?(?:^\s*\1|(?![\s\S]))/gm, '').replace(/(`+)[^\n]*?\1/g, '').split('\n').filter((l) => new RegExp(`^ {0,3}(?:[-*] )?${word}:? ${ref}`, 'i').test(l)).flatMap((l) => [...l.matchAll(new RegExp(`\\b${word}:? (${ref})\\b`, 'gi'))].map((m) => `Fixes ${m[1]}`));
+  return String(text || '').replace(/^\s*(`{3,}|~{3,})[\s\S]*?(?:^ {0,3}\1[`~]* *$|(?![\s\S]))/gm, '').replace(/(`+)[^\n]*?\1/g, '').split('\n').filter((l) => new RegExp(`^ {0,3}(?:[-*] )?${word}:? ${ref}`, 'i').test(l)).flatMap((l) => [...l.matchAll(new RegExp(`\\b${word}:? (${ref})\\b`, 'gi'))].map((m) => `Fixes ${m[1]}`));
 };
 
 export const closes = (body, task) => {
@@ -70,7 +70,8 @@ function selfTest() {
   assert.deepEqual(sent, [{ body: 'Fixes #7\nFixes o/ops#111' }], 'an open pull request without a new card still gets the task\'s closing lines');
   assert.equal(closes('Card\n```\nFixes o/ops#1\n```', 'Fixes o/ops#1'), 'Card\n```\nFixes o/ops#1\n```\nFixes o/ops#1', 'a fenced example in the body is no closer');
   assert.equal(closes('Card\n    Fixes o/ops#1', 'Fixes o/ops#1\n    Fixes o/ops#2\n\tFixes o/ops#3'), 'Card\n    Fixes o/ops#1\nFixes o/ops#1', 'an indented code line is no closer, in the body or the task');
-  console.log('push self-test: 22 checks passed');
+  assert.equal(closes('Fixes #7', '```\n```js\nFixes o/ops#2\n```\nFixes o/ops#1'), 'Fixes #7\nFixes o/ops#1', 'a fence closes only on a bare fence line');
+  console.log('push self-test: 23 checks passed');
 }
 
 export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, send, raw }) {
