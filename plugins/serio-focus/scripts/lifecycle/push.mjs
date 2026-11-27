@@ -16,11 +16,14 @@ export function target(ref, issue, open) {
   return name;
 }
 
-export const closes = (body, task) => {
-  const has = new Set(body.toLowerCase().split('\n').map((l) => l.trim()));
+const closers = (text) => {
   const word = '(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)', ref = '(?:[\\w.-]+\\/[\\w.-]+)?#\\d+';
-  const lines = String(task || '').replace(/^\s*(`{3,}|~{3,})[\s\S]*?(?:^\s*\1|(?![\s\S]))/gm, '').replace(/(`+)[^\n]*?\1/g, '').split('\n').filter((l) => new RegExp(`^(?:[-*] )?${word}:? ${ref}`, 'i').test(l.trim())).flatMap((l) => [...l.matchAll(new RegExp(`\\b${word}:? (${ref})\\b`, 'gi'))].map((m) => `Fixes ${m[1]}`));
-  return [body, ...lines.filter((l) => !has.has(l.toLowerCase()) && has.add(l.toLowerCase()))].join('\n');
+  return String(text || '').replace(/^\s*(`{3,}|~{3,})[\s\S]*?(?:^\s*\1|(?![\s\S]))/gm, '').replace(/(`+)[^\n]*?\1/g, '').split('\n').filter((l) => new RegExp(`^(?:[-*] )?${word}:? ${ref}`, 'i').test(l.trim())).flatMap((l) => [...l.matchAll(new RegExp(`\\b${word}:? (${ref})\\b`, 'gi'))].map((m) => `Fixes ${m[1]}`));
+};
+
+export const closes = (body, task) => {
+  const has = new Set(closers(body).map((l) => l.toLowerCase()));
+  return [body, ...closers(task).filter((l) => !has.has(l.toLowerCase()) && has.add(l.toLowerCase()))].join('\n');
 };
 
 export function push(remote, bundle, ref, dir) {
@@ -65,7 +68,8 @@ function selfTest() {
   assert.equal(sent[0].body, 'Fixes #7\nFixes o/ops#111', 'a new draft closes the task and the issue it fixes in another repository');
   sent.length = 0; publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'write-tests' }, { all: () => [{ number: 9, body: 'Fixes #7' }], one: () => ({ title: 't', body: 'Fixes o/ops#111' }), send: (m, p, b) => { sent.push(b); return {}; }, push: () => 'h' });
   assert.deepEqual(sent, [{ body: 'Fixes #7\nFixes o/ops#111' }], 'an open pull request without a new card still gets the task\'s closing lines');
-  console.log('push self-test: 20 checks passed');
+  assert.equal(closes('Card\n```\nFixes o/ops#1\n```', 'Fixes o/ops#1'), 'Card\n```\nFixes o/ops#1\n```\nFixes o/ops#1', 'a fenced example in the body is no closer');
+  console.log('push self-test: 21 checks passed');
 }
 
 export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, send, raw }) {
