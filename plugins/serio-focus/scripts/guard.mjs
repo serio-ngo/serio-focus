@@ -38,7 +38,7 @@ const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutpu
 } }));
 
 const SHELL = /^(?:Bash|PowerShell)$/;
-const OUTWARD = /\bgh\s|\bgit\s+(?:commit|tag|notes)\b/i;
+const OUTWARD = /\bgh(?:\.exe)?\s|\bgit(?:\.exe)?\s+(?:commit|tag|notes)\b/i;
 const SPAN = 8;
 const COMMAND = /^\s*(?:[$>]\s*)?(?:gh|git|npm|npx|node|cd|pwsh|powershell|wrangler|claude)\b.*$/gm;
 const words = (text) => String(text).replace(/\S*[\\/]\S*/g, ' ').toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/[̀-ͯ]/g, '').match(/[a-z0-9]+/g) || [];
@@ -111,7 +111,7 @@ function selfTest() {
   const run = (tool_name, tool_input) => quote({ cwd: box, transcript_path: file }, tool_name, tool_input);
   const denied = ['gh issue create -t x -b "Wywal te BUZIE z ludka, wieksze oczy troche i"', 'gh issue comment 1 --body-file body.md', 'git commit -F "body.md"',
     'cd other && gh issue create --body-file issue.md', 'gh issue comment 3 --body-file - < body.md', 'gh issue create --body "$(cat body.md)"',
-    'gh pr comment 2 --body (Get-Content body.md -Raw)', 'cat body.md | gh issue create --body-file -', 'GH Issue Create --body-file body.md', 'gh issue create --body (get-content body.md -Raw)', 'set-location other; gh issue create --body-file issue.md', 'gh issue create --body (gc body.md -Raw)', 'gh pr merge 3 --squash --body "wywal te buzie z ludka wieksze oczy troche i"', 'gh issue create --body-file "other/issue.md"','gh api repos/o/r/issues/1/comments -F body=@body.md','gh pr create -b "I want a simple solution with constant game levels"', 'gh issue edit 2 -b "> zrob dodatkowe issue na przeniesienie gry teraz do"'];
+    'gh pr comment 2 --body (Get-Content body.md -Raw)', 'cat body.md | gh issue create --body-file -', 'GH Issue Create --body-file body.md', 'gh issue create --body (get-content body.md -Raw)', 'set-location other; gh issue create --body-file issue.md', 'gh issue create --body (gc body.md -Raw)', 'gh.exe issue create --body-file body.md', 'git.exe commit -F body.md','gh pr merge 3 --squash --body "wywal te buzie z ludka wieksze oczy troche i"', 'gh issue create --body-file "other/issue.md"','gh api repos/o/r/issues/1/comments -F body=@body.md','gh pr create -b "I want a simple solution with constant game levels"', 'gh issue edit 2 -b "> zrob dodatkowe issue na przeniesienie gry teraz do"'];
   for (const command of denied) assert.match(run('Bash', { command }) || '', /^CHAT QUOTE/, command);
   assert.match(run('mcp__serio-lifecycle__act', { body: 'wywal te buzie z ludka wieksze oczy troche' }) || '', /^CHAT QUOTE/);
   const allowed = ['gh issue create -t x -b "Remove the mouth; eyes slightly larger"', 'gh pr comment 4 -b "zasady repozytorium ktore codex dokleja do kazdej rozmowy tutaj"', 'cat > new.md <<\'EOF\'\nx\nEOF\ngh issue create -b "short"','echo wywal te buzie z ludka wieksze oczy troche',
