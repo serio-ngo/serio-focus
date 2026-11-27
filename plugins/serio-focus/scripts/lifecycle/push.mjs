@@ -64,7 +64,9 @@ function selfTest() {
   assert.equal(closes('Fixes #7', 'Fixes #12, fixes o/ops#111'), 'Fixes #7\nFixes #12\nFixes o/ops#111', 'a closing line may mix references in this repository and another');
   const sent = []; publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'write-tests' }, { all: () => [], one: () => ({ title: 't', body: 'Fixes o/ops#111', default_branch: 'main' }), send: (m, p, b) => { sent.push(b); return { number: 9 }; }, push: () => 'h' });
   assert.equal(sent[0].body, 'Fixes #7\nFixes o/ops#111', 'a new draft closes the task and the issue it fixes in another repository');
-  console.log('push self-test: 19 checks passed');
+  sent.length = 0; publish({ repo: 'o/r', ref: 'agent/7-sum', issue: 7, stage: 'write-tests' }, { all: () => [{ number: 9, body: 'Fixes #7' }], one: () => ({ title: 't', body: 'Fixes o/ops#111' }), send: (m, p, b) => { sent.push(b); return {}; }, push: () => 'h' });
+  assert.deepEqual(sent, [{ body: 'Fixes #7\nFixes o/ops#111' }], 'an open pull request without a new card still gets the task\'s closing lines');
+  console.log('push self-test: 20 checks passed');
 }
 
 export function publishCard({ repo, out, issue, ref, stage }, io = { one, all, send, raw }) {
@@ -89,6 +91,7 @@ export function publish({ repo, ref, issue, stage, body }, io) {
   const { title, body: task } = io.one(`repos/${repo}/issues/${issue}`);
   if (!pr) pr = io.send('POST', `repos/${repo}/pulls`, { title, head: ref, base: io.one(`repos/${repo}`).default_branch, body: closes(body || `Fixes #${issue}`, task), draft: true });
   else if (body) io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { title, body: closes(body, task) });
+  else if (closes(pr.body || '', task) !== (pr.body || '')) io.send('PATCH', `repos/${repo}/pulls/${pr.number}`, { body: closes(pr.body || '', task) });
   return { head, pr };
 }
 
