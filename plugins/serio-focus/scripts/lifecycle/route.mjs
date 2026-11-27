@@ -4,7 +4,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { check } from './lock.mjs';
 import { comment, note } from './publish.mjs';
-import { all, fixMarkers, isStatus, issueOf, lockOf, lockReview, NO_PUSH, one, owners, ownersOf, owns, park, person, robot, send, specComment, specMarker, status, specSha, statusLog, taskOf, TESTS_PARK, testsOk } from '../lib/lifecycle.mjs';
+import { all, fixMarkers, isStatus, issueOf, lockOf, lockReview, NO_PUSH, one, owners, ownersOf, owns, park, person, robot, send, specComment, specMarker, status, specSha, statusLog, taskOf, TESTS_PARK, FREE_TESTS, testsOk } from '../lib/lifecycle.mjs';
 
 const FOCUS = new URL(JSON.parse(readFileSync(new URL('../../.claude-plugin/plugin.json', import.meta.url))).repository).pathname.slice(1);
 const CAPS = { 'spec-review': [40, 10], 'write-tests': [80, 20], deliver: [160, 40], 'pr-loop': [60, 15] };
@@ -23,7 +23,7 @@ export function route(name, ev, s) {
     const wrote = s.comments(n).filter((c) => robot(c.user)).map((c) => /^<!-- write-tests v1 spec=([0-9a-f]{12}) -->$/.exec(c.body || '')?.[1]).filter(Boolean);
     const draft = s.openPulls().find((p) => taskOf(p) === n), spec = specSha(s.issue(n));
     const log = [n, draft?.number].filter(Boolean).flatMap((k) => s.comments(k)).filter((c) => isStatus(c, s.own)).flatMap((c) => statusLog(c.body));
-    const free = new Set(log.map((l) => /<!-- step-note stage=write-tests run=(\d+) turns=\d+ usd=0 /.exec(l)?.[1]).filter(Boolean));
+    const free = new Set(log.map((l) => FREE_TESTS.exec(l)?.[1]).filter(Boolean));
     const runs = wrote.length + log.filter((l) => TESTS_PARK.test(l) && !free.has(/\/actions\/runs\/(\d+)/.exec(l)?.[1])).length;
     if (runs > 1) return { park: n, stop: `write-tests ran ${runs} times. Decide: write the tests by hand with /serio-focus:write-tests ${n}, or close the task` };
     if (!extra.pr && wrote.at(-1) === spec) return stop('the tests were written for this spec text; edit the spec to write them again, or request changes on the draft', n);
@@ -93,10 +93,10 @@ function selfTest() {
   const lockOnly = [{ name: 'gate / tests', conclusion: 'success' }, { name: 'gate / lock and acceptance', conclusion: 'failure', steps: [{ name: 'Test lock', conclusion: 'failure' }] }];
   const fix = (run) => ({ user: actions, body: `<!-- fix-ci v1 run=${run} attempt=1 sha=abc -->` });
   const wrote = (spec, who = actions, created_at = '2026-01-02T00:00:00Z') => ({ user: who, created_at, body: `<!-- write-tests v1 spec=${spec} -->` });
-  const stopped = (usd) => ({ user: actions, body: `<!-- lifecycle-status v1 -->
+  const stopped = (usd, turns = 1) => ({ user: actions, body: `<!-- lifecycle-status v1 -->
 
 **Log**
-- Note (write-tests): The write-tests run ended without a note. <!-- step-note stage=write-tests run=123 turns=1 usd=${usd} denied=0 at=2026-01-03T00:00:00Z -->
+- Note (write-tests): The write-tests run ended without a note. <!-- step-note stage=write-tests run=123 turns=${turns} usd=${usd} denied=0 at=2026-01-03T00:00:00Z -->
 - **needs-human**: the write-tests run did not finish: https://github.com/o/r/actions/runs/123. The agent said: limit reached <!-- park at=2026-01-03T00:00:01Z -->` });
   const parked = (why) => ({ user: actions, body: `<!-- lifecycle-status v1 -->\n\n**Log**\n- **needs-human**: ${why} <!-- park at=2026-01-03T00:00:00Z -->` });
   const idle = (head) => parked(`the run ended without a new push: u (pr-loop). pr-loop does not start again on head ${head}.`);
@@ -158,6 +158,7 @@ function selfTest() {
     ['two counted tests parks reach the cap', 'issues', label('spec-ok'), state({ comments: (k) => k === 7 ? [ready, parked('the run ended without a new push: u (write-tests).'), parked('the run ended without a new push: u (write-tests).')] : [] }), undefined],
     ['a failed tests run parked on the draft counts', 'issues', label('spec-ok'), state({ issue: () => edited, comments: (k) => k === 9 ? [parked('the write-tests run did not finish: u.')] : [readyEdited, wrote(sha)] }), undefined],
     ['a tests run that stopped before any cost does not count', 'issues', label('spec-ok'), state({ issue: () => edited, comments: (k) => k === 7 ? [readyEdited, wrote(sha), stopped('0')] : [] }), 'write-tests'],
+    ['a tests run of several turns rounded to no cost counts', 'issues', label('spec-ok'), state({ issue: () => edited, comments: (k) => k === 7 ? [readyEdited, wrote(sha), stopped('0', 3)] : [] }), undefined],
     ['a tests run that stopped after a cost counts', 'issues', label('spec-ok'), state({ issue: () => edited, comments: (k) => k === 7 ? [readyEdited, wrote(sha), stopped('1.51')] : [] }), undefined],
     ['a change request after one failed tests run', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ reviews: () => [], comments: (k) => k === 9 ? [parked('the write-tests run did not finish: u.')] : [ready] }), 'write-tests'],
     ['red CI on a new head after a pr-loop run pushed nothing', 'workflow_run', ci(), state({ comments: () => [idle('h0')] }), 'pr-loop'],

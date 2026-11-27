@@ -185,6 +185,10 @@ function selfTest() {
   status('o/r', 7, { now: 'Done', line: note('Wrote it.', 'deliver', 99, stats, '2026-01-02T03:04:05Z') }, { all: () => [mixed], send: (...a) => trimmed.push(a), raw: () => '' });
   const kept = trimmed[0][2].body.split('**Log**\n')[1].split('\n');
   assert.deepEqual([kept.length, kept.some((l) => l.includes('stage=route run=0')), kept.some((l) => l.includes('stage=route run=1')), kept.at(-1).includes('run=99'), kept[0] === at(0)], [20, false, true, true, true]);
+  const free = '- Note (write-tests): x <!-- step-note stage=write-tests run=5 turns=1 usd=0 denied=0 at=2026-01-02T03:04:05Z -->', paid = free.replace('run=5', 'run=6').replace('usd=0', 'usd=1.5'), longLog = [];
+  status('o/r', 7, { now: 'x', line: note('Wrote it.', 'deliver', 99, stats, '2026-01-02T03:04:05Z') }, { all: () => [{ ...old, body: ['<!-- lifecycle-status v1 -->', '**Status**', 'Now: x', '**Log**', free, paid, ...Array.from({ length: 19 }, (_, i) => at(i))].join('\n') }], send: (...a) => longLog.push(a), raw: () => '' });
+  const longKept = longLog[0][2].body.split('**Log**\n')[1].split('\n');
+  assert.deepEqual([longKept.length, longKept[0] === free, longKept.includes(paid)], [20, true, false]);
   const fresh = [];
   status('o/r', 7, { now: 'Hi' }, { all: () => [{ id: 1, user: { login: 'eve', type: 'User' }, body: old.body }], send: (...a) => fresh.push(a), raw: () => '' });
   assert.deepEqual(fresh.map((a) => a[0] + a[1]), ['POSTrepos/o/r/issues/7/comments']);
