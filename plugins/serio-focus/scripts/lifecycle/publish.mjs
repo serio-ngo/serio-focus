@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trace as traced } from '../trace.mjs';
 import { scan } from '../lib/gitleaks.mjs';
-import { all, flag, one, park, raw, redact, repoOf, runLink, send, specSha, status, taskOf } from '../lib/lifecycle.mjs';
+import { all, flag, one, park, raw, redact, repoOf, runLink, send, specSha, status, taskOf, TESTS_PARK } from '../lib/lifecycle.mjs';
 
 const SCHEMA = JSON.parse(readFileSync(new URL('../lib/spec-review.schema.json', import.meta.url))), { criteria: C, questions: Q } = SCHEMA.properties;
 const MAX = { text: C.items.properties.text.maxLength, question: Q.items.properties.question.maxLength, recommended: Q.items.properties.recommended.maxLength };
@@ -22,26 +22,49 @@ export const why = (reason) => (clean(reason, 300) ? ` The agent said: ${tidy(re
 export const note = (text, stage, run, stats = '', at = new Date().toISOString().slice(0, 19) + 'Z') => { const t = redact(String(text || `The ${stage} run ended without a note.`)).slice(0, 280); return clean(t, 280) ? `Note (${stage}): ${tidy(t)}\n\n<!-- step-note stage=${stage} run=${run}${/^turns=\d+ usd=\d+(\.\d+)? denied=\d+$/.test(stats) ? ` ${stats}` : ''} at=${at} -->` : null; };
 const say = (text, target, stage = process.env.STAGE, io, repo) => { const body = note(text, stage, process.env.GITHUB_RUN_ID || 'local', process.env.STATS); if (body) try { status(repo || flag('--repo') || repoOf(), target, { now: body.split('\n')[0], line: body }, io); } catch { } };
 
+const ownerLevels = (spec) => (/### Acceptance criteria\n([\s\S]*?)(?=\n###|$)/i.exec((spec || '').replace(/\r\n/g, '\n'))?.[1] || '').split('\n').filter((l) => /^\d+\.\s/.test(l)).map((l) => (/^\d+\.\s+\*\*[^*]*e2e/i.test(l) || /Level: e2e/i.test(l) ? 'e2e' : 'other'));
+
+export function refusal(out, extra = '', spec = '') {
+  if (!out || !['ready', 'questions'].includes(out.verdict)) return 'the verdict is not ready or questions';
+  const criteria = out.criteria || [], questions = out.questions || [], held = out.held || [];
+  if (!Array.isArray(criteria) || !Array.isArray(questions) || !Array.isArray(held)) return 'criteria, questions or held is not a list';
+  if (criteria.length > 5 || questions.length > 5) return 'more than 5 criteria or questions';
+  const bad = criteria.findIndex((c) => !(text(c?.text) && ['unit', 'e2e'].includes(c.level) && text(c.test) && name(c.test)));
+  if (bad >= 0) return `criterion ${bad + 1} lacks its text, level or test`;
+  if (!questions.every((q) => text(q?.question) && text(q.recommended)) || (extra && !text(extra))) return 'a question lacks its recommended answer';
+  if (out.checks !== undefined && (!Array.isArray(out.checks) || out.checks.length > 5 || !out.checks.every((c) => text(c, MAX.text)))) return 'checks are not 0 to 5 texts';
+  if (out.verdict === 'ready' ? (!criteria.length && !(out.checks || []).length) || questions.length : !questions.length) return 'the verdict does not match the criteria and questions';
+  const owner = ownerLevels(spec);
+  if (out.verdict !== 'ready' || !owner.length || !criteria.every((c) => Number.isInteger(c.from))) return '';
+  const seen = [...criteria.map((c) => c.from), ...held.map((h) => h?.from)], missing = owner.map((_, i) => i + 1).filter((n) => !seen.includes(n));
+  const outside = seen.filter((n) => !(n >= 1 && n <= owner.length));
+  if (outside.length) return `from ${outside.join(', ')} names no owner criterion`;
+  if (missing.length) return `owner criteria ${missing.join(', ')} are neither a criterion nor held`;
+  const lowered = criteria.filter((c) => owner[c.from - 1] === 'e2e' && c.level !== 'e2e').map((c) => c.from);
+  if (lowered.length) return `owner criteria ${lowered.join(', ')} lost their e2e level`;
+  const unproven = held.filter((h) => !/\S+:\d+/.test(h?.where || '')).map((h) => h?.from);
+  return unproven.length ? `held owner criteria ${unproven.join(', ')} cite no file:line that makes them true` : '';
+}
+
+export const uncited = (held, tree, read) => (held || []).filter((h) => {
+  const [, file, n] = /^(.+?):(\d+)/.exec(h?.where || '') || [], hits = file ? tree.filter((p) => p === file || p.endsWith(`/${file}`)) : [];
+  return hits.length !== 1 || read(hits[0]).split('\n').length < +n;
+}).map((h) => h.where);
+
 export function comment(out, sha, extra = '', spec = '') {
-  if (!out || !['ready', 'questions'].includes(out.verdict)) return null;
-  const criteria = out.criteria || [], questions = out.questions || [];
-  if (!Array.isArray(criteria) || !Array.isArray(questions) || criteria.length > 5 || questions.length > 5) return null;
-  if (!criteria.every((c, i) => c?.id === i + 1 && text(c.text) && ['unit', 'e2e'].includes(c.level) && text(c.test) && name(c.test))) return null;
-  if (!questions.every((q) => text(q?.question) && text(q.recommended)) || (extra && !text(extra))) return null;
-  if (out.checks !== undefined && (!Array.isArray(out.checks) || out.checks.length > 5 || !out.checks.every((c) => text(c, MAX.text)))) return null;
-  const checks = out.checks || [];
-  if (out.verdict === 'ready' ? (!criteria.length && !checks.length) || questions.length : !questions.length) return null;
-  const e2e = criteria.filter((c) => c.level === 'e2e').length;
-  const named = (/### Acceptance criteria\n([\s\S]*?)(?=\n###|$)/i.exec((spec || '').replace(/\r\n/g, '\n'))?.[1] || '').split('\n').filter((l) => /^\d+\.\s/.test(l) && (/^\d+\.\s+\*\*[^*]*e2e/i.test(l) || /Level: e2e/i.test(l))).length;
+  if (refusal(out, extra, spec)) return null;
+  const criteria = out.criteria || [], questions = out.questions || [], checks = out.checks || [];
+  const e2e = criteria.filter((c) => c.level === 'e2e').length, named = ownerLevels(spec).filter((l) => l === 'e2e').length;
+  const counted = !criteria.every((c) => Number.isInteger(c.from));
   return [
     `**Spec review: ${out.verdict}**`, '',
     ...(checks.length ? [line(`Review checks: ${checks.join('; ')}`), ''] : []),
-    ...(criteria.length ? ['| Criterion | Given, When, Then | Level | Test |', '|---|---|---|---|', ...criteria.map((c) => `| AC${c.id} | ${line(fit(c.text, MAX.text))} | ${c.level} | \`${name(c.test)}\` |`), ''] : []),
+    ...(criteria.length ? ['| Criterion | Given, When, Then | Level | Test |', '|---|---|---|---|', ...criteria.map((c, i) => `| AC${i + 1} | ${line(fit(c.text, MAX.text))} | ${c.level} | \`${name(c.test)}\` |`), ''] : []),
     ...questions.map((q, i) => `${i + 1}. ${line(fit(q.question, MAX.question))} Recommended: ${line(fit(q.recommended, MAX.recommended))}`), ...(questions.length ? [''] : []),
     ...(extra ? [line(extra), ''] : []),
-    ...(e2e < named ? [`Levels: the spec names ${named} e2e criteria; this review has ${e2e}.`, ''] : []),
+    ...(counted && e2e < named ? [`Levels: the spec names ${named} e2e criteria; this review has ${e2e}.`, ''] : []),
     extra ? 'Next: the tests run starts on these criteria.' : out.verdict === 'ready' ? 'Next: add the label `spec-ok`.' : 'Next: edit the issue, then add the label `spec-review` again.', '',
-    `<!-- spec-review v1 sha=${sha} verdict=${out.verdict} ac=${criteria.map((c) => c.id).join(',')} -->`,
+    `<!-- spec-review v1 sha=${sha} verdict=${out.verdict} ac=${criteria.map((_, i) => i + 1).join(',')} -->`,
   ].join('\n');
 }
 
@@ -96,22 +119,47 @@ export function outcome(rows) {
 }
 
 function selfTest() {
-  const ac = (id, text = 'Given 2 and 3, When Add, Then 5') => ({ id, text, level: 'unit', test: 'sum adds two numbers' });
+  const ac = (text = 'Given 2 and 3, When Add, Then 5') => ({ text, level: 'unit', test: 'sum adds two numbers' });
   const q = { question: 'Which locale?', recommended: 'pl-PL' };
-  assert.match(comment({ verdict: 'ready', criteria: [ac(1), ac(2)], questions: [] }, 'abcdef123456'), /<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1,2 -->$/);
+  assert.match(comment({ verdict: 'ready', criteria: [ac(), ac()], questions: [] }, 'abcdef123456'), /<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1,2 -->$/);
   assert.match(comment({ verdict: 'ready', criteria: [], questions: [], checks: ['both skills sit under .agents/skills'] }, 'abcdef123456'), /Review checks: both skills sit under \.agents\/skills\n[\s\S]*verdict=ready ac= -->$/, 'a ready review with no criteria names its review checks');
   const bad = [
-    ['no output', null], ['unknown verdict', { verdict: 'ok', criteria: [ac(1)] }],
-    ['ready without criteria', { verdict: 'ready', criteria: [] }], ['ready with an empty check', { verdict: 'ready', criteria: [], checks: [' '] }], ['ready with questions', { verdict: 'ready', criteria: [ac(1)], questions: [q] }],
-    ['questions without a question', { verdict: 'questions', criteria: [ac(1)], questions: [] }],
-    ['six criteria', { verdict: 'ready', criteria: [1, 2, 3, 4, 5, 6].map((i) => ac(i)) }],
-    ['unknown level', { verdict: 'ready', criteria: [{ ...ac(1), level: 'manual' }] }], ['criteria not a list', { verdict: 'ready', criteria: 'AC1' }],
+    ['no output', null], ['unknown verdict', { verdict: 'ok', criteria: [ac()] }],
+    ['ready without criteria', { verdict: 'ready', criteria: [] }], ['ready with an empty check', { verdict: 'ready', criteria: [], checks: [' '] }], ['ready with questions', { verdict: 'ready', criteria: [ac()], questions: [q] }],
+    ['questions without a question', { verdict: 'questions', criteria: [ac()], questions: [] }],
+    ['six criteria', { verdict: 'ready', criteria: [1, 2, 3, 4, 5, 6].map(() => ac()) }],
+    ['unknown level', { verdict: 'ready', criteria: [{ ...ac(), level: 'manual' }] }], ['criteria not a list', { verdict: 'ready', criteria: 'AC1' }],
   ];
   for (const [title, out] of bad) assert.equal(comment(out, 'abcdef123456'), null, title);
-  const long = comment({ verdict: 'ready', criteria: [ac(1, 'x'.repeat(604))], questions: [] }, 'abcdef123456');
+  assert.match(comment({ verdict: 'ready', criteria: [{ ...ac(), id: 9 }, { ...ac(), id: 3 }] }, 'abcdef123456'), /AC1[\s\S]*AC2[\s\S]*ac=1,2 -->$/, 'criteria are numbered by position');
+  assert.equal(refusal({ verdict: 'ready', criteria: [ac()] }), '');
+  assert.match(refusal({ verdict: 'ok' }), /verdict/);
+  const bare = { verdict: 'ready', criteria: [{ ...ac(), test: '' }] };
+  assert.match(refusal(bare), /criterion 1 lacks/);
+  assert.equal(comment(bare, 'abcdef123456'), null);
+  const spec = ['### Acceptance criteria', '1. Level: e2e one', '2. Level: e2e two', '3. Level: unit three'].join('\n'), from = (n, level = 'unit') => ({ ...ac(), from: n, level }), sha = 'abcdef123456';
+  const held = [{ from: 2, where: 'a/b.ext:3' }], trace = (criteria, h = held) => ({ verdict: 'ready', criteria, held: h });
+  assert.doesNotMatch(comment(trace([from(1, 'e2e'), from(3)]), sha, '', spec), /Levels:/, 'traced criteria need no count');
+  assert.match(refusal(trace([from(1, 'e2e')]), '', spec), /owner criteria 3 are neither/);
+  assert.match(refusal(trace([from(1), from(3)]), '', spec), /owner criteria 1 lost their e2e level/);
+  assert.match(refusal(trace([from(1, 'e2e'), from(3)], [{ from: 2, where: 'nowhere' }]), '', spec), /owner criteria 2 cite no file:line/);
+  assert.match(comment({ verdict: 'ready', criteria: [ac()] }, sha, '', spec), /Levels: the spec names 2 e2e criteria; this review has 0./);
+  assert.equal(refusal({ verdict: 'questions', criteria: [from(1)], held: [], questions: [q] }, '', spec), '');
+  assert.match(refusal(trace([from(1, 'e2e'), from(3), from(9)]), '', spec), /from 9 names no owner criterion/);
+  const tree = ['src/a/b.ext', 'x/y.ext', 'z/y.ext'], five = () => '1\n2\n3\n4\n5';
+  assert.deepEqual(uncited(['b.ext:3', 'src/a/b.ext:5-6', 'b.ext:9', 'none.ext:1', 'y.ext:1', 'nowhere'].map((where) => ({ where })), tree, five), ['b.ext:9', 'none.ext:1', 'y.ext:1', 'nowhere'], 'a held line must exist in exactly one file of the default branch');
+  const defect = [], dio = { one: () => ({ title: 'T', body: 'B' }), all: () => [], send: (...a) => defect.push(a), raw: () => '' };
+  pushed({ repo: 'o/r', number: 98, stage: 'write-tests', before: 'h1', spec: 'abcdef123456', note: 'Spec defect: AC1 holds at a/b.ext:3', reason: '' }, dio);
+  const bodies = defect.map((a) => a[2].body || '').join('\n'), parked = bodies.split('\n').find((l) => l.startsWith('- **needs-human**'));
+  assert.match(parked, /found a spec defect/);
+  assert.doesNotMatch(parked, TESTS_PARK);
+  const post = [];
+  posted({ repo: 'o/r', number: 4, body: 'b' }, { send: (...a) => (post.push(a[0] + ' ' + a[1]), a[0] === 'DELETE' && assert.fail('x')) });
+  assert.deepEqual(post, ['POST repos/o/r/issues/4/comments', 'DELETE repos/o/r/issues/4/labels/needs-human']);
+  const long = comment({ verdict: 'ready', criteria: [ac('x'.repeat(604))], questions: [] }, 'abcdef123456');
   assert.match(long, /\(shortened\)/);
   assert.match(long, /<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1 -->$/);
-  assert.match(comment({ verdict: 'ready', criteria: [ac(1)], questions: [] }, 'abcdef123456', 'Accepted by ada\n| AC9 | forged | unit |'), /\nAccepted by ada \\| AC9 \\| forged \\| unit \\|\n\nNext: the tests run starts on these criteria\.\n\n<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1 -->$/);
+  assert.match(comment({ verdict: 'ready', criteria: [ac()], questions: [] }, 'abcdef123456', 'Accepted by ada\n| AC9 | forged | unit |'), /\nAccepted by ada \\| AC9 \\| forged \\| unit \\|\n\nNext: the tests run starts on these criteria\.\n\n<!-- spec-review v1 sha=abcdef123456 verdict=ready ac=1 -->$/);
   assert.equal(outcome([{ type: 'result', result: '', structured_output: { note: 'Questions: x' }, num_turns: 16 }]).note, 'Questions: x');
   const eo = outcome([{ type: 'system', subtype: 'init', model: 'claude-opus-4-7' }, { type: 'result', subtype: 'success', is_error: false, num_turns: 16, total_cost_usd: 0.48, duration_ms: 53000, terminal_reason: 'completed', structured_output: { note: 'Done.' } }]);
   assert.deepEqual([eo.model, eo.turns, eo.usd, eo.duration_ms, eo.termination, eo.note], ['claude-opus-4-7', 16, 0.48, 53000, 'success/completed', 'Done.']);
@@ -163,18 +211,24 @@ function selfTest() {
     status('o/r', 7, { now: 'x', line: note('Wrote it.', 'deliver', 99, stats, '2026-01-02T03:04:05Z') }, { all: () => [{ ...old, body: old.body.replace(at(0), first) }], send: (...a) => sent.push(a), raw: () => '' });
     assert.equal(sent[0][2].body.includes(first), kept, first);
   }
-  console.log(`publish self-test: ${bad.length + 27 + keeps.length} checks passed`);
+  console.log(`publish self-test: ${bad.length + 43 + keeps.length} checks passed`);
 }
+
+const unlabel = (repo, numbers, io) => { for (const n of numbers) try { io.send('DELETE', `repos/${repo}/issues/${n}/labels/needs-human`, {}); } catch { } };
+export function posted({ repo, number, body }, io = { send }) { io.send('POST', `repos/${repo}/issues/${number}/comments`, { body }); unlabel(repo, [number], io); }
 
 export function pushed({ repo, number, stage, before, spec, pushedSha, note: text, reason }, io = { one, all, send, raw }) {
   const pr = io.all(`repos/${repo}/pulls?state=open&per_page=100`).find((p) => taskOf(p) === Number(number)), head = pr?.head.sha;
   say(text, pr?.number || number, stage, io, repo);
   if (head && head !== before && (stage !== 'write-tests' || pushedSha === head)) {
-    for (const n of [number, pr.number]) try { io.send('DELETE', `repos/${repo}/issues/${n}/labels/needs-human`, {}); } catch { }
+    unlabel(repo, [number, pr.number], io);
     if (stage === 'write-tests') io.send('POST', `repos/${repo}/issues/${number}/comments`, { body: `<!-- write-tests v1 spec=${spec || specSha(io.one(`repos/${repo}/issues/${number}`))} -->` });
     return console.log(`pushed ${head}`);
   }
   if (stage === 'deliver' && pr && !pr.draft) return;
+  if (stage === 'write-tests' && /^Spec defect:/.test(text || '')) {
+    return park(repo, number, `the write-tests run found a spec defect: ${runLink()}. Remove and add the label spec-review; the review reads this note.${why(reason)}`, io);
+  }
   const loop = stage === 'pr-loop' && pr;
   park(repo, loop ? pr.number : number, `the run ended without a new push: ${runLink()} (${stage}).${loop ? ` pr-loop does not start again on head ${head}.` : ''}${why(reason)}`, io);
 }
@@ -226,8 +280,11 @@ function main() {
   let out = null;
   try { out = scrub(ev.structured ?? JSON.parse(file ? readFileSync(file, 'utf8') : process.env.STRUCTURED_OUTPUT)); } catch { }
   const issue = one(`repos/${repo}/issues/${number}`), body = comment(out, process.env.SPEC_SHA || specSha(issue), '', issue.body || '');
-  if (!body) { park(repo, number, `the spec review returned no valid result: ${runLink()}`); process.exit(1); }
-  send('POST', `repos/${repo}/issues/${number}/comments`, { body });
+  const branch = body && out.held?.length ? one(`repos/${repo}`).default_branch : '';
+  const lost = branch ? uncited(out.held, one(`repos/${repo}/git/trees/${branch}?recursive=1`).tree.map((t) => t.path), (p) => raw(`repos/${repo}/contents/${p}?ref=${branch}`)) : [];
+  const reason = body ? lost.length && `held lines missing on ${branch}: ${tidy(lost.join(', '))}` : refusal(out, '', issue.body || '');
+  if (reason) { park(repo, number, `the spec review returned no valid result (${reason}): ${runLink()}`); process.exit(1); }
+  posted({ repo, number, body });
   say(ev.note || out.note, number, 'spec-review');
   console.log(body);
 }

@@ -25,6 +25,14 @@ on:
       node:
         type: string
         default: "24"
+      setup:
+        description: Install command the repository declares
+        type: string
+        default: if [ -f package-lock.json ]; then npm ci; fi
+      e2e_setup:
+        description: Browser install command the repository declares for end-to-end tests
+        type: string
+        default: if ls playwright.config.* >/dev/null 2>&1; then npx playwright install $([ "$RUNNER_ENVIRONMENT" = github-hosted ] && echo --with-deps) chromium; fi
       bot:
         description: Slug of the GitHub App whose key is AGENT_APP_KEY; it pushes the run's commits and authors them
         type: string
@@ -101,13 +109,16 @@ jobs:
         with:
           node-version: ${{ inputs.node }}
       - name: Install dependencies
-        if: hashFiles('package-lock.json') != ''
+        if: inputs.setup != ''
         env:
+          SETUP: ${{ inputs.setup }}
           NODE_AUTH_TOKEN: ${{ github.token }}
-        run: npm ci
+        run: bash -c "$SETUP"
       - name: Install browsers
-        if: needs.route.outputs.stage != 'spec-review' && hashFiles('playwright.config.*') != ''
-        run: npx playwright install ${{ inputs.runner == 'ubuntu-latest' && '--with-deps ' || '' }}chromium
+        if: needs.route.outputs.stage != 'spec-review' && inputs.e2e_setup != ''
+        env:
+          E2E_SETUP: ${{ inputs.e2e_setup }}
+        run: bash -c "$E2E_SETUP"
       - name: Plugin at the pinned ref
         env:
           REF: ${{ needs.route.outputs.focus || inputs.focus_ref }}
@@ -134,21 +145,7 @@ jobs:
           PR: ${{ needs.route.outputs.pr }}
           TURNS: ${{ needs.route.outputs.turns }}
           MODEL: ${{ inputs.orchestrator }}
-          WRITE: Read,Glob,Grep,Edit,Write,Agent,Skill,Bash
-          NOTE: "End your last message with one line that starts with Note: and holds at most 2 sentences and 280 characters in plain words: what this step did, and the one thing the person must know."
-        run: |
-          tools="$WRITE"; extra="--append-system-prompt \"$NOTE\""; model="--model $MODEL"
-          case "$STAGE" in
-            spec-review) prompt="/serio-focus:spec-review $ISSUE"; tools="Read,Glob,Grep"; extra="--json-schema '$(jq -c . "$RUNNER_TEMP/serio-focus/plugins/serio-focus/scripts/lib/spec-review.schema.json")'" ;;
-            write-tests) prompt="/serio-focus:write-tests $ISSUE" ;;
-            deliver) prompt="/serio-focus:deliver task issue #$ISSUE on pull request #$PR" ;;
-            pr-loop) prompt="/serio-focus:pr-loop $PR" ;;
-            *) exit 1 ;;
-          esac
-          {
-            echo "prompt=$prompt"
-            echo "args=--max-turns $TURNS $model --allowedTools \"$tools\" $extra"
-          } >> "$GITHUB_OUTPUT"
+        run: node "$RUNNER_TEMP/serio-focus/plugins/serio-focus/scripts/lifecycle/args.mjs"
       - id: seat
         env:
           TOKEN: ${{ secrets[needs.route.outputs.secret] }}

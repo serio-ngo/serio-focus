@@ -41,7 +41,7 @@ export function route(name, ev, s) {
     if (mark?.verdict !== 'ready' || mark.sha !== specSha(s.issue(n))) {
       const earlier = specComment(s.comments(n), s.own), has = /^\| AC\d+ \|/m.test(earlier?.body || '');
       if (!owns(ev.sender, s.own)) return stop(`no ready spec review of the current issue text; ${has ? 'a code owner can accept the reviewed criteria by adding spec-ok' : 'add spec-review first'}`, n);
-      const criteria = [...(earlier?.body || '').matchAll(/^\| AC(\d+) \| (.*) \| (unit|e2e) \| `([^`]+)` \|$/gm)].map(([, id, text, level, test]) => ({ id: +id, text: text.replace(/\\\|/g, '|'), level, test }));
+      const criteria = [...(earlier?.body || '').matchAll(/^\| AC(\d+) \| (.*) \| (unit|e2e) \| `([^`]+)` \|$/gm)].map(([, , text, level, test]) => ({ text: text.replace(/\\\|/g, '|'), level, test }));
       const kept = /^Review checks: (.+)$/m.exec(earlier?.body || '')?.[1];
       const accept = comment({ verdict: 'ready', criteria, checks: kept ? [kept] : [] }, specSha(s.issue(n)), `Accepted by ${ev.sender.login} without a ready review; open questions stay on the earlier review.`, s.issue(n).body);
       return accept ? tests(n, { bypass: ev.sender.login, accept }) : stop('no reviewed criteria to accept yet: add spec-review first', n);
@@ -85,7 +85,7 @@ function selfTest() {
   const issue = { number: 7, title: 'Sum', body: 'AC1', assignees: [ada] };
   const sha = specSha(issue);
   const ready = { user: actions, body: `<!-- spec-review v1 sha=${sha} verdict=ready ac=1 -->` };
-  const earlier = { user: actions, body: comment({ verdict: 'questions', criteria: [{ id: 1, text: 'Given a | b, When x, Then y', level: 'unit', test: 'x gives y' }, { id: 2, text: 'Given 2, When Add, Then 3', level: 'e2e', test: 'Add shows the sum' }], questions: [{ question: 'Which locale?', recommended: 'pl-PL' }] }, '000000000000') };
+  const earlier = { user: actions, body: comment({ verdict: 'questions', criteria: [{ text: 'Given a | b, When x, Then y', level: 'unit', test: 'x gives y' }, { text: 'Given 2, When Add, Then 3', level: 'e2e', test: 'Add shows the sum' }], questions: [{ question: 'Which locale?', recommended: 'pl-PL' }] }, '000000000000') };
   const lock = { user: ada, body: 'tests-ok', commit_id: 'h1', state: 'COMMENTED', submitted_at: '2026-01-02' };
   const fail = (id, created_at = '2026-01-03') => ({ id, created_at });
   const lockOnly = [{ name: 'gate / tests', conclusion: 'success' }, { name: 'gate / lock and acceptance', conclusion: 'failure', steps: [{ name: 'Test lock', conclusion: 'failure' }] }];
@@ -147,6 +147,8 @@ function selfTest() {
     ['spec-ok after one tests run that pushed nothing', 'issues', label('spec-ok'), state({ comments: (k) => k === 7 ? [ready, parked('the run ended without a new push: u (write-tests).')] : [] }), 'write-tests'],
     ['a pushed and a parked tests run reach the cap', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha), parked('the run ended without a new push: u (write-tests).')] }), undefined],
     ['a deliver park is no tests run', 'issues', label('spec-ok'), state({ comments: () => [ready, wrote(sha), parked('the run ended without a new push: u (deliver).')] }), undefined],
+    ['a spec defect park is no counted tests run', 'issues', label('spec-ok'), state({ comments: (k) => k === 7 ? [ready, parked('the run ended without a new push: u (write-tests).'), parked('the write-tests run found a spec defect: u. Remove and add the label spec-review.')] : [] }), 'write-tests'],
+    ['two counted tests parks reach the cap', 'issues', label('spec-ok'), state({ comments: (k) => k === 7 ? [ready, parked('the run ended without a new push: u (write-tests).'), parked('the run ended without a new push: u (write-tests).')] : [] }), undefined],
     ['a failed tests run parked on the draft counts', 'issues', label('spec-ok'), state({ issue: () => edited, comments: (k) => k === 9 ? [parked('the write-tests run did not finish: u.')] : [readyEdited, wrote(sha)] }), undefined],
     ['a change request after one failed tests run', 'pull_request_review', review('fix AC1', 'changes_requested'), state({ reviews: () => [], comments: (k) => k === 9 ? [parked('the write-tests run did not finish: u.')] : [ready] }), 'write-tests'],
     ['red CI on a new head after a pr-loop run pushed nothing', 'workflow_run', ci(), state({ comments: () => [idle('h0')] }), 'pr-loop'],

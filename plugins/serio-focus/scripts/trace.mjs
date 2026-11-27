@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { readFileSync, readdirSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,7 +11,7 @@ const add = (to, from) => { for (const k in from) to[k] = (to[k] || 0) + from[k]
 
 function read(file) {
   const out = { turns: 0, durationMs: 0, calls: {}, tokens: zero(), models: [], errors: [], denied: [], repeats: [] };
-  const turns = new Set(), uses = new Map(), counts = new Map(), stamps = [];
+  const failed = [], refused = new Set(), turns = new Set(), uses = new Map(), counts = new Map(), stamps = [];
   let lines = [];
   try { lines = readFileSync(file, 'utf8').split(/\r?\n/); } catch { }
   for (const line of lines) {
@@ -32,10 +34,17 @@ function read(file) {
         counts.set(key, (counts.get(key) || 0) + 1);
       } else if (part?.type === 'tool_result' && part.is_error && uses.has(part.tool_use_id)) {
         const { tool, input } = uses.get(part.tool_use_id);
-        (row.toolDenialKind ? out.denied : out.errors).push({ tool, input: input.slice(0, 200) });
+        if (row.toolDenialKind) { out.denied.push({ tool, input: input.slice(0, 200) }); refused.add(part.tool_use_id); }
+        else failed.push([part.tool_use_id, { tool, input: input.slice(0, 200) }]);
       }
     }
+    if (row?.type === 'result') for (const d of Array.isArray(row.permission_denials) ? row.permission_denials : []) {
+      if (refused.has(d?.tool_use_id)) continue;
+      refused.add(d?.tool_use_id);
+      out.denied.push({ tool: d?.tool_name, input: JSON.stringify(d?.tool_input ?? null).slice(0, 200) });
+    }
   }
+  out.errors = failed.filter(([id]) => !refused.has(id)).map(([, e]) => e);
   out.turns = turns.size;
   if (stamps.length) out.durationMs = stamps[stamps.length - 1] - stamps[0];
   for (const [key, times] of counts) {
@@ -65,4 +74,18 @@ export function trace(file) {
   return { ...out, totals };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) console.log(JSON.stringify(trace(process.argv[2])));
+function selfTest() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'trace-')), file = path.join(dir, 't.jsonl'), ls = { command: 'ls' };
+  try {
+    writeFileSync(file, [
+      { type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 'x1', name: 'Bash', input: ls }] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'x1', is_error: true, content: 'Permission for this action was denied' }] } },
+      { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: ls, tool_use_id: 'x1' }] },
+    ].map((r) => JSON.stringify(r)).join('\n'));
+    const got = trace(file);
+    assert.deepEqual([got.errors, got.denied], [[], [{ tool: 'Bash', input: JSON.stringify(ls) }]], 'a refusal listed in permission_denials is a denial, not an error');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  console.log('trace self-test: 1 check passed');
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) process.argv.includes('--self-test') ? selfTest() : console.log(JSON.stringify(trace(process.argv[2])));
