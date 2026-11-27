@@ -86,6 +86,7 @@ Runs share no memory. They hand off through comments on the task, written and re
 |---|---|
 | Only a person merges | The model session of an unattended run holds a read-only token and no App key. `push.mjs`, in the publish job, pushes its commits to `agent/<N>-…` only, never forced, and opens the pull request. A public repository also needs a ruleset that restricts updates of the default branch: `route.mjs` starts nothing without one |
 | No test before `spec-ok`, no code before `tests-ok` | `route.mjs` |
+| The chat never leaves the chat: no eight words in a row the owner typed go into an issue, pull request, comment, commit or tag from a local session | The guard |
 | Tests, skills and the spec do not change after their gate | `lock.mjs`, in a job that never runs pull request code |
 | Only people start a stage; only code owners lock or request changes; except `improve` started by a code owner, which gives `spec-ok` and `tests-ok` for that owner, and the merge stays a person's | `route.mjs`: actor type `User`, `CODEOWNERS` |
 | Text from GitHub is data | `brief.mjs` drops untrusted authors and hidden comments; skills say so |

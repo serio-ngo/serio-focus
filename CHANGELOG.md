@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- The guard denies a local `gh`, `git commit`, `git tag`, `git notes` or lifecycle `act` call whose command or any file it names carries eight words in a row the owner typed in this session's chat (Claude Code or Codex), so chat words never reach GitHub; commands, paths and URLs the owner pasted do not count.
 - A lifecycle pull request carries every closing line of its task (`Fixes <owner>/<repo>#N`), so merging it also closes the issue the task fixes in another repository, such as the ops draft it came from.
 - improve writes only its serio-focus branch and pull request and the task's issue, never waits for a person before End, and treats a step that needs one as a lifecycle defect; spec-review no longer recommends a person-merged setup pull request, and the tester's Load row names no runtime API.
 - A `pr-loop` run that pushed nothing parks the pull request and a red CI does not start it again on that head; `write-tests` starts again from `spec-ok` only when the spec text changed since the last tests run that pushed (the spec hash taken at its start); a tests run counts once it pushed its own head or parked, on the issue or its draft, never for a fork pull request; the no-push and write-tests park lines stay in the 20-line status log; and the third tests run of a task parks with one decision.

@@ -6,6 +6,7 @@
 
 | Event | Matcher | Script | Native host |
 |---|---|---|---|
+| `PreToolUse` | `^(Bash\|PowerShell\|mcp__.+__act)$` | `scripts/guard.mjs` | Claude, Codex |
 | `PreToolUse` | `^(Edit\|Write\|MultiEdit\|NotebookEdit\|Agent\|spawn_agent\|Workflow\|mcp__.+__(?:.*[_-])?(?:send\|reply\|forward)(?:[_-].*)?)$` | `scripts/guard.mjs` | Claude, Codex |
 | `SessionStart` | `startup\|resume\|clear\|compact` | `scripts/card.mjs` | Claude, Codex |
 | `Stop` | `*` | `scripts/receipt.mjs` | Claude, Codex |
@@ -34,7 +35,7 @@
 
 | What ships | Count |
 |---|---|
-| Script lines | **1414** across 15 files |
+| Script lines | **1484** across 15 files |
 | Hook events | **3** |
 | Skills | **6** |
 | Subagents | **4** |

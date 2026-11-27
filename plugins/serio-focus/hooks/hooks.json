@@ -10,6 +10,10 @@
       {
         "matcher": "^(Edit|Write|MultiEdit|NotebookEdit|Agent|spawn_agent|Workflow|mcp__.+__(?:.*[_-])?(?:send|reply|forward)(?:[_-].*)?)$",
         "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs\"", "timeout": 10, "statusMessage": "Serio guard" }]
+      },
+      {
+        "matcher": "^(Bash|PowerShell|mcp__.+__act)$",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs\"", "timeout": 10, "statusMessage": "Serio guard" }]
       }
     ],
     "Stop": [
