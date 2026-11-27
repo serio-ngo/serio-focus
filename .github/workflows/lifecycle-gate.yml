@@ -21,10 +21,18 @@ on:
       unit:
         type: string
         default: node --test --test-reporter=junit --test-reporter-destination=junit/unit.xml
-      e2e:
-        description: Runs only when a Playwright config exists
+      setup:
+        description: Command that installs the repository's dependencies; empty skips it
         type: string
-        default: npx playwright test --reporter=junit
+        default: if [ -f package-lock.json ]; then npm ci; fi
+      e2e_setup:
+        description: Command that installs the e2e browsers; empty skips it
+        type: string
+        default: if ls playwright.config.* >/dev/null 2>&1; then npx playwright install $([ "$RUNNER_ENVIRONMENT" = github-hosted ] && echo --with-deps) chromium; fi
+      e2e:
+        description: Command that runs the e2e tests; empty skips it
+        type: string
+        default: if ls playwright.config.* >/dev/null 2>&1; then npx playwright test --reporter=junit; fi
 
 permissions: {}
 
@@ -46,10 +54,11 @@ jobs:
         with:
           node-version: ${{ inputs.node }}
       - name: Install dependencies
-        if: hashFiles('package-lock.json') != ''
+        if: inputs.setup != ''
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
-        run: npm ci
+          COMMAND: ${{ inputs.setup }}
+        run: bash -c "$COMMAND"
       - name: Gates
         if: inputs.gates != ''
         env:
@@ -61,10 +70,12 @@ jobs:
           COMMAND: ${{ inputs.unit }}
         run: mkdir -p junit && bash -c "$COMMAND"
       - name: Install browsers
-        if: ${{ !cancelled() && hashFiles('playwright.config.*') != '' }}
-        run: npx playwright install ${{ inputs.runner == 'ubuntu-latest' && '--with-deps ' || '' }}chromium
+        if: ${{ !cancelled() && inputs.e2e_setup != '' }}
+        env:
+          COMMAND: ${{ inputs.e2e_setup }}
+        run: bash -c "$COMMAND"
       - name: e2e tests
-        if: ${{ !cancelled() && hashFiles('playwright.config.*') != '' }}
+        if: ${{ !cancelled() && inputs.e2e != '' }}
         env:
           COMMAND: ${{ inputs.e2e }}
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: junit/e2e.xml
@@ -89,7 +100,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           FOCUS_REF: ${{ inputs.focus_ref }}
           UNIT: ${{ inputs.gates != '' && format('{0} && {1}', inputs.gates, inputs.unit) || inputs.unit }}
-          E2E: ${{ hashFiles('playwright.config.*') != '' && inputs.e2e || '' }}
+          E2E: ${{ inputs.e2e }}
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: junit/e2e.xml
           PLAYWRIGHT_JUNIT_OUTPUT_NAME: junit/e2e.xml
         run: |
