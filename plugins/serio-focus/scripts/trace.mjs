@@ -9,7 +9,7 @@ const add = (to, from) => { for (const k in from) to[k] = (to[k] || 0) + from[k]
 
 function read(file) {
   const out = { turns: 0, durationMs: 0, calls: {}, tokens: zero(), models: [], errors: [], denied: [], repeats: [] };
-  const turns = new Set(), uses = new Map(), counts = new Map(), stamps = [];
+  const failed = [], refused = new Set(), turns = new Set(), uses = new Map(), counts = new Map(), stamps = [];
   let lines = [];
   try { lines = readFileSync(file, 'utf8').split(/\r?\n/); } catch { }
   for (const line of lines) {
@@ -32,10 +32,17 @@ function read(file) {
         counts.set(key, (counts.get(key) || 0) + 1);
       } else if (part?.type === 'tool_result' && part.is_error && uses.has(part.tool_use_id)) {
         const { tool, input } = uses.get(part.tool_use_id);
-        (row.toolDenialKind ? out.denied : out.errors).push({ tool, input: input.slice(0, 200) });
+        if (row.toolDenialKind) { out.denied.push({ tool, input: input.slice(0, 200) }); refused.add(part.tool_use_id); }
+        else failed.push([part.tool_use_id, { tool, input: input.slice(0, 200) }]);
       }
     }
+    if (row?.type === 'result') for (const d of Array.isArray(row.permission_denials) ? row.permission_denials : []) {
+      if (refused.has(d?.tool_use_id)) continue;
+      refused.add(d?.tool_use_id);
+      out.denied.push({ tool: d?.tool_name, input: JSON.stringify(d?.tool_input ?? null).slice(0, 200) });
+    }
   }
+  out.errors = failed.filter(([id]) => !refused.has(id)).map(([, e]) => e);
   out.turns = turns.size;
   if (stamps.length) out.durationMs = stamps[stamps.length - 1] - stamps[0];
   for (const [key, times] of counts) {
