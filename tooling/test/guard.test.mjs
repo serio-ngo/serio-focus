@@ -168,8 +168,10 @@ it('denies a GitHub write or commit that carries eight words the owner typed in 
     { type: 'attachment', attachment: { type: 'queued_command', commandMode: 'prompt', origin: { kind: 'peer' }, prompt: 'raport innej sesji o scalaniu galezi dzisiaj po poludniu' } }]
     .map((row) => JSON.stringify(row)).join('\n'));
   writeFileSync(path.join(box, 'body.md'), '> wywal te buzie z ludka, wieksze oczy troche i ciemniejsze');
+  mkdirSync(path.join(box, 'other'));
+  writeFileSync(path.join(box, 'other', 'issue.md'), 'zrob dodatkowe issue na przeniesienie gry teraz do poludzku');
   const run = (tool_name, tool_input, env = local) => guard({ tool_name, tool_input, cwd: box, transcript_path: file }, env);
-  for (const command of ['gh issue create -t x -b "Wywal te BUZIE z ludka, wieksze oczy troche i"', 'gh issue comment 1 --body-file body.md', 'git commit -F "body.md"', 'gh issue edit 2 -b "> zrob dodatkowe issue na przeniesienie gry teraz do"'])
+  for (const command of ['gh issue create -t x -b "Wywal te BUZIE z ludka, wieksze oczy troche i"', 'gh issue comment 1 --body-file body.md', 'git commit -F "body.md"', 'cd other && gh issue create --body-file issue.md', 'gh issue comment 3 --body-file - < body.md','gh issue edit 2 -b "> zrob dodatkowe issue na przeniesienie gry teraz do"'])
     assert.equal(run('Bash', { command }), DENY, command);
   assert.equal(run('mcp__serio-lifecycle__act', { body: 'wywal te buzie z ludka wieksze oczy troche' }), DENY);
   for (const command of ['gh issue create -t x -b "Remove the mouth; eyes slightly larger"', 'echo wywal te buzie z ludka wieksze oczy troche', 'gh pr comment 1 -b "max cztery potwory na pokoj zawsze tutaj bez wyjatku"', 'gh pr comment 1 -b "meta tekst ktory nie jest czatem wcale nigdy przenigdy"', 'gh pr comment 1 -b "reguly systemu ktore nie sa slowami wlasciciela nigdy tutaj"', 'gh pr comment 1 -b "raport innej sesji o scalaniu galezi dzisiaj po poludniu"', 'git commit -m "npm run verify and then commit the brand rules file here"', 'gh issue edit 2 -b "Related: https://github.com/serio-ngo/ops/issues/150"'])

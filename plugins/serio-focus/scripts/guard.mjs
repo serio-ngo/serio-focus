@@ -59,8 +59,10 @@ function sent(tool, input, cwd) {
   if (!SHELL.test(tool)) return JSON.stringify(input);
   const command = String(input.command || '');
   if (!OUTWARD.test(command)) return '';
-  const files = [...command.matchAll(/(?:--body-file|--notes-file|--input|--file|-F)[\s=]+(?:"([^"]+)"|'([^']+)'|([^\s;|&)]+))|=@([^\s;|&)'"]+)/g)].map((hit) => hit.slice(1).find(Boolean));
-  return [command, ...files.map((file) => { try { return readFileSync(path.resolve(cwd || '.', file), 'utf8'); } catch { return ''; } })].join('\n');
+  const files = [...command.matchAll(/(?:--body-file|--notes-file|--input|--file|-F|<)[\s=]+(?:"([^"]+)"|'([^']+)'|([^\s;|&)<]+))|=@([^\s;|&)'"]+)/g)].map((hit) => hit.slice(1).find(Boolean));
+  const dirs = [cwd || '.', ...[...command.matchAll(/\b(?:cd|Set-Location)\s+(?:"([^"]+)"|'([^']+)'|([^\s;|&)]+))/g)].map((hit) => hit.slice(1).find(Boolean).replace(/^\/([a-z])\//i, '$1:/'))];
+  const read = (file) => dirs.reduce((found, dir) => { if (found) return found; try { return readFileSync(path.resolve(cwd || '.', dir, file), 'utf8'); } catch { return ''; } }, '');
+  return [command, ...files.map(read)].join('\n');
 }
 
 function quote(payload, tool, input) {
