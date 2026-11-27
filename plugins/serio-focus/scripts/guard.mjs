@@ -62,8 +62,8 @@ function sent(tool, input, cwd) {
   if (!SHELL.test(tool)) return JSON.stringify(input);
   const command = String(input.command || '');
   if (!OUTWARD.test(command)) return '';
-  const files = [...command.matchAll(/(?:--body-file|--notes-file|--input|--file|-F|<|\bcat|Get-Content)[\s=]+(?:"([^"]+)"|'([^']+)'|([^\s;|&)<>]+))|=@([^\s;|&)'"]+)/g)].map((hit) => hit.slice(1).find(Boolean).replace(/^[\w.-]+=@/, ''));
-  const dirs = [cwd || '.', ...[...command.matchAll(/\b(?:cd|Set-Location)\s+(?:"([^"]+)"|'([^']+)'|([^\s;|&)]+))/g)].map((hit) => hit.slice(1).find(Boolean).replace(/^\/([a-z])\//i, '$1:/'))];
+  const files = [...command.matchAll(/(?:--body-file|--notes-file|--input|--file|-F|<|\bcat|Get-Content)[\s=]+(?:"([^"]+)"|'([^']+)'|([^\s;|&)<>]+))|=@([^\s;|&)'"]+)/gi)].map((hit) => hit.slice(1).find(Boolean).replace(/^[\w.-]+=@/, ''));
+  const dirs = [cwd || '.', ...[...command.matchAll(/\b(?:cd|Set-Location)\s+(?:"([^"]+)"|'([^']+)'|([^\s;|&)]+))/gi)].map((hit) => hit.slice(1).find(Boolean).replace(/^\/([a-z])\//i, '$1:/'))];
   const read = (file) => dirs.reduce((found, dir) => { if (found) return found; try { return readFileSync(path.resolve(cwd || '.', dir, file), 'utf8'); } catch { return ''; } }, '');
   return [command, ...files.map(read)].join('\n');
 }
