@@ -37,6 +37,6 @@ Skills: `<path>`, or none
 
 - No test without a criterion and no criterion without a test. A review with no criteria gets no test.
 - No test of config, file layout, constants, copy, styles, snapshots, third-party or framework behaviour, a private helper, or behaviour already on `main`: a criterion that needs one stops the stage, named in the note.
-- No production code, no change to a gate, a script or a test command.
+- No production code and no change to `.github/`, a gate, a script or a test command. A runner the review's `checks` name as missing (its dev dependency and config) belongs to the tests: the tester of that level adds it first.
 - Never mark the pull request ready, approve it or merge it. A person approves the tests and the skills with a review that starts with `tests-ok`.
 - End your last message with one line `Note: …`, at most 2 sentences and 280 characters in plain words: what this step did, and the one thing the person must know. In an attended session, post it first: `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/publish.mjs" <PR> --note write-tests "<the same text>"`; the workflow posts it for an unattended run.
