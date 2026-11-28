@@ -47,7 +47,7 @@ Every session also starts with reply rules for a neurodivergent reader: the resu
 
 In Claude Code: `/plugin marketplace add serio-ngo/serio-focus`, then `/plugin install serio-focus@serio-ngo`, and restart.
 
-From a checkout, also for Codex: `npm run setup -- --host claude` or `--host codex`, then `npm run doctor -- --host claude`.
+From a checkout, also for Codex: `npm run setup -- --host claude` or `--host codex`, then `npm run doctor -- --host claude`. Adopter repo: `npm run setup -- --host claude --adopter <dir> --owner <login>`, then `npm run doctor -- --host claude --adopter <dir>`.
 
 No API key is needed: a run uses the developer's own Claude login, or their token from `claude setup-token` in Actions.
 

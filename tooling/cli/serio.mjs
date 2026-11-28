@@ -262,7 +262,67 @@ function prove() {
   if (head.status === 0 || !head.cases.length || tree.status !== 0 || tree.cases.length) process.exitCode = 1;
 }
 
+const LABELS = ['spec-review', 'spec-ok', 'needs-human'];
+const adopterSha = () => {
+  const sha = process.env.SERIO_RELEASE_SHA || spawnSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+  if (!/^[0-9a-f]{40}$/.test(sha)) fail(`release sha must be 40 hex characters: ${sha}`);
+  return sha;
+};
+const adopterOwner = (owner) => {
+  if (typeof owner === 'string' && !/^[A-Za-z0-9-]+$/.test(owner)) fail(`invalid owner: ${owner}`);
+  return owner;
+};
+const gh = (dir, argv) => spawnSync(...(process.env.SERIO_GH ? [process.execPath, [process.env.SERIO_GH, ...argv]] : ['gh', argv]), { cwd: dir, encoding: 'utf8' });
+const adopterFiles = (owner, sha) => ({
+  '.github/ISSUE_TEMPLATE/spec.yml': 'name: Spec\ndescription: A task with acceptance criteria\nlabels: [spec-review]\nbody:\n  - type: textarea\n    id: criteria\n    attributes:\n      label: Acceptance criteria\n      description: "AC1 Given ..., When ..., Then ..."\n    validations:\n      required: true\n',
+  '.github/CODEOWNERS': `* @${owner}\n`,
+  '.github/workflows/serio-verify.yml': `name: serio-verify\n\non:\n  pull_request:\n\npermissions:\n  contents: read\n  issues: read\n  pull-requests: write\n  packages: read\n\njobs:\n  gate:\n    uses: serio-ngo/serio-focus/.github/workflows/lifecycle-gate.yml@${sha}\n    with:\n      focus_ref: ${sha}\n    secrets: inherit\n`,
+});
+const adopterLabels = (dir) => {
+  const argv = ['label', 'list', '--json', 'name'];
+  const run = gh(dir, [...argv, '--limit', '1000']);
+  try { return JSON.parse(run.stdout).map((label) => label.name); } catch { return []; }
+};
+
+function adopterSetup(args) {
+  if (typeof args.owner !== 'string') fail('usage: setup --adopter <dir> --owner <login>');
+  adopterOwner(args.owner);
+  const dir = path.resolve(args.adopter);
+  for (const [file, text] of Object.entries(adopterFiles(args.owner, adopterSha()))) {
+    const target = path.join(dir, file);
+    if (existsSync(target)) { console.log(`kept ${target}`); continue; }
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, text, 'utf8');
+    console.log(`wrote ${target}`);
+  }
+  const have = adopterLabels(dir);
+  for (const name of LABELS.filter((label) => !have.includes(label))) {
+    const argv = ['label', 'create', name];
+    const run = gh(dir, argv);
+    if (run.error || run.status !== 0) fail(`cannot create label ${name}`);
+    console.log(`created label ${name}`);
+  }
+}
+
+function adopterDoctor(args) {
+  const dir = path.resolve(args.adopter);
+  const read = (file) => existsSync(path.join(dir, file)) ? readFileSync(path.join(dir, file), 'utf8') : '';
+  const owners = read('.github/CODEOWNERS');
+  const owner = adopterOwner(args.owner) ?? owners.match(/@([A-Za-z0-9-]+)/)?.[1];
+  const sha = adopterSha();
+  const have = adopterLabels(dir);
+  const checks = [
+    ['spec.yml present', existsSync(path.join(dir, '.github/ISSUE_TEMPLATE/spec.yml')), 'run setup --adopter <dir> --owner <login>'],
+    [`CODEOWNERS names @${owner || '<owner>'}`, !!owner && new RegExp(`^\\*\\s.*@${owner}(\\s|$)`, 'm').test(owners), 'edit .github/CODEOWNERS or pass --owner'],
+    [`serio-verify.yml pinned to ${sha}`, read('.github/workflows/serio-verify.yml').includes(`@${sha}`) && read('.github/workflows/serio-verify.yml').includes(`focus_ref: ${sha}`), 'run setup or repin the workflow'],
+    ...LABELS.map((name) => [`label ${name} exists`, have.includes(name), `gh label create ${name}`]),
+  ];
+  for (const [question, ok, next] of checks) console.log(ok ? `yes ${question}` : `NO ${question} — ${next}`);
+  return { failed: checks.filter(([, ok]) => !ok).length };
+}
+
 function setup(args) {
+  if (args.adopter) return adopterSetup(args);
   install(args);
   report();
   console.log('Installed. Review and trust the hooks in the native host, then start a fresh session.');
@@ -280,6 +340,6 @@ else if (command === 'upkeep') {
   upkeep(args);
   report();
 }
-else if (command === 'doctor') process.exit(doctor(args).failed ? 1 : 0);
+else if (command === 'doctor') process.exit((args.adopter ? adopterDoctor(args) : doctor(args)).failed ? 1 : 0);
 else if (command === 'release') release(args);
 else if (command === 'prove') prove();
