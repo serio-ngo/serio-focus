@@ -155,7 +155,7 @@ jobs:
           echo "token=$token" >> "$GITHUB_OUTPUT"
       - id: claude
         continue-on-error: true
-        uses: anthropics/claude-code-action@e5812cd75691ca7bbfc57c0ecf4441db3a1ab7dd
+        uses: anthropics/claude-code-action@4411a9e9b0283becf4b924f7bce360fd7756c78c
         env:
           GH_TOKEN: ${{ github.token }}
           SERIO_UNATTENDED: "1"
