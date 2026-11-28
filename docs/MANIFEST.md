@@ -24,7 +24,7 @@
 
 | Skill | Description |
 |---|---|
-| `deliver` | Use when asked to build or change something end to end. Runs the role agents in order - architect plans, tester writes a failing test, coder builds each task, reviewer checks the diff - then opens the pull request. |
+| `deliver` | Use for any code change to an app, including fixes from a review or a list of known issues. Runs the role agents in order - architect plans, tester writes a failing test, coder builds each task, reviewer checks the diff - then opens the pull request. |
 | `gate` | Use to check a task pull request by script before asking for review. Runs the test lock and builds the acceptance report from JUnit results - one row per criterion - without a model deciding the result. |
 | `improve` | Use when a code owner runs one real task through every stage on Actions with instructions from an improvement branch, audits each stage, and fixes defects in the lifecycle itself. |
 | `pr-loop` | Use when a pull request has failing checks or unresolved review feedback from any reviewer, person or bot. Verifies each finding, has the coder fix it, reruns checks and requests re-review until the head is clean. |
@@ -35,10 +35,10 @@
 
 | What ships | Count |
 |---|---|
-| Script lines | **1484** across 15 files |
+| Script lines | **1499** across 15 files |
 | Hook events | **3** |
 | Skills | **6** |
 | Subagents | **4** |
-| Startup context: card, agent and skill descriptions | **~476** tokens, plus the Backlog block: at most 10 lines per group |
+| Startup context: card, agent and skill descriptions | **~485** tokens, plus the Backlog block: at most 10 lines per group |
 | Third-party packages | **0** |
 | Network calls, API keys, model calls | **0** |
