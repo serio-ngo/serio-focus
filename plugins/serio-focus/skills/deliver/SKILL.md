@@ -22,7 +22,7 @@ Deliver $ARGUMENTS. Agents: this plugin's `architect`, `tester`, `coder` and `re
 - Agents never edit the same files in parallel.
 - Every dispatch names the model and effort of the table below; the guard rejects one without them.
 - The main session keeps the plan and the evidence; agents return only their sections. A dispatch carries the task row, paths and check, never file contents; the main session reads no file only an agent needs.
-- After the pull request opens, continue with `pr-loop`; before the last message, list every local branch, uncommitted change and saved-change ref of each repository the run touched, and give each an open pull request or a line in the report, starting with what the session start reported; in a local attended session turn on the desktop app's Auto-fix for it and run `pr-loop` on each event; when `SERIO_UNATTENDED=1`, stop at the commit: a failed check starts `pr-loop` by itself.
+- After the pull request opens, continue with `pr-loop`; in an attended session, before the last message, clear the session-start `Backlog:` of every repository the run touched, or give each item a report line; in a local attended session turn on the desktop app's Auto-fix for it and run `pr-loop` on each event; when `SERIO_UNATTENDED=1`, stop at the commit: a failed check starts `pr-loop` by itself.
 - End your last message with one line `Note: …`, at most 2 sentences and 280 characters in plain words: what this step did, and the one thing the person must know. On a task issue in an attended session, post it first: `node "${CLAUDE_PLUGIN_ROOT}/scripts/lifecycle/publish.mjs" <PR> --note deliver "<the same text>"`; the workflow posts it for an unattended run.
 
 | Agent | Model | Effort |
